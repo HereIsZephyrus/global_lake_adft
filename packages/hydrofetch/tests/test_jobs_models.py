@@ -34,10 +34,12 @@ def _make_record(job_id: str = "test_job_001") -> JobRecord:
             max_pixels=10_000_000_000_000,
             region_geojson={"type": "Polygon", "coordinates": [[[70, 30], [90, 30], [90, 45], [70, 45], [70, 30]]]},
             drive_folder="hydrofetch_exports",
+            tile_id="asia",
         ),
         sample=SampleParams(
-            geometry_path="/data/lake_centroids.csv",
+            geometry_path="/data/lake_polygons.geojson",
             id_column="hylak_id",
+            tile_id="asia",
         ),
         write=WriteParams(
             output_dir="/data/output",
@@ -111,6 +113,8 @@ class TestJobRecordSerialization:
         assert restored.spec.job_id == record.spec.job_id
         assert restored.state == record.state
         assert restored.spec.gee.bands == record.spec.gee.bands
+        assert restored.spec.gee.tile_id == "asia"
+        assert restored.spec.sample.tile_id == "asia"
 
     def test_roundtrip_json(self):
         record = _make_record()
@@ -136,3 +140,45 @@ class TestJobRecordSerialization:
         restored = record_from_json(record_to_json(record))
         assert restored.last_error == "something went wrong"
         assert restored.attempt == 1
+
+    def test_null_region_geojson_roundtrip(self):
+        """region_geojson=None (full-footprint export) must survive JSON round-trip."""
+        spec = JobSpec(
+            job_id="global_job",
+            export_name="era5_land_daily_image_20200101_europe",
+            date_iso="2020-01-01",
+            gee=GeeExportParams(
+                spec_id="era5_land_daily_image",
+                asset_id="ECMWF/ERA5_LAND/DAILY_AGGR",
+                bands=["temperature_2m"],
+                scale=11132.0,
+                crs="EPSG:4326",
+                max_pixels=10**13,
+                region_geojson=None,
+                tile_id="europe",
+            ),
+            sample=SampleParams(
+                geometry_path="/data/europe_lakes.geojson",
+                tile_id="europe",
+            ),
+            write=WriteParams(output_dir=""),
+        )
+        record = JobRecord(spec=spec)
+        restored = record_from_json(record_to_json(record))
+        assert restored.spec.gee.region_geojson is None
+        assert restored.spec.gee.tile_id == "europe"
+        assert restored.spec.sample.tile_id == "europe"
+
+    def test_default_tile_id_is_empty(self):
+        """tile_id defaults to empty string for backward compat with pre-manifest jobs."""
+        gee = GeeExportParams(
+            spec_id="s",
+            asset_id="a",
+            bands=[],
+            scale=1.0,
+            crs="EPSG:4326",
+            max_pixels=1,
+        )
+        assert gee.tile_id == ""
+        sp = SampleParams(geometry_path="/tmp/x.geojson")
+        assert sp.tile_id == ""

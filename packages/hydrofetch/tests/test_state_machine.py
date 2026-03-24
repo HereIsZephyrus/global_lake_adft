@@ -38,7 +38,7 @@ def _make_record(state: JobState = JobState.HOLD, task_id: str | None = None) ->
             region_geojson={"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
             drive_folder="hf_exports",
         ),
-        sample=SampleParams(geometry_path="/tmp/centroids.csv"),
+        sample=SampleParams(geometry_path="/tmp/lakes.geojson"),
         write=WriteParams(output_dir="/tmp/output"),
     )
     record = JobRecord(spec=spec, state=state, task_id=task_id)

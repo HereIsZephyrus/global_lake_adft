@@ -11,14 +11,16 @@ log = logging.getLogger(__name__)
 
 
 class SampleState(TaskState):
-    """Sample the downloaded GeoTIFF at lake centroid locations."""
+    """Compute area-weighted zonal means for each lake polygon from the downloaded GeoTIFF."""
 
     def handle(
         self,
         record: JobRecord,
         context: StateContext,
     ) -> tuple[JobRecord, TaskState | None]:
-        from hydrofetch.sample.raster import sample_raster_at_centroids  # pylint: disable=import-outside-toplevel
+        from hydrofetch.sample.raster import (  # pylint: disable=import-outside-toplevel
+            sample_raster_by_polygons_weighted,
+        )
         from hydrofetch.state_machine.write_state import WriteState  # pylint: disable=import-outside-toplevel
 
         if not record.local_raw_path:
@@ -51,14 +53,14 @@ class SampleState(TaskState):
             return updated, WriteState()
 
         try:
-            df = sample_raster_at_centroids(
+            df = sample_raster_by_polygons_weighted(
                 raster_path=raw_path,
                 geometry_path=Path(sample_params.geometry_path),
                 id_column=sample_params.id_column,
                 date_iso=record.spec.date_iso,
             )
         except Exception as exc:  # pylint: disable=broad-except
-            log.error("Job %s: sampling failed: %s", record.spec.job_id, exc)
+            log.error("Job %s: zonal sampling failed: %s", record.spec.job_id, exc)
             return record.fail(f"Sampling error: {exc}"), None
 
         # Stage the output to sample_dir.

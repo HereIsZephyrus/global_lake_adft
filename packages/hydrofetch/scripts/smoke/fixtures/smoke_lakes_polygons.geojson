@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "hylak_id": 999000001 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [8.540, 47.330],
+            [8.560, 47.330],
+            [8.560, 47.370],
+            [8.540, 47.370],
+            [8.540, 47.330]
+          ]
+        ]
+      }
+    }
+  ]
+}

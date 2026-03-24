@@ -36,7 +36,7 @@ def _make_spec(job_id: str, date_iso: str = "2020-03-10") -> JobSpec:
             region_geojson={"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
             drive_folder="hf_exports",
         ),
-        sample=SampleParams(geometry_path="/tmp/centroids.csv"),
+        sample=SampleParams(geometry_path="/tmp/lakes.geojson"),
         write=WriteParams(output_dir="/tmp/output"),
     )
 

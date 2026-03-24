@@ -2,15 +2,21 @@
 
 Usage examples::
 
+    # Tile-manifest mode (recommended): one job per date × tile
     hydrofetch era5 \\
         --start 2020-01-01 --end 2020-01-08 \\
-        --region region.geojson \\
-        --geometry lakes_centroids.csv \\
-        --output-dir ./results
+        --tile-manifest tiles.json \\
+        --run
+
+    # Legacy single-tile mode
+    hydrofetch era5 \\
+        --start 2020-01-01 --end 2020-01-08 \\
+        --geometry lakes.geojson \\
+        --run
 
     hydrofetch status
     hydrofetch status --verbose
-    hydrofetch retry --job-id era5_land_daily_image_20200103
+    hydrofetch retry --job-id era5_land_daily_image_20200103_europe
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hydrofetch",
         description=(
-            "GEE image export, Drive download, local raster sampling, "
+            "GEE image export, Drive download, local raster zonal sampling, "
             "and lake forcing pipeline."
         ),
     )
@@ -79,17 +85,36 @@ def _add_era5_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disabl
         metavar="YYYY-MM-DD",
         help="Last date (exclusive).",
     )
+
+    # Mutually exclusive: tile-manifest (primary) vs. legacy single-tile geometry
+    input_grp = p.add_mutually_exclusive_group(required=True)
+    input_grp.add_argument(
+        "--tile-manifest",
+        metavar="FILE",
+        help=(
+            "JSON manifest describing spatial tiles.  Each tile entry must have "
+            "``tile_id`` and ``geometry_path``; ``region_path`` is optional "
+            "(omit to export the full ERA5-Land global footprint for that tile).  "
+            "Relative paths are resolved relative to the manifest file."
+        ),
+    )
+    input_grp.add_argument(
+        "--geometry",
+        metavar="FILE",
+        help=(
+            "GeoJSON file with lake Polygon / MultiPolygon features "
+            "(property ``hylak_id`` required).  Legacy single-tile mode."
+        ),
+    )
+
     p.add_argument(
         "--region",
-        required=True,
         metavar="FILE",
-        help="GeoJSON file defining the area of interest.",
-    )
-    p.add_argument(
-        "--geometry",
-        required=True,
-        metavar="FILE",
-        help="CSV or GeoJSON file with lake centroids (columns: hylak_id, lon, lat).",
+        help=(
+            "GeoJSON file defining the area of interest.  "
+            "Only used with ``--geometry`` (single-tile mode).  "
+            "Omit to export the full ERA5-Land global footprint."
+        ),
     )
     p.add_argument(
         "--output-dir",
@@ -171,6 +196,112 @@ def _add_retry_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disab
 
 
 # ---------------------------------------------------------------------------
+# Tile loading helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_tiles(args: argparse.Namespace) -> list[dict]:
+    """Return a list of tile dicts from ``--tile-manifest`` or legacy ``--geometry``.
+
+    Each returned dict has the keys:
+        ``tile_id``       – identifier string (empty string for legacy mode)
+        ``region_geojson`` – parsed GeoJSON dict or ``None``
+        ``geometry_path`` – absolute path string to lake polygon GeoJSON
+    """
+    if args.tile_manifest:
+        return _load_manifest_tiles(Path(args.tile_manifest))
+    return _load_legacy_tile(args)
+
+
+def _load_manifest_tiles(manifest_path: Path) -> list[dict]:
+    """Parse a tile-manifest JSON file and return resolved tile dicts."""
+    if not manifest_path.is_file():
+        print(f"Error: tile-manifest file not found: {manifest_path}", file=sys.stderr)
+        sys.exit(1)
+
+    with manifest_path.open(encoding="utf-8") as fh:
+        manifest = json.load(fh)
+
+    tiles_raw = manifest.get("tiles")
+    if not tiles_raw:
+        print("Error: tile-manifest has no 'tiles' list.", file=sys.stderr)
+        sys.exit(1)
+
+    result: list[dict] = []
+    for entry in tiles_raw:
+        tile_id = entry.get("tile_id", "").strip()
+        if not tile_id:
+            print("Error: each tile entry must have a non-empty 'tile_id'.", file=sys.stderr)
+            sys.exit(1)
+
+        # Resolve geometry path (relative to manifest dir)
+        raw_gp = entry.get("geometry_path", "").strip()
+        if not raw_gp:
+            print(
+                f"Error: tile '{tile_id}' has no 'geometry_path'.", file=sys.stderr
+            )
+            sys.exit(1)
+        gp = Path(raw_gp)
+        if not gp.is_absolute():
+            gp = manifest_path.parent / gp
+        gp = gp.resolve()
+        if not gp.is_file():
+            print(f"Error: geometry_path not found for tile '{tile_id}': {gp}", file=sys.stderr)
+            sys.exit(1)
+
+        # Resolve optional region path
+        region_geojson = None
+        raw_rp = entry.get("region_path", "").strip()
+        if raw_rp:
+            rp = Path(raw_rp)
+            if not rp.is_absolute():
+                rp = manifest_path.parent / rp
+            rp = rp.resolve()
+            if not rp.is_file():
+                print(
+                    f"Error: region_path not found for tile '{tile_id}': {rp}", file=sys.stderr
+                )
+                sys.exit(1)
+            with rp.open(encoding="utf-8") as fh:
+                region_geojson = json.load(fh)
+
+        result.append(
+            {
+                "tile_id": tile_id,
+                "region_geojson": region_geojson,
+                "geometry_path": str(gp),
+            }
+        )
+
+    return result
+
+
+def _load_legacy_tile(args: argparse.Namespace) -> list[dict]:
+    """Construct a single-tile dict from legacy ``--geometry`` / ``--region`` args."""
+    gp = Path(args.geometry).resolve()
+    if not gp.is_file():
+        print(f"Error: geometry file not found: {gp}", file=sys.stderr)
+        sys.exit(1)
+
+    region_geojson = None
+    if args.region:
+        rp = Path(args.region)
+        if not rp.is_file():
+            print(f"Error: region file not found: {rp}", file=sys.stderr)
+            sys.exit(1)
+        with rp.open(encoding="utf-8") as fh:
+            region_geojson = json.load(fh)
+
+    return [
+        {
+            "tile_id": "",
+            "region_geojson": region_geojson,
+            "geometry_path": str(gp),
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
 
@@ -185,7 +316,11 @@ def _cmd_era5(args: argparse.Namespace) -> None:
         get_raw_dir,
         get_sample_dir,
     )
-    from hydrofetch.export.namer import image_day_prefix, iter_daily_date_range  # pylint: disable=import-outside-toplevel
+    from hydrofetch.export.namer import (  # pylint: disable=import-outside-toplevel
+        image_day_prefix,
+        image_day_tile_prefix,
+        iter_daily_date_range,
+    )
     from hydrofetch.gee.client import init_earth_engine  # pylint: disable=import-outside-toplevel
     from hydrofetch.jobs.models import (  # pylint: disable=import-outside-toplevel
         GeeExportParams,
@@ -208,12 +343,7 @@ def _cmd_era5(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    region_path = Path(args.region)
-    if not region_path.is_file():
-        print(f"Error: region file not found: {region_path}", file=sys.stderr)
-        sys.exit(1)
-    with region_path.open(encoding="utf-8") as fh:
-        region_geojson = json.load(fh)
+    tiles = _load_tiles(args)
 
     job_dir = Path(args.job_dir) if args.job_dir else get_job_dir()
     store = JobStore(job_dir)
@@ -227,54 +357,70 @@ def _cmd_era5(args: argparse.Namespace) -> None:
     enqueued = 0
     skipped = 0
     for d in dates:
-        export_name = image_day_prefix(spec.spec_id, d)
-        job_id = export_name
+        for tile in tiles:
+            tile_id: str = tile["tile_id"]
+            region_geojson = tile["region_geojson"]
+            geometry_path: str = tile["geometry_path"]
 
-        if store.is_completed(job_id):
-            log.debug("Skipping completed job %s", job_id)
-            skipped += 1
-            continue
+            # Job id / export name includes tile_id when in manifest mode.
+            if tile_id:
+                export_name = image_day_tile_prefix(spec.spec_id, d, tile_id)
+            else:
+                export_name = image_day_prefix(spec.spec_id, d)
+            job_id = export_name
 
-        if args.dry_run:
-            print(f"[dry-run] would enqueue: {job_id}")
-            enqueued += 1
-            continue
-
-        if store.exists(job_id):
-            existing = store.load(job_id)
-            if existing and not existing.state.is_terminal:
-                log.debug("Job %s already active (state=%s), skipping", job_id, existing.state)
+            if store.is_completed(job_id):
+                log.debug("Skipping completed job %s", job_id)
                 skipped += 1
                 continue
 
-        job_spec = JobSpec(
-            job_id=job_id,
-            export_name=export_name,
-            date_iso=d.isoformat(),
-            gee=GeeExportParams(
-                spec_id=spec.spec_id,
-                asset_id=spec.asset_id,
-                bands=spec.band_names(),
-                scale=spec.native_scale_m,
-                crs=spec.crs,
-                max_pixels=spec.max_pixels,
-                region_geojson=region_geojson,
-                drive_folder=drive_folder,
-            ),
-            sample=SampleParams(
-                geometry_path=str(Path(args.geometry).resolve()),
-                id_column=args.id_column,
-            ),
-            write=WriteParams(
-                output_dir=str(Path(args.output_dir).resolve()) if args.output_dir else "",
-                output_format=args.output_format,
-                sinks=sinks,
-                db_table=args.db_table,
-            ),
-        )
-        record = JobRecord(spec=job_spec)
-        store.save(record)
-        enqueued += 1
+            if args.dry_run:
+                tile_label = f" [{tile_id}]" if tile_id else ""
+                print(f"[dry-run] would enqueue: {job_id}{tile_label}")
+                enqueued += 1
+                continue
+
+            if store.exists(job_id):
+                existing = store.load(job_id)
+                if existing and not existing.state.is_terminal:
+                    log.debug(
+                        "Job %s already active (state=%s), skipping",
+                        job_id,
+                        existing.state,
+                    )
+                    skipped += 1
+                    continue
+
+            job_spec = JobSpec(
+                job_id=job_id,
+                export_name=export_name,
+                date_iso=d.isoformat(),
+                gee=GeeExportParams(
+                    spec_id=spec.spec_id,
+                    asset_id=spec.asset_id,
+                    bands=spec.band_names(),
+                    scale=spec.native_scale_m,
+                    crs=spec.crs,
+                    max_pixels=spec.max_pixels,
+                    region_geojson=region_geojson,
+                    drive_folder=drive_folder,
+                    tile_id=tile_id,
+                ),
+                sample=SampleParams(
+                    geometry_path=geometry_path,
+                    id_column=args.id_column,
+                    tile_id=tile_id,
+                ),
+                write=WriteParams(
+                    output_dir=str(Path(args.output_dir).resolve()) if args.output_dir else "",
+                    output_format=args.output_format,
+                    sinks=sinks,
+                    db_table=args.db_table,
+                ),
+            )
+            record = JobRecord(spec=job_spec)
+            store.save(record)
+            enqueued += 1
 
     print(f"Enqueued {enqueued} job(s), skipped {skipped}.")
 

@@ -146,7 +146,7 @@ def get_db_params() -> dict:
 
     * ``HYDROFETCH_DB_HOST``     – default ``"localhost"``
     * ``HYDROFETCH_DB_PORT``     – default ``5432``
-    * ``HYDROFETCH_DB_NAME``     – **required**
+    * ``HYDROFETCH_DB``     – **required**
     * ``HYDROFETCH_DB_USER``     – **required**
     * ``HYDROFETCH_DB_PASSWORD`` – **required**
 
@@ -156,7 +156,7 @@ def get_db_params() -> dict:
     """
     load_env()
 
-    dbname = _require("HYDROFETCH_DB_NAME")
+    dbname = _require("HYDROFETCH_DB")
     user = _require("HYDROFETCH_DB_USER")
     password = _require("HYDROFETCH_DB_PASSWORD")
 

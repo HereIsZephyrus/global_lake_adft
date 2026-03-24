@@ -1,0 +1,9 @@
+{
+  "tiles": [
+    {
+      "tile_id": "smoke",
+      "region_path": "smoke_region.geojson",
+      "geometry_path": "smoke_lakes_polygons.geojson"
+    }
+  ]
+}

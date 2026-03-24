@@ -35,6 +35,31 @@ def image_day_prefix(
     return f"{spec_id}_{d.year:04d}{d.month:02d}{d.day:02d}"
 
 
+def image_day_tile_prefix(
+    spec_id: str,
+    day: date | datetime | str,
+    tile_id: str,
+) -> str:
+    """Return ``<spec_id>_<YYYYMMDD>_<tile_id>`` for a tiled single-day image export.
+
+    Used in tile-manifest mode where multiple spatial tiles are exported per day.
+
+    Example: ``era5_land_daily_image_20200115_africa``
+
+    Args:
+        spec_id: Catalog spec identifier (safe string, no path separators).
+        day: The calendar date of the image.
+        tile_id: Tile/region identifier that distinguishes same-day exports.
+            Spaces are replaced with underscores.
+
+    Returns:
+        A string safe for use as ``fileNamePrefix`` and job identifier.
+    """
+    d = _parse_date(day)
+    safe = tile_id.replace(" ", "_")
+    return f"{spec_id}_{d.year:04d}{d.month:02d}{d.day:02d}_{safe}"
+
+
 def image_range_prefix(
     spec_id: str,
     start: date | datetime | str,
@@ -76,6 +101,7 @@ def iter_daily_date_range(
 
 __all__ = [
     "image_day_prefix",
+    "image_day_tile_prefix",
     "image_range_prefix",
     "iter_daily_date_range",
 ]

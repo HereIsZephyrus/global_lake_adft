@@ -5,7 +5,7 @@
 1. Exports daily ERA5-Land raster images from Google Earth Engine to Google Drive.
 2. Downloads the GeoTIFF files to local storage.
 3. Deletes the temporary Drive artefacts.
-4. Samples each raster at lake centroid locations to produce a compact lake-level forcing table.
+4. Samples each raster against lake polygon geometries to produce a compact lake-level forcing table.
 5. Writes the output as Parquet (or CSV) files.
 
 Each job is tracked with an explicit serialised state record so the pipeline can be
@@ -25,7 +25,7 @@ Hold → Export → Download → Cleanup → Sample → Write → Completed
 - **Export** – polls GEE until the task reaches `COMPLETED` or `FAILED`.
 - **Download** – locates the file on Google Drive and streams it locally.
 - **Cleanup** – deletes the Drive artefact and releases the concurrency slot.
-- **Sample** – reads the GeoTIFF and samples it at lake centroid coordinates.
+- **Sample** – reads the GeoTIFF and computes polygon-based zonal means for each lake.
 - **Write** – copies the sampled output to the configured output directory.
 
 ---
@@ -64,8 +64,7 @@ cp packages/hydrofetch/.env.example packages/hydrofetch/.env
 uv run --package hydrofetch hydrofetch era5 \
     --start 2020-01-01 \
     --end   2020-02-01 \
-    --region        region.geojson \
-    --geometry      lake_centroids.csv \
+    --tile-manifest continents.json \
     --output-dir    ./results \
     --run
 
@@ -92,15 +91,43 @@ uv run --package hydrofetch hydrofetch retry --job-id era5_land_daily_image_2020
 | `HYDROFETCH_SAMPLE_DIR` | `./hydrofetch_sample` | Sampled Parquet files |
 | `HYDROFETCH_MAX_CONCURRENT` | `5` | Max concurrent GEE tasks |
 | `HYDROFETCH_POLL_INTERVAL` | `15` | Seconds between status polls |
+| `ALTAS_DB` | *(optional)* | Atlas database used by the smoke fixture generator |
+| `HYDROFETCH_DB` | *(required for db sink)* | Hydrofetch target database; also reused as SERIES_DB for smoke fixtures |
+| `HYDROFETCH_DB_USER` | *(required for db sink)* | PostgreSQL user |
+| `HYDROFETCH_DB_PASSWORD` | *(required for db sink)* | PostgreSQL password |
+| `HYDROFETCH_DB_HOST` | `localhost` | PostgreSQL host |
+| `HYDROFETCH_DB_PORT` | `5432` | PostgreSQL port |
 
 ---
 
 ## Geometry file format
 
-The `--geometry` argument accepts:
+The `--geometry` argument accepts GeoJSON FeatureCollections of Polygon / MultiPolygon
+features with `hylak_id` in properties. Legacy point/CSV inputs are no longer the
+primary sampling path.
 
-- **CSV** with columns `hylak_id`, `lon`, `lat` (or a custom `--id-column`).
-- **GeoJSON** FeatureCollection of Point features with the id in properties.
+For tiled daily runs, prefer `--tile-manifest`, where each tile entry declares:
+
+- `tile_id`
+- `geometry_path`
+- `region_path` (optional; omit to export the full image footprint)
+
+## Smoke test
+
+Run the smoke script from `packages/hydrofetch/scripts/smoke/run_smoke.sh`.
+It first generates one source-of-truth lake dataset from:
+
+- `area_quality` in `HYDROFETCH_DB`
+- `LakeATLAS_v10_pol` in `ALTAS_DB`
+
+From that same lake set it derives:
+
+- `smoke_lakes_polygons.geojson` for zonal sampling
+- `smoke_region.geojson` for clipped export
+- `smoke_manifest.json` referencing both files
+
+By default it uses the first 10 `hylak_id` values and regenerates these
+artifacts on every run.
 
 ---
 
@@ -132,7 +159,7 @@ packages/hydrofetch/
 │   ├── gee/                 # Earth Engine initialisation
 │   ├── jobs/                # serialisable job models and JSON store
 │   ├── monitor/             # polling runner and concurrency throttle
-│   ├── sample/              # local raster point sampling
+│   ├── sample/              # local raster zonal sampling
 │   ├── state_machine/       # per-state handlers
 │   └── write/               # output writers (file, future: DB)
 └── tests/
