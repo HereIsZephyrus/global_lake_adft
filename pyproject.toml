@@ -1,0 +1,26 @@
+[project]
+name = "global-lake-adft-workspace"
+version = "0.1.0"
+description = "Monorepo workspace for hydrofetch and lakeanalysis"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/hydrofetch",
+    "packages/lakeanalysis",
+]
+
+[tool.uv.sources]
+hydrofetch = { workspace = true }
+lakeanalysis = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pylint>=4.0.5",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+]
