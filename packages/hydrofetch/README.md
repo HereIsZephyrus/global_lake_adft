@@ -1,168 +1,170 @@
 # hydrofetch
 
-**Hydrofetch** is a standalone CLI pipeline that:
+`hydrofetch` 是本仓库的核心抓取 CLI，负责把 ERA5-Land 影像从 Google Earth Engine 导出到 Google Drive，再下载、采样并写出为本地文件或数据库结果。
 
-1. Exports daily ERA5-Land raster images from Google Earth Engine to Google Drive.
-2. Downloads the GeoTIFF files to local storage.
-3. Deletes the temporary Drive artefacts.
-4. Samples each raster against lake polygon geometries to produce a compact lake-level forcing table.
-5. Writes the output as Parquet (or CSV) files.
+每个任务都会持久化状态，因此中断后可以继续恢复，不必从头重跑。
 
-Each job is tracked with an explicit serialised state record so the pipeline can be
-stopped and resumed at any stage without re-running completed steps.
+## 状态机
 
----
-
-## State machine
-
-```
+```text
 Hold → Export → Download → Cleanup → Sample → Write → Completed
                                                  ↑
                                            Failed (max retries)
 ```
 
-- **Hold** – waits for a concurrency slot, then submits the GEE export task.
-- **Export** – polls GEE until the task reaches `COMPLETED` or `FAILED`.
-- **Download** – locates the file on Google Drive and streams it locally.
-- **Cleanup** – deletes the Drive artefact and releases the concurrency slot.
-- **Sample** – reads the GeoTIFF and computes polygon-based zonal means for each lake.
-- **Write** – copies the sampled output to the configured output directory.
+## 快速开始
 
----
+以下命令默认在 monorepo 根目录执行。
 
-## Quick start
-
-Run the following commands from the monorepo root.
-
-### 1. Install
+### 1. 安装
 
 ```bash
 uv sync --package hydrofetch --group dev
 ```
 
-### 2. Authenticate
-
-```bash
-# Authenticate with Earth Engine (once per machine)
-earthengine authenticate
-
-# First run of hydrofetch triggers a browser OAuth flow for Drive access
-# and saves the token automatically.
-```
-
-### 3. Configure
+### 2. 配置
 
 ```bash
 cp packages/hydrofetch/.env.example packages/hydrofetch/.env
-# Edit packages/hydrofetch/.env: set HYDROFETCH_GEE_PROJECT, HYDROFETCH_CREDENTIALS_FILE, etc.
 ```
 
-### 4. Run
+至少要填写：
 
 ```bash
-# Enqueue jobs for Jan 2020 and immediately start the monitor loop
-uv run --package hydrofetch hydrofetch era5 \
-    --start 2020-01-01 \
-    --end   2020-02-01 \
-    --tile-manifest continents.json \
-    --output-dir    ./results \
-    --run
+HYDROFETCH_GEE_PROJECT=your-gee-project-id
+HYDROFETCH_CREDENTIALS_FILE=~/.hydrofetch/credentials.json
+HYDROFETCH_TOKEN_FILE=~/.hydrofetch/token.json
+```
 
-# Check status without running
+### 3. 认证
+
+```bash
+earthengine authenticate
+uv run --package hydrofetch hydrofetch auth
+```
+
+其中：
+
+- `earthengine authenticate` 负责 Earth Engine 认证。
+- `hydrofetch auth` 会读取 `HYDROFETCH_CREDENTIALS_FILE`，启动 Google Drive OAuth 浏览器流程，并把 token 保存到 `HYDROFETCH_TOKEN_FILE`。
+
+### 4. 启动任务
+
+```bash
+uv run --package hydrofetch hydrofetch era5 \
+  --start 2020-01-01 \
+  --end 2020-02-01 \
+  --tile-manifest data/continents/continents_manifest.json \
+  --output-dir ./results \
+  --run
+```
+
+常用命令：
+
+```bash
 uv run --package hydrofetch hydrofetch status
 uv run --package hydrofetch hydrofetch status --verbose
-
-# Re-try a failed job
 uv run --package hydrofetch hydrofetch retry --job-id era5_land_daily_image_20200115
 ```
 
----
+## 如何验证
 
-## Environment variables
+### 验证认证与连通性
 
-| Variable | Default | Description |
+```bash
+uv run --package hydrofetch python packages/hydrofetch/scripts/check_google_connectivity.py
+```
+
+如果只检查某一侧：
+
+```bash
+uv run --package hydrofetch python packages/hydrofetch/scripts/check_google_connectivity.py --skip-drive
+uv run --package hydrofetch python packages/hydrofetch/scripts/check_google_connectivity.py --skip-gee
+```
+
+### 验证代码质量
+
+```bash
+uv run --package hydrofetch pytest packages/hydrofetch/tests
+uv run --package hydrofetch pylint packages/hydrofetch/src/hydrofetch
+```
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
 |---|---|---|
-| `HYDROFETCH_GEE_PROJECT` | *(required)* | GEE cloud project ID |
-| `HYDROFETCH_CREDENTIALS_FILE` | *(required)* | Path to OAuth client-secrets JSON |
-| `HYDROFETCH_TOKEN_FILE` | `~/.hydrofetch/token.json` | Saved OAuth token |
-| `HYDROFETCH_DRIVE_FOLDER_NAME` | *(root)* | Drive folder for GEE exports |
-| `HYDROFETCH_JOB_DIR` | `./hydrofetch_jobs` | Serialised job records |
-| `HYDROFETCH_RAW_DIR` | `./hydrofetch_raw` | Downloaded GeoTIFF files |
-| `HYDROFETCH_SAMPLE_DIR` | `./hydrofetch_sample` | Sampled Parquet files |
-| `HYDROFETCH_MAX_CONCURRENT` | `5` | Max concurrent GEE tasks |
-| `HYDROFETCH_POLL_INTERVAL` | `15` | Seconds between status polls |
-| `ALTAS_DB` | *(optional)* | Atlas database used by the smoke fixture generator |
-| `HYDROFETCH_DB` | *(required for db sink)* | Hydrofetch target database; also reused as SERIES_DB for smoke fixtures |
-| `HYDROFETCH_DB_USER` | *(required for db sink)* | PostgreSQL user |
-| `HYDROFETCH_DB_PASSWORD` | *(required for db sink)* | PostgreSQL password |
-| `HYDROFETCH_DB_HOST` | `localhost` | PostgreSQL host |
-| `HYDROFETCH_DB_PORT` | `5432` | PostgreSQL port |
+| `HYDROFETCH_GEE_PROJECT` | 必填 | GEE Cloud Project ID |
+| `HYDROFETCH_CREDENTIALS_FILE` | 必填 | Google OAuth client secret JSON 路径 |
+| `HYDROFETCH_TOKEN_FILE` | `~/.hydrofetch/token.json` | Drive OAuth token 保存路径 |
+| `HYDROFETCH_DRIVE_FOLDER_NAME` | 根目录 | GEE 导出到 Drive 的目录名 |
+| `HYDROFETCH_JOB_DIR` | `./hydrofetch_jobs` | 任务 JSON 目录 |
+| `HYDROFETCH_RAW_DIR` | `./hydrofetch_raw` | 原始 GeoTIFF 目录 |
+| `HYDROFETCH_SAMPLE_DIR` | `./hydrofetch_sample` | 采样结果目录 |
+| `HYDROFETCH_MAX_CONCURRENT` | `5` | 最大并发 GEE 导出数 |
+| `HYDROFETCH_POLL_INTERVAL` | `15` | 任务轮询间隔，单位秒 |
+| `HYDROFETCH_DB` | 可选 | `db` sink 使用的目标数据库 |
+| `HYDROFETCH_DB_USER` | 可选 | PostgreSQL 用户名 |
+| `HYDROFETCH_DB_PASSWORD` | 可选 | PostgreSQL 密码 |
+| `HYDROFETCH_DB_HOST` | `localhost` | PostgreSQL 主机 |
+| `HYDROFETCH_DB_PORT` | `5432` | PostgreSQL 端口 |
+| `ALTAS_DB` | 可选 | smoke fixture 生成时读取 LakeATLAS 的数据库 |
 
----
+## 几何与 tile manifest
 
-## Geometry file format
-
-The `--geometry` argument accepts GeoJSON FeatureCollections of Polygon / MultiPolygon
-features with `hylak_id` in properties. Legacy point/CSV inputs are no longer the
-primary sampling path.
-
-For tiled daily runs, prefer `--tile-manifest`, where each tile entry declares:
+推荐使用 `--tile-manifest` 驱动分 tile 运行。manifest 中每个条目通常包含：
 
 - `tile_id`
 - `geometry_path`
-- `region_path` (optional; omit to export the full image footprint)
+- `region_path`
 
-## Smoke test
+其中 `geometry_path` 对应采样湖泊集合，`region_path` 用于限制导出范围。
 
-Run the smoke script from `packages/hydrofetch/scripts/smoke/run_smoke.sh`.
-It first generates one source-of-truth lake dataset from:
+## Smoke 测试
 
-- `area_quality` in `HYDROFETCH_DB`
-- `LakeATLAS_v10_pol` in `ALTAS_DB`
+```bash
+bash packages/hydrofetch/scripts/smoke/run_smoke.sh
+```
 
-From that same lake set it derives:
+这个脚本会基于数据库生成一套最小湖泊样本，并验证 manifest 展开、导出、采样和写出链路。
 
-- `smoke_lakes_polygons.geojson` as the source-of-truth lake set
-- `tiles/<tile_id>_lakes.geojson` for per-tile zonal sampling
-- `tiles/<tile_id>_region.geojson` for per-tile clipped export
-- `smoke_manifest.json` referencing the derived tile files
+## 恢复机制
 
-By default it uses the first 10 `hylak_id` values and regenerates these
-artifacts on every run. The smoke run therefore exercises the same manifest /
-tile expansion logic as regular tiled production runs.
+任务记录以 `<job_dir>/<job_id>.json` 形式原子写入。进程重启后会重新加载未完成任务，并继续：
 
----
+1. 读取非终态任务。
+2. 恢复并发槽位占用。
+3. 对 `Export` 任务重新轮询 GEE `task_id`。
+4. 对 `Download` 任务检查本地文件是否已存在。
 
-## Recovery after restart
+各状态处理器均为幂等设计。
 
-Job records are written atomically as `<job_dir>/<job_id>.json`.  On restart the
-runner:
-
-1. Loads all non-terminal records.
-2. Initialises the concurrency throttle with the count of already-active jobs.
-3. For `Export`-state records, polls GEE using the stored `task_id`.
-4. For `Download`-state records, checks whether the local file already exists.
-
-All state handlers are idempotent – re-running them on an already-completed step
-is safe.
-
----
-
-## Project layout
+## 项目结构
 
 ```text
 packages/hydrofetch/
 ├── src/hydrofetch/
-│   ├── cli.py               # argparse CLI entry point
-│   ├── config.py            # environment config loading
-│   ├── catalog/             # JSON image-export spec loader
-│   ├── drive/               # Google Drive v3 client
-│   ├── export/              # GEE export task creation and naming
-│   ├── gee/                 # Earth Engine initialisation
-│   ├── jobs/                # serialisable job models and JSON store
-│   ├── monitor/             # polling runner and concurrency throttle
-│   ├── sample/              # local raster zonal sampling
-│   ├── state_machine/       # per-state handlers
-│   └── write/               # output writers (file, future: DB)
+│   ├── cli.py
+│   ├── config.py
+│   ├── catalog/
+│   ├── drive/
+│   ├── export/
+│   ├── gee/
+│   ├── jobs/
+│   ├── monitor/
+│   ├── sample/
+│   ├── state_machine/
+│   └── write/
+├── scripts/
 └── tests/
 ```
+
+## 与 Dashboard 的关系
+
+如果通过 Dashboard 启动项目，后端会为每个项目单独设置：
+
+- `HYDROFETCH_JOB_DIR`
+- `HYDROFETCH_RAW_DIR`
+- `HYDROFETCH_SAMPLE_DIR`
+- `HYDROFETCH_TOKEN_FILE`
+
+因此同一台机器上可以并行维护多个采集项目，而不互相覆盖运行目录。
