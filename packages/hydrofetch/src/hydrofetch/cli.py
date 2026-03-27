@@ -22,10 +22,11 @@ Usage examples::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -168,6 +169,11 @@ def _add_era5_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disabl
         "--dry-run",
         action="store_true",
         help="Print what would be enqueued without creating job files.",
+    )
+    p.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Reset all FAILED jobs in the job dir to HOLD before enqueueing/running.",
     )
 
 
@@ -349,6 +355,10 @@ def _cmd_era5(args: argparse.Namespace) -> None:
     store = JobStore(job_dir)
     drive_folder = get_drive_folder_name()
 
+    reset_count = 0
+    if args.retry_failed and not args.dry_run:
+        reset_count = _reset_failed_jobs(store)
+
     dates = list(iter_daily_date_range(args.start, args.end))
     if not dates:
         print("No dates in range; nothing to enqueue.", file=sys.stderr)
@@ -423,6 +433,8 @@ def _cmd_era5(args: argparse.Namespace) -> None:
             enqueued += 1
 
     print(f"Enqueued {enqueued} job(s), skipped {skipped}.")
+    if args.retry_failed and not args.dry_run:
+        print(f"Reset {reset_count} failed job(s) to HOLD.")
 
     if args.run and not args.dry_run:
         init_earth_engine()
@@ -455,8 +467,6 @@ def _cmd_status(args: argparse.Namespace) -> None:
 
 
 def _cmd_retry(args: argparse.Namespace) -> None:
-    import dataclasses  # pylint: disable=import-outside-toplevel
-
     from hydrofetch.config import get_job_dir  # pylint: disable=import-outside-toplevel
     from hydrofetch.jobs.models import JobState  # pylint: disable=import-outside-toplevel
     from hydrofetch.jobs.store import JobStore  # pylint: disable=import-outside-toplevel
@@ -472,15 +482,35 @@ def _cmd_retry(args: argparse.Namespace) -> None:
             f"Job {args.job_id} is in state {record.state.value}, not FAILED. Nothing to do."
         )
         return
-    reset = dataclasses.replace(
+    reset = _reset_failed_record(record)
+    store.save(reset)
+    print(f"Reset job {args.job_id} to HOLD.")
+
+
+def _reset_failed_record(record):
+    from hydrofetch.jobs.models import JobState  # pylint: disable=import-outside-toplevel
+
+    return dataclasses.replace(
         record,
         state=JobState.HOLD,
+        attempt=0,
         last_error=None,
         task_id=None,
         drive_file_id=None,
+        updated_at=datetime.now(tz=timezone.utc).isoformat(),
     )
-    store.save(reset)
-    print(f"Reset job {args.job_id} to HOLD.")
+
+
+def _reset_failed_jobs(store) -> int:
+    from hydrofetch.jobs.models import JobState  # pylint: disable=import-outside-toplevel
+
+    reset_count = 0
+    for record in store.load_all():
+        if record.state != JobState.FAILED:
+            continue
+        store.save(_reset_failed_record(record))
+        reset_count += 1
+    return reset_count
 
 
 # ---------------------------------------------------------------------------

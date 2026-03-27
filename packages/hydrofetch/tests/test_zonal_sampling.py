@@ -158,6 +158,24 @@ class TestZonalSampling:
         assert df.iloc[0]["date"] == "2020-01-01"
         assert math.isclose(df.iloc[0]["band_1"], 10.0, abs_tol=1e-5)
 
+    def test_subpixel_lake_falls_back_to_representative_pixel(self, tmp_path):
+        """A tiny lake should still use the containing raster pixel value."""
+        import rasterio.transform
+
+        transform = rasterio.transform.from_bounds(0, 0, 2, 2, 2, 2)
+        data = np.array([[[10.0, 20.0], [30.0, 40.0]]])  # 1 band, 2x2 raster
+
+        tif = tmp_path / "era5.tif"
+        _write_geotiff(tif, data, transform)
+
+        # Tiny lake fully inside the top-left pixel; rounded window collapses to 0x0.
+        gj = tmp_path / "tiny_lake.geojson"
+        _write_geojson(gj, [_make_polygon_feature(1, 0.10, 1.10, 0.20, 1.20)])
+
+        df = sample_raster_by_polygons_weighted(tif, gj, "hylak_id", "2020-01-01")
+        assert len(df) == 1
+        assert math.isclose(df.iloc[0]["band_1"], 10.0, abs_tol=1e-5)
+
     def test_lake_spanning_two_pixels_weighted(self, tmp_path):
         """A lake covering 25% of pixel A and 75% of pixel B → weighted mean."""
         import rasterio.transform

@@ -15,7 +15,9 @@ For each lake polygon the algorithm:
 This is more robust than centroid sampling for ERA5-Land (≈ 0.1° / 11 km
 pixels) where many lakes are smaller than a single pixel, and avoids the
 instability of centroid-to-pixel snapping when centroids sit near pixel
-edges.
+edges.  When a lake is smaller than a single pixel and the rounded window
+collapses to zero size, the implementation falls back to the
+representative-point pixel value instead of returning ``NaN``.
 """
 
 from __future__ import annotations
@@ -115,9 +117,10 @@ def sample_raster_by_polygons_weighted(
     area with the lake polygon.  The result is the area-weighted mean of valid
     (non-nodata) pixels for every band.
 
-    Lakes whose bounding box falls entirely outside the raster or whose
-    polygon intersects no raster pixels (zero total weight) return ``NaN``
-    for all bands.
+    Lakes whose bounding box falls entirely outside the raster return ``NaN``
+    for all bands.  Lakes that are smaller than one rounded pixel or otherwise
+    produce zero overlap weight fall back to the value of the raster pixel
+    containing the polygon's representative point.
 
     Args:
         raster_path: Path to a single-date ERA5 GeoTIFF (one band per variable).
@@ -174,39 +177,34 @@ def sample_raster_by_polygons_weighted(
             )
             # Round to whole pixels and clamp to raster extent.
             window = raw_window.round_lengths().round_offsets()
-            # #region agent log H_A/H_C: capture rounded window before intersection
-            import json as _json, time as _time  # noqa: E401
-            _dbg_rounded = {"col_off": window.col_off, "row_off": window.row_off, "width": window.width, "height": window.height}
-            _dbg_pre_zero = window.width <= 0 or window.height <= 0
-            open("/mnt/repo/lake/global_lake_adft/.cursor/debug-6b34d8.log", "a").write(
-                _json.dumps({"sessionId": "6b34d8", "hypothesisId": "H_A_H_C", "location": "raster.py:pre_intersection",
-                    "message": "rounded window before intersection", "timestamp": int(_time.time() * 1000),
-                    "data": {"lake_id": lake_id, "rounded_window": _dbg_rounded, "already_zero_before_intersection": _dbg_pre_zero,
-                             "geom_bounds": [minx, miny, maxx, maxy], "raster_bounds": [raster_bounds.left, raster_bounds.bottom, raster_bounds.right, raster_bounds.top],
-                             "raster_wh": [src.width, src.height]}}) + "\n")
-            # #endregion
-            try:
-                window = window.intersection(
-                    rasterio.windows.Window(0, 0, src.width, src.height)
+            # Sub-pixel lake: use the representative-point pixel as a fallback
+            # before calling intersection(), which raises on zero-size windows.
+            if window.width <= 0 or window.height <= 0:
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
                 )
-            except Exception as _intersection_exc:
-                # #region agent log H_A/H_C: intersection raised exception
-                open("/mnt/repo/lake/global_lake_adft/.cursor/debug-6b34d8.log", "a").write(
-                    _json.dumps({"sessionId": "6b34d8", "hypothesisId": "H_A_H_C", "location": "raster.py:intersection_exc",
-                        "message": "intersection raised exception", "timestamp": int(_time.time() * 1000),
-                        "data": {"lake_id": lake_id, "rounded_window": _dbg_rounded, "already_zero": _dbg_pre_zero,
-                                 "exc_type": type(_intersection_exc).__name__, "exc_msg": str(_intersection_exc)}}) + "\n")
-                # #endregion
-                for name in band_names:
-                    entry[name] = np.nan
                 records.append(entry)
                 continue
+            window = window.intersection(
+                rasterio.windows.Window(0, 0, src.width, src.height)
+            )
 
             win_w = int(window.width)
             win_h = int(window.height)
             if win_w <= 0 or win_h <= 0:
-                for name in band_names:
-                    entry[name] = np.nan
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
+                )
                 records.append(entry)
                 continue
 
@@ -222,8 +220,14 @@ def sample_raster_by_polygons_weighted(
 
             total_weight = float(weights.sum())
             if total_weight == 0.0:
-                for name in band_names:
-                    entry[name] = np.nan
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
+                )
             else:
                 for band_idx, name in enumerate(band_names):
                     band_data = data[band_idx]
@@ -246,6 +250,38 @@ def sample_raster_by_polygons_weighted(
         date_iso,
     )
     return result
+
+
+def _sample_representative_pixel_values(
+    src,
+    geom,
+    band_names: list[str],
+    nodata: float | None,
+) -> dict[str, float]:
+    """Return single-pixel values at the polygon representative point.
+
+    This is a fallback for sub-pixel lakes and other edge cases where the
+    rounded zonal window carries no area.
+    """
+    import rasterio.windows  # pylint: disable=import-outside-toplevel
+
+    point = geom.representative_point()
+    try:
+        row, col = src.index(point.x, point.y)
+    except Exception:  # pylint: disable=broad-except
+        return {name: np.nan for name in band_names}
+
+    if row < 0 or row >= src.height or col < 0 or col >= src.width:
+        return {name: np.nan for name in band_names}
+
+    data = src.read(window=rasterio.windows.Window(col, row, 1, 1)).astype(float)
+    if nodata is not None:
+        data[data == nodata] = np.nan
+
+    return {
+        name: float(data[band_idx, 0, 0]) if not np.isnan(data[band_idx, 0, 0]) else np.nan
+        for band_idx, name in enumerate(band_names)
+    }
 
 
 def _compute_weights(

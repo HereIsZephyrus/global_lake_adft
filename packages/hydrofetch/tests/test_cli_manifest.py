@@ -8,6 +8,15 @@ from pathlib import Path
 import pytest
 
 from hydrofetch.cli import main
+from hydrofetch.jobs.models import (
+    GeeExportParams,
+    JobRecord,
+    JobSpec,
+    JobState,
+    SampleParams,
+    WriteParams,
+)
+from hydrofetch.jobs.store import JobStore
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +53,27 @@ def _simple_region_geojson() -> dict:
             "coordinates": [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]],
         },
     }
+
+
+def _make_record(job_id: str, date_iso: str = "2020-01-01") -> JobRecord:
+    spec = JobSpec(
+        job_id=job_id,
+        export_name=job_id,
+        date_iso=date_iso,
+        gee=GeeExportParams(
+            spec_id="era5_land_daily_image",
+            asset_id="ECMWF/ERA5_LAND/DAILY_AGGR",
+            bands=["temperature_2m"],
+            scale=11132.0,
+            crs="EPSG:4326",
+            max_pixels=10**13,
+            region_geojson=_simple_region_geojson(),
+            tile_id="test",
+        ),
+        sample=SampleParams(geometry_path="/tmp/lakes.geojson", id_column="hylak_id", tile_id="test"),
+        write=WriteParams(output_dir="", sinks=["db"], db_table="era5_forcing"),
+    )
+    return JobRecord(spec=spec)
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +170,7 @@ class TestTileManifestEnqueue:
             "--sink", "db",
         ])
 
-        import json as _json
-        record_dict = _json.loads(next(job_dir.glob("*.json")).read_text())
+        record_dict = json.loads(next(job_dir.glob("*.json")).read_text())
         assert record_dict["spec"]["gee"]["region_geojson"] is None
 
     def test_dry_run_does_not_create_files(self, tmp_path, capsys):
@@ -168,6 +197,60 @@ class TestTileManifestEnqueue:
         captured = capsys.readouterr()
         assert "[dry-run]" in captured.out
         assert "test" in captured.out
+
+    def test_retry_failed_resets_all_failed_jobs_to_hold(self, tmp_path, capsys):
+        tile_dir = tmp_path / "tiles"
+        tile_dir.mkdir()
+        _write_geojson(tile_dir / "lakes.geojson", _simple_polygon_geojson())
+        manifest = {"tiles": [{"tile_id": "test", "geometry_path": "lakes.geojson"}]}
+        manifest_path = tile_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        job_dir = tmp_path / "jobs"
+        store = JobStore(job_dir)
+
+        in_range_failed = _make_record("era5_land_daily_image_20200101_test").fail("tls")
+        in_range_failed = in_range_failed.fail("tls").fail("tls")
+        out_of_range_failed = _make_record("era5_land_daily_image_20191231_test", "2019-12-31").fail("tls")
+        out_of_range_failed = out_of_range_failed.fail("tls").fail("tls")
+        completed = _make_record("era5_land_daily_image_20200102_test", "2020-01-02").advance(
+            JobState.COMPLETED
+        )
+        store.save(in_range_failed)
+        store.save(out_of_range_failed)
+        store.save(completed)
+
+        main([
+            "--job-dir", str(job_dir),
+            "era5",
+            "--start", "2020-01-01",
+            "--end", "2020-01-02",
+            "--tile-manifest", str(manifest_path),
+            "--sink", "db",
+            "--retry-failed",
+        ])
+
+        captured = capsys.readouterr()
+        assert "Reset 2 failed job(s) to HOLD." in captured.out
+
+        refreshed_in_range = store.load("era5_land_daily_image_20200101_test")
+        refreshed_out_of_range = store.load("era5_land_daily_image_20191231_test")
+        refreshed_completed = store.load("era5_land_daily_image_20200102_test")
+
+        assert refreshed_in_range is not None
+        assert refreshed_in_range.state == JobState.HOLD
+        assert refreshed_in_range.attempt == 0
+        assert refreshed_in_range.last_error is None
+
+        assert refreshed_out_of_range is not None
+        assert refreshed_out_of_range.state == JobState.HOLD
+        assert refreshed_out_of_range.attempt == 0
+        assert refreshed_out_of_range.last_error is None
+
+        assert refreshed_completed is not None
+        assert refreshed_completed.state == JobState.COMPLETED
+
+        assert all(record.state != JobState.FAILED for record in store.load_all())
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +316,7 @@ class TestLegacySingleTile:
             "--sink", "db",
         ])
 
-        import json as _json
-        record_dict = _json.loads(next(job_dir.glob("*.json")).read_text())
+        record_dict = json.loads(next(job_dir.glob("*.json")).read_text())
         assert record_dict["spec"]["gee"]["region_geojson"] is not None
 
     def test_geometry_and_tile_manifest_mutually_exclusive(self, tmp_path):
@@ -252,3 +334,27 @@ class TestLegacySingleTile:
                 "--tile-manifest", str(mf),
                 "--sink", "db",
             ])
+
+
+class TestRetryCommand:
+    def test_retry_resets_attempt_to_zero(self, tmp_path, capsys):
+        job_dir = tmp_path / "jobs"
+        store = JobStore(job_dir)
+        failed = _make_record("era5_land_daily_image_20200103_test", "2020-01-03").fail("tls")
+        failed = failed.fail("tls").fail("tls")
+        store.save(failed)
+
+        main([
+            "--job-dir", str(job_dir),
+            "retry",
+            "--job-id", "era5_land_daily_image_20200103_test",
+        ])
+
+        captured = capsys.readouterr()
+        assert "Reset job era5_land_daily_image_20200103_test to HOLD." in captured.out
+
+        refreshed = store.load("era5_land_daily_image_20200103_test")
+        assert refreshed is not None
+        assert refreshed.state == JobState.HOLD
+        assert refreshed.attempt == 0
+        assert refreshed.last_error is None
