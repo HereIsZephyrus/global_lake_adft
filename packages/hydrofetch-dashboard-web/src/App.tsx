@@ -2,14 +2,12 @@ import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import Overview from './pages/Overview'
 import Failures from './pages/Failures'
 import Jobs from './pages/Jobs'
-import Ingest from './pages/Ingest'
 import Alerts from './pages/Alerts'
 
 const NAV_ITEMS = [
   { path: '/', label: '总览' },
   { path: '/failures', label: '失败诊断' },
   { path: '/jobs', label: '任务明细' },
-  { path: '/ingest', label: '入库进度' },
   { path: '/alerts', label: '运行告警' },
 ]
 
@@ -53,7 +51,6 @@ export default function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/failures" element={<Failures />} />
             <Route path="/jobs" element={<Jobs />} />
-            <Route path="/ingest" element={<Ingest />} />
             <Route path="/alerts" element={<Alerts />} />
           </Routes>
         </main>

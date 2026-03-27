@@ -7,9 +7,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 _REPO_ROOT = Path(__file__).resolve().parents[4]
+
+# Load hydrofetch's .env as the primary config source
+load_dotenv(_REPO_ROOT / "packages" / "hydrofetch" / ".env")
 
 
 def _path_env(key: str, default: Path) -> Path:

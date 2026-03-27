@@ -87,6 +87,11 @@ def ingest():
     return db_src.load_ingest_stats(config.DB_TABLE)
 
 
+@router.get("/db-size")
+def db_size():
+    return db_src.load_db_size(table_names=[config.DB_TABLE])
+
+
 @router.get("/alerts")
 def alerts_route():
     return svc.alerts(_jobs_df())

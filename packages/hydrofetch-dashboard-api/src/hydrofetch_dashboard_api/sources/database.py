@@ -30,8 +30,10 @@ def _get_conn_params() -> dict:
     Supports both HYDROFETCH_DB_* and DASHBOARD_DB_* prefixes, in that order.
     """
     from dotenv import load_dotenv  # pylint: disable=import-outside-toplevel
+    from pathlib import Path  # pylint: disable=import-outside-toplevel
 
-    load_dotenv()
+    _env_file = Path(__file__).resolve().parents[7] / "packages" / "hydrofetch" / ".env"
+    load_dotenv(_env_file)
 
     def _env(*keys: str) -> str | None:
         for k in keys:
@@ -148,4 +150,90 @@ def load_ingest_stats(
         )
 
 
-__all__ = ["DBIngestStats", "load_ingest_stats"]
+@dataclass
+class DBSizeStats:
+    available: bool
+    message: str
+    db_name: str = ""
+    db_size_bytes: int = 0
+    db_size_pretty: str = ""
+    tables: list[dict] = field(default_factory=list)
+
+
+def load_db_size(table_names: list[str] | None = None) -> DBSizeStats:
+    """Query database total size and per-table sizes from PostgreSQL."""
+
+    try:
+        with _connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT current_database(),
+                           pg_database_size(current_database()),
+                           pg_size_pretty(pg_database_size(current_database()))
+                    """
+                )
+                db_name, db_size_bytes, db_size_pretty = cur.fetchone()
+
+                cur.execute(
+                    """
+                    SELECT
+                        relname AS table_name,
+                        pg_total_relation_size(relid) AS total_bytes,
+                        pg_size_pretty(pg_total_relation_size(relid)) AS total_pretty,
+                        pg_relation_size(relid) AS data_bytes,
+                        pg_size_pretty(pg_relation_size(relid)) AS data_pretty,
+                        pg_total_relation_size(relid) - pg_relation_size(relid) AS index_bytes,
+                        pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_pretty
+                    FROM pg_stat_user_tables
+                    WHERE schemaname = 'public'
+                    ORDER BY total_bytes DESC
+                    LIMIT 20
+                    """
+                )
+                all_tables = [
+                    {
+                        "table_name": r[0],
+                        "total_bytes": r[1],
+                        "total_pretty": r[2],
+                        "data_bytes": r[3],
+                        "data_pretty": r[4],
+                        "index_bytes": r[5],
+                        "index_pretty": r[6],
+                    }
+                    for r in cur.fetchall()
+                ]
+
+                if table_names:
+                    name_set = set(table_names)
+                    tables = [t for t in all_tables if t["table_name"] in name_set]
+                    for name in table_names:
+                        if not any(t["table_name"] == name for t in tables):
+                            tables.append({
+                                "table_name": name,
+                                "total_bytes": 0,
+                                "total_pretty": "0 bytes",
+                                "data_bytes": 0,
+                                "data_pretty": "0 bytes",
+                                "index_bytes": 0,
+                                "index_pretty": "0 bytes",
+                            })
+                else:
+                    tables = all_tables
+
+        return DBSizeStats(
+            available=True,
+            message="ok",
+            db_name=db_name,
+            db_size_bytes=int(db_size_bytes or 0),
+            db_size_pretty=db_size_pretty or "",
+            tables=tables,
+        )
+    except Exception as exc:
+        return DBSizeStats(
+            available=False,
+            message=f"数据库不可用: {exc}",
+        )
+
+
+__all__ = ["DBIngestStats", "DBSizeStats", "load_db_size", "load_ingest_stats"]

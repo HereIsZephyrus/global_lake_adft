@@ -72,6 +72,23 @@ export interface AlertRetry { job_id: string | null; state: string; tile_id: str
 export interface Alerts { stalled: AlertStalled[]; high_retry: AlertRetry[]; write_waiting: object[] }
 export interface LogEntry { timestamp: string; level: string; logger: string; message: string; log_file: string }
 export interface LogsResult { errors: LogEntry[]; warnings: LogEntry[]; writes: LogEntry[] }
+export interface TableSizeRow {
+  table_name: string
+  total_bytes: number
+  total_pretty: string
+  data_bytes: number
+  data_pretty: string
+  index_bytes: number
+  index_pretty: string
+}
+export interface DBSizeStats {
+  available: boolean
+  message: string
+  db_name: string
+  db_size_bytes: number
+  db_size_pretty: string
+  tables: TableSizeRow[]
+}
 
 export const api = {
   overview: () => get<KPIs>('/overview'),
@@ -90,6 +107,7 @@ export const api = {
     return get<JobsPage>(`/jobs${q.toString() ? '?' + q : ''}`)
   },
   ingest: () => get<IngestStats>('/ingest'),
+  dbSize: () => get<DBSizeStats>('/db-size'),
   alerts: () => get<Alerts>('/alerts'),
   logs: () => get<LogsResult>('/logs'),
 }

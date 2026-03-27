@@ -12,6 +12,7 @@ const INTERVALS: Record<string, number> = {
   failures: 15_000,
   jobs: 0,
   ingest: 60_000,
+  dbSize: 60_000,
   alerts: 15_000,
   logs: 30_000,
 }
@@ -51,4 +52,11 @@ export function useIngest() {
 
 export function useLogs() {
   return useApiData('logs', api.logs)
+}
+
+export function useDbSize() {
+  return useSWR('dbSize', api.dbSize, {
+    refreshInterval: 60_000,
+    revalidateOnFocus: false,
+  })
 }
