@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from hydrofetch.export.namer import image_day_prefix, image_range_prefix, iter_daily_date_range
+from hydrofetch.export.namer import (
+    image_day_prefix,
+    image_day_tile_prefix,
+    image_range_prefix,
+    iter_daily_date_range,
+)
 
 
 class TestImageDayPrefix:
@@ -21,6 +26,21 @@ class TestImageRangePrefix:
     def test_basic(self):
         result = image_range_prefix("era5", date(2020, 1, 1), date(2020, 2, 1))
         assert result == "era5_20200101_20200201"
+
+
+class TestImageDayTilePrefix:
+    def test_basic(self):
+        assert image_day_tile_prefix("era5_land_daily_image", date(2020, 1, 15), "africa") == (
+            "era5_land_daily_image_20200115_africa"
+        )
+
+    def test_space_replaced_by_underscore(self):
+        assert image_day_tile_prefix("spec", "2021-06-01", "north america") == (
+            "spec_20210601_north_america"
+        )
+
+    def test_from_iso_string(self):
+        assert image_day_tile_prefix("era5", "2020-03-10", "europe") == "era5_20200310_europe"
 
 
 class TestIterDailyDateRange:

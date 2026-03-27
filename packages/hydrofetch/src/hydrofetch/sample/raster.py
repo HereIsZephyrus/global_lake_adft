@@ -1,14 +1,31 @@
-"""Point-based raster sampling for lake centroids.
+"""Polygon-based zonal raster sampling for lake forcing values.
 
-Reads a multi-band GeoTIFF and a lake centroid file (CSV or GeoJSON) and
-returns a :class:`~pandas.DataFrame` with one row per lake containing the
-pixel values at the lake centroid location and a ``date`` column.
+Reads a multi-band GeoTIFF and a lake polygon GeoJSON file and returns a
+:class:`~pandas.DataFrame` with one row per lake containing the
+**area-weighted mean** pixel value for each band.
+
+For each lake polygon the algorithm:
+
+1. Derives the pixel window that covers the polygon bounding box.
+2. For every pixel in that window computes the intersection area between
+   the pixel box and the lake polygon (using Shapely).
+3. Returns ``sum(pixel_value * intersection_area) / sum(intersection_area)``
+   for each band as the representative lake forcing value.
+
+This is more robust than centroid sampling for ERA5-Land (≈ 0.1° / 11 km
+pixels) where many lakes are smaller than a single pixel, and avoids the
+instability of centroid-to-pixel snapping when centroids sit near pixel
+edges.  When a lake is smaller than a single pixel and the rounded window
+collapses to zero size, the implementation falls back to the
+representative-point pixel value instead of returning ``NaN``.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,152 +38,291 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def load_centroids(path: Path, id_column: str = "hylak_id") -> pd.DataFrame:
-    """Return a DataFrame with ``[id_column, lon, lat]`` from *path*.
+def load_polygons(
+    path: Path,
+    id_column: str = "hylak_id",
+) -> pd.DataFrame:
+    """Return a DataFrame with ``[id_column, geometry]`` from a GeoJSON file.
 
-    Supports:
-    - CSV with columns ``[id_column, lon, lat]``
-    - GeoJSON FeatureCollection with Point geometry (id_column in properties)
+    Only Polygon and MultiPolygon features are loaded; Point features are
+    silently skipped.
 
     Args:
-        path: Path to a CSV or ``.geojson`` / ``.json`` file.
-        id_column: Name of the lake identifier column.
+        path: Path to a GeoJSON FeatureCollection.
+        id_column: Name of the lake identifier property in each Feature.
 
     Returns:
-        DataFrame with columns ``[id_column, "lon", "lat"]``.
+        DataFrame with columns ``[id_column, "geometry"]`` where ``geometry``
+        is a :class:`shapely.geometry.base.BaseGeometry`.
 
     Raises:
-        ValueError: On unsupported format or missing columns.
+        ValueError: If the file contains no eligible features.
     """
-    suffix = path.suffix.lower()
+    from shapely import make_valid  # pylint: disable=import-outside-toplevel
+    from shapely.geometry import MultiPolygon, shape  # pylint: disable=import-outside-toplevel
 
-    if suffix == ".csv":
-        df = pd.read_csv(path)
-        _check_columns(df, [id_column, "lon", "lat"], path)
-        return df[[id_column, "lon", "lat"]].copy()
+    with path.open(encoding="utf-8") as fh:
+        data: dict[str, Any] = json.load(fh)
 
-    if suffix in (".geojson", ".json"):
-        import json  # pylint: disable=import-outside-toplevel
-
-        with path.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-
-        features = data.get("features", [])
-        rows: list[dict] = []
-        for feat in features:
-            geom = feat.get("geometry", {})
-            props = feat.get("properties", {})
-            if geom.get("type") != "Point":
+    features = data.get("features", [])
+    rows: list[dict] = []
+    for feat in features:
+        geom_data = feat.get("geometry") or {}
+        props = feat.get("properties") or {}
+        geom_type = geom_data.get("type", "")
+        if geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        lid = props.get(id_column)
+        if lid is None:
+            continue
+        geom = shape(geom_data)
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        if geom.geom_type == "GeometryCollection":
+            polys = [g for g in geom.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+            if not polys:
                 continue
-            lon, lat = geom["coordinates"][:2]
-            lid = props.get(id_column)
-            if lid is None:
-                continue
-            rows.append({id_column: lid, "lon": float(lon), "lat": float(lat)})
-        df = pd.DataFrame(rows)
-        if df.empty:
-            raise ValueError(
-                f"No Point features with property {id_column!r} found in {path}"
+            geom = MultiPolygon(
+                [poly for g in polys for poly in (g.geoms if g.geom_type == "MultiPolygon" else [g])]
             )
-        return df
+        if geom.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        if geom.is_empty:
+            continue
+        rows.append({id_column: lid, "geometry": geom})
 
-    raise ValueError(
-        f"Unsupported geometry file format {suffix!r}. Use .csv or .geojson"
-    )
-
-
-def _check_columns(df: pd.DataFrame, required: list[str], path: Path) -> None:
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"File {path} is missing columns: {missing}")
+    df = pd.DataFrame(rows)
+    if df.empty:
+        raise ValueError(
+            f"No Polygon/MultiPolygon features with property {id_column!r} found in {path}"
+        )
+    return df
 
 
 # ---------------------------------------------------------------------------
-# Raster sampling
+# Zonal sampling
 # ---------------------------------------------------------------------------
 
 
-def sample_raster_at_centroids(
+def sample_raster_by_polygons_weighted(
     raster_path: Path,
     geometry_path: Path,
     id_column: str,
     date_iso: str,
 ) -> pd.DataFrame:
-    """Sample a multi-band GeoTIFF at lake centroid coordinates.
+    """Sample a multi-band GeoTIFF by lake polygon using area-weighted mean.
 
-    Each centroid is mapped to the raster pixel whose centre is nearest to
-    the geographic location (using the raster's affine transform).  Pixels
-    outside the raster extent or masked as nodata return ``NaN``.
+    For each lake polygon the pixel window that covers the polygon bounding
+    box is extracted.  Each pixel in the window is weighted by its intersection
+    area with the lake polygon.  The result is the area-weighted mean of valid
+    (non-nodata) pixels for every band.
+
+    Lakes whose bounding box falls entirely outside the raster return ``NaN``
+    for all bands.  Lakes that are smaller than one rounded pixel or otherwise
+    produce zero overlap weight fall back to the value of the raster pixel
+    containing the polygon's representative point.
 
     Args:
         raster_path: Path to a single-date ERA5 GeoTIFF (one band per variable).
-        geometry_path: Path to a CSV or GeoJSON centroid file.
-        id_column: Name of the lake identifier column in the centroid file.
+        geometry_path: Path to a GeoJSON FeatureCollection with lake
+            Polygon / MultiPolygon features.
+        id_column: Name of the lake identifier property in the GeoJSON.
         date_iso: ISO-8601 date string for the ``date`` column in the output.
 
     Returns:
-        DataFrame with columns ``[id_column, "date", <band_name>, ...]``.
+        DataFrame with columns ``[id_column, "date", <band_name>, ...]``,
+        one row per lake.
     """
     import rasterio  # pylint: disable=import-outside-toplevel
+    import rasterio.windows  # pylint: disable=import-outside-toplevel
+    from shapely.geometry import box  # pylint: disable=import-outside-toplevel
 
-    centroids = load_centroids(geometry_path, id_column)
-
-    with rasterio.open(raster_path) as src:
-        band_names = src.descriptions or [f"band_{i+1}" for i in range(src.count)]
-        transform = src.transform
-        nodata = src.nodata
-
-        # Read all bands at once into a (bands, rows, cols) array.
-        data = src.read().astype(float)
-        if nodata is not None:
-            data[data == nodata] = np.nan
-
-        nrows, ncols = src.height, src.width
-        # Convert geographic coordinates to pixel indices.
-        rows, cols = _lonlat_to_pixel(centroids["lon"].to_numpy(), centroids["lat"].to_numpy(), transform)
-
-        # Clip to valid extent (out-of-range → NaN row).
-        valid_mask = (rows >= 0) & (rows < nrows) & (cols >= 0) & (cols < ncols)
+    polygons = load_polygons(geometry_path, id_column)
 
     records: list[dict] = []
-    for idx, (row_px, col_px, is_valid) in enumerate(
-        zip(rows, cols, valid_mask)
-    ):
-        entry: dict = {
-            id_column: centroids.iloc[idx][id_column],
-            "date": date_iso,
-        }
-        for band_idx, name in enumerate(band_names):
-            if is_valid:
-                entry[name] = float(data[band_idx, row_px, col_px])
+
+    with rasterio.open(raster_path) as src:
+        band_names: list[str]
+        descriptions = list(src.descriptions) if src.descriptions else []
+        if descriptions and all(desc for desc in descriptions):
+            band_names = [str(desc) for desc in descriptions]
+        else:
+            band_names = [f"band_{i + 1}" for i in range(src.count)]
+        nodata = src.nodata
+        raster_bounds = src.bounds  # BoundingBox(left, bottom, right, top)
+
+        for _, row in polygons.iterrows():
+            lake_id = row[id_column]
+            geom = row["geometry"]
+
+            entry: dict = {id_column: lake_id, "date": date_iso}
+
+            # Clip polygon bounds to raster extent for the window query.
+            minx, miny, maxx, maxy = geom.bounds
+            if (
+                minx >= raster_bounds.right
+                or maxx <= raster_bounds.left
+                or miny >= raster_bounds.top
+                or maxy <= raster_bounds.bottom
+            ):
+                # Polygon entirely outside raster.
+                for name in band_names:
+                    entry[name] = np.nan
+                records.append(entry)
+                continue
+
+            # Build the pixel window for the polygon bounding box.
+            raw_window = rasterio.windows.from_bounds(
+                minx, miny, maxx, maxy, transform=src.transform
+            )
+            # Round to whole pixels and clamp to raster extent.
+            window = raw_window.round_lengths().round_offsets()
+            # Sub-pixel lake: use the representative-point pixel as a fallback
+            # before calling intersection(), which raises on zero-size windows.
+            if window.width <= 0 or window.height <= 0:
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
+                )
+                records.append(entry)
+                continue
+            window = window.intersection(
+                rasterio.windows.Window(0, 0, src.width, src.height)
+            )
+
+            win_w = int(window.width)
+            win_h = int(window.height)
+            if win_w <= 0 or win_h <= 0:
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
+                )
+                records.append(entry)
+                continue
+
+            # Read all bands for the window at once: shape (bands, rows, cols).
+            data = src.read(window=window).astype(float)
+            if nodata is not None:
+                data[data == nodata] = np.nan
+
+            win_transform = src.window_transform(window)
+
+            # Build intersection-area weight matrix.
+            weights = _compute_weights(win_transform, win_h, win_w, geom, box)
+
+            total_weight = float(weights.sum())
+            if total_weight == 0.0:
+                entry.update(
+                    _sample_representative_pixel_values(
+                        src=src,
+                        geom=geom,
+                        band_names=band_names,
+                        nodata=nodata,
+                    )
+                )
             else:
-                entry[name] = np.nan
-        records.append(entry)
+                for band_idx, name in enumerate(band_names):
+                    band_data = data[band_idx]
+                    valid = ~np.isnan(band_data)
+                    w = weights * valid
+                    w_sum = float(w.sum())
+                    if w_sum == 0.0:
+                        entry[name] = np.nan
+                    else:
+                        weighted_values = np.where(valid, band_data, 0.0) * w
+                        entry[name] = float(np.sum(weighted_values) / w_sum)
 
-    out = pd.DataFrame(records)
-    log.debug("Sampled %d lakes from %s for date %s", len(out), raster_path.name, date_iso)
-    return out
+            records.append(entry)
+
+    result = pd.DataFrame(records)
+    log.debug(
+        "Zonal sampling: %d lakes from %s for date %s",
+        len(result),
+        raster_path.name,
+        date_iso,
+    )
+    return result
 
 
-def _lonlat_to_pixel(
-    lons: np.ndarray,
-    lats: np.ndarray,
-    transform,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Convert geographic lon/lat arrays to (row, col) integer pixel indices.
+def _sample_representative_pixel_values(
+    src,
+    geom,
+    band_names: list[str],
+    nodata: float | None,
+) -> dict[str, float]:
+    """Return single-pixel values at the polygon representative point.
 
-    Uses the raster's affine transform (``rasterio.transform``).
-
-    Returns:
-        Two integer arrays (rows, cols) clipped to the raster dimensions.
+    This is a fallback for sub-pixel lakes and other edge cases where the
+    rounded zonal window carries no area.
     """
-    from rasterio.transform import rowcol  # pylint: disable=import-outside-toplevel
+    import rasterio.windows  # pylint: disable=import-outside-toplevel
 
-    rows_f, cols_f = rowcol(transform, lons, lats)
-    return np.asarray(rows_f, dtype=int), np.asarray(cols_f, dtype=int)
+    point = geom.representative_point()
+    try:
+        row, col = src.index(point.x, point.y)
+    except Exception:  # pylint: disable=broad-except
+        return {name: np.nan for name in band_names}
+
+    if row < 0 or row >= src.height or col < 0 or col >= src.width:
+        return {name: np.nan for name in band_names}
+
+    data = src.read(window=rasterio.windows.Window(col, row, 1, 1)).astype(float)
+    if nodata is not None:
+        data[data == nodata] = np.nan
+
+    return {
+        name: float(data[band_idx, 0, 0]) if not np.isnan(data[band_idx, 0, 0]) else np.nan
+        for band_idx, name in enumerate(band_names)
+    }
+
+
+def _compute_weights(
+    win_transform,
+    nrows: int,
+    ncols: int,
+    geom,
+    box_fn,
+) -> np.ndarray:
+    """Return an (nrows, ncols) array of intersection areas between pixels and *geom*.
+
+    Uses the window's affine transform to construct each pixel's bounding box,
+    then calls :func:`shapely.geometry.base.BaseGeometry.intersection`.
+
+    ERA5-Land pixels are large (≈ 0.1° / 11 km), so most lake windows contain
+    only a handful of pixels; the Python loop is fast enough in practice.
+    """
+    a = win_transform.a   # pixel width (positive)
+    e = win_transform.e   # pixel height (negative for north-up rasters)
+    c = win_transform.c   # x of top-left pixel corner
+    f = win_transform.f   # y of top-left pixel corner
+
+    weights = np.zeros((nrows, ncols), dtype=float)
+    for r in range(nrows):
+        for col in range(ncols):
+            x0 = c + col * a
+            x1 = x0 + a
+            y0 = f + r * e          # top edge of pixel  (larger y for north-up)
+            y1 = y0 + e             # bottom edge        (smaller y)
+            pixel_box = box_fn(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+            intersect = geom.intersection(pixel_box)
+            weights[r, col] = intersect.area
+    return weights
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 __all__ = [
-    "load_centroids",
-    "sample_raster_at_centroids",
+    "load_polygons",
+    "sample_raster_by_polygons_weighted",
 ]

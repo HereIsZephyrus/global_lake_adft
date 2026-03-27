@@ -1,8 +1,17 @@
-"""WriteState: persist sampled outputs to the configured sink and mark job done."""
+"""WriteState: persist sampled outputs to the configured sink and mark job done.
+
+File cleanup (raw GeoTIFF, staged Parquet) is **not** performed here.  It is
+deferred to :func:`cleanup_after_write`, which the runner calls *after* the
+COMPLETED state has been persisted to disk.  This eliminates the
+"write-post-commit recovery gap" where a crash between file deletion and
+state persistence would leave a job in WRITE state with its sample file
+already gone.
+"""
 
 from __future__ import annotations
 
 import logging
+import os
 
 from hydrofetch.jobs.models import JobRecord, JobState
 from hydrofetch.state_machine.base import StateContext, TaskState
@@ -11,11 +20,11 @@ log = logging.getLogger(__name__)
 
 
 class WriteState(TaskState):
-    """Write the staged sample output to the configured sink.
+    """Write the staged sample output to the configured sink(s).
 
-    For the ``file`` sink (v1), the sample Parquet is already written by
-    :class:`~hydrofetch.state_machine.sample.SampleState`; this state just
-    verifies the file and copies/moves it to the final output directory.
+    On success the job transitions to COMPLETED.  Local intermediate files
+    are **not** deleted here — the runner calls :func:`cleanup_after_write`
+    after the state change has been safely persisted.
     """
 
     def handle(
@@ -41,4 +50,36 @@ class WriteState(TaskState):
         return updated, None
 
 
-__all__ = ["WriteState"]
+def cleanup_after_write(record: JobRecord) -> None:
+    """Delete intermediate files for a COMPLETED job.
+
+    Must be called **after** the COMPLETED record has been persisted to disk
+    so that a crash during cleanup does not leave the job in an
+    unrecoverable state.
+
+    * ``local_raw_path`` (downloaded GeoTIFF) – always deleted.
+    * ``local_sample_path`` (staged Parquet) – deleted only when the
+      ``"file"`` sink is **not** in the job's write configuration.
+    """
+    _delete_file(record.local_raw_path, record.spec.job_id, "raw GeoTIFF")
+
+    if "file" not in record.spec.write.sinks:
+        _delete_file(record.local_sample_path, record.spec.job_id, "sample Parquet")
+
+
+def _delete_file(path: str | None, job_id: str, label: str) -> None:
+    """Delete *path* if it exists; log a warning on failure (non-fatal)."""
+    if not path:
+        return
+    try:
+        os.unlink(path)
+        log.debug("Job %s: deleted %s at %s", job_id, label, path)
+    except FileNotFoundError:
+        log.debug("Job %s: %s already absent at %s", job_id, label, path)
+    except OSError as exc:
+        log.warning(
+            "Job %s: could not delete %s at %s: %s", job_id, label, path, exc
+        )
+
+
+__all__ = ["WriteState", "cleanup_after_write"]

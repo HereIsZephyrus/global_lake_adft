@@ -1,9 +1,14 @@
-"""DownloadState: locate the Drive file and stream it to local raw storage."""
+"""DownloadState: locate the Drive file and stream it to local raw storage.
+
+Downloads use a ``.tif.tmp`` suffix and are atomically renamed on success,
+so a crash mid-download never leaves a partially-written ``.tif`` that could
+be mistaken for a valid file on restart.
+"""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+import os
 
 from hydrofetch.jobs.models import JobRecord, JobState
 from hydrofetch.state_machine.base import StateContext, TaskState
@@ -25,8 +30,8 @@ class DownloadState(TaskState):
 
         dest = context.raw_dir / f"{record.spec.export_name}.tif"
 
-        # Idempotency: if the file is already on disk (from a previous run that
-        # crashed before saving the updated record), skip the download.
+        # Idempotency: if the final .tif is already on disk (from a previous
+        # run that crashed after download but before saving), skip.
         if dest.is_file() and dest.stat().st_size > 0:
             log.info(
                 "Job %s: raw file already exists at %s, skipping download",
@@ -39,17 +44,22 @@ class DownloadState(TaskState):
             )
             return updated, CleanupState()
 
+        # Clean up any partial download from a previous crash.
+        tmp_dest = dest.with_suffix(".tif.tmp")
+        tmp_dest.unlink(missing_ok=True)
+
         # Resolve Drive file ID if not already stored.
         file_id = record.drive_file_id
         if not file_id:
             file_id = self._find_drive_file(record, context)
             if not file_id:
-                # File not available yet – wait for the next cycle.
                 return record, None
 
         try:
-            context.drive.download_file(file_id, dest)
+            context.drive.download_file(file_id, tmp_dest)
+            os.replace(tmp_dest, dest)
         except Exception as exc:  # pylint: disable=broad-except
+            tmp_dest.unlink(missing_ok=True)
             log.error("Job %s: download failed: %s", record.spec.job_id, exc)
             context.throttle.release()
             failed = record.fail(f"Download error: {exc}")

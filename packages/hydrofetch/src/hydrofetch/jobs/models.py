@@ -54,8 +54,9 @@ class GeeExportParams:
     scale: float
     crs: str
     max_pixels: int
-    region_geojson: dict[str, Any]
+    region_geojson: dict[str, Any] | None = None
     drive_folder: str | None = None
+    tile_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -68,13 +69,16 @@ class SampleParams:
     """Parameters for the local raster sampling step.
 
     Args:
-        geometry_path: Path to a CSV or GeoJSON file with lake geometries /
-            centroids.  CSV must have columns [``id_column``, ``lon``, ``lat``].
+        geometry_path: Path to a GeoJSON file with lake Polygon / MultiPolygon
+            features.  Each feature must have a property named ``id_column``.
         id_column: Name of the lake identifier column (default ``hylak_id``).
+        tile_id: Tile identifier this geometry belongs to (mirrors
+            :attr:`GeeExportParams.tile_id`).
     """
 
     geometry_path: str
     id_column: str = "hylak_id"
+    tile_id: str = ""
 
 
 # ---------------------------------------------------------------------------

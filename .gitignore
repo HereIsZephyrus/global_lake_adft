@@ -202,7 +202,7 @@ cython_debug/
 .cursorindexingignore
 
 # Monorepo package secrets and local outputs
-client_secret.json
+client_secret*.json
 credentials.json
 packages/*/logs/
 packages/*/data/
@@ -216,3 +216,10 @@ hydrofetch_sample/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Temporary data
+.cursor/
+data/
+results/
+logs/
+sampled/
