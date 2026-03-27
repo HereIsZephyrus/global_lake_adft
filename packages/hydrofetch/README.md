@@ -122,12 +122,14 @@ It first generates one source-of-truth lake dataset from:
 
 From that same lake set it derives:
 
-- `smoke_lakes_polygons.geojson` for zonal sampling
-- `smoke_region.geojson` for clipped export
-- `smoke_manifest.json` referencing both files
+- `smoke_lakes_polygons.geojson` as the source-of-truth lake set
+- `tiles/<tile_id>_lakes.geojson` for per-tile zonal sampling
+- `tiles/<tile_id>_region.geojson` for per-tile clipped export
+- `smoke_manifest.json` referencing the derived tile files
 
 By default it uses the first 10 `hylak_id` values and regenerates these
-artifacts on every run.
+artifacts on every run. The smoke run therefore exercises the same manifest /
+tile expansion logic as regular tiled production runs.
 
 ---
 

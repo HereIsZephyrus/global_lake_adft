@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Minimal hydrofetch ERA5-Land smoke run: 10 days, one smoke tile, real lake polygons.
+# Minimal hydrofetch ERA5-Land smoke run: 10 days, real lake polygons, tiled export.
 #
-# Before enqueueing jobs, this script generates a single smoke dataset from the
-# database and derives both the export region and tile manifest from it:
-# - source of truth: hylak_id list + polygons
-# - derived: buffered export region
-# - derived: tile manifest referencing those artifacts
+# Before enqueueing jobs, this script generates one source-of-truth lake dataset
+# from the database, then derives per-tile geometry/region files and a manifest.
+# The smoke workflow therefore exercises the same tile expansion path as the
+# main hydrofetch CLI.
 #
 # Usage:
 #   ./run_smoke.sh              # enqueue + run monitor (needs GEE + Drive auth)
@@ -20,7 +19,7 @@
 #   HYDROFETCH_ENV_FILE      passed as hydrofetch --env-file if set
 #   HYDROFETCH_SMOKE_LIMIT   number of lakes to include (default: 10)
 #   HYDROFETCH_SMOKE_OFFSET  SQL offset into area_quality (default: 0)
-#   HYDROFETCH_SMOKE_BUFFER_DEG  bbox padding in degrees (default: 0.05)
+#   HYDROFETCH_SMOKE_BUFFER_DEG  per-tile bbox padding in degrees (default: 0.05)
 #   Fixtures are regenerated on every run so the smoke dataset always matches
 #   the current database slice.
 #
@@ -37,7 +36,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 MANIFEST="$SCRIPT_DIR/fixtures/smoke_manifest.json"
 SMOKE_GEOMETRY="$SCRIPT_DIR/fixtures/smoke_lakes_polygons.geojson"
-SMOKE_REGION="$SCRIPT_DIR/fixtures/smoke_region.geojson"
+SMOKE_TILES_DIR="$SCRIPT_DIR/fixtures/tiles"
 FIXTURE_SCRIPT="$SCRIPT_DIR/generate_smoke_fixtures.py"
 
 START="${HYDROFETCH_SMOKE_START:-2020-01-01}"
@@ -79,13 +78,13 @@ FIXTURE_ARGS=(
   --offset "$SMOKE_OFFSET"
   --buffer-deg "${HYDROFETCH_SMOKE_BUFFER_DEG:-0.05}"
   --geometry-output "$SMOKE_GEOMETRY"
-  --region-output "$SMOKE_REGION"
+  --tiles-dir "$SMOKE_TILES_DIR"
   --manifest-output "$MANIFEST"
 )
 if [[ -n "${HYDROFETCH_ENV_FILE:-}" ]]; then
   FIXTURE_ARGS+=(--env-file "$HYDROFETCH_ENV_FILE")
 fi
-uv run python "${FIXTURE_ARGS[@]}"
+uv run --all-packages python "${FIXTURE_ARGS[@]}"
 
 if [[ ! -f "$MANIFEST" ]]; then
   echo "error: generated manifest not found: $MANIFEST" >&2

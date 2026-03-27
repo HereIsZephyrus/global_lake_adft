@@ -8,8 +8,9 @@ the polygon geometries are read from ``LakeATLAS_v10_pol`` in ``ALTAS_DB``.
 From that single lake-geometry set, the script writes:
 
 * ``smoke_lakes_polygons.geojson`` – source-of-truth lake polygons
-* ``smoke_region.geojson`` – derived export region (buffered union bbox)
-* ``smoke_manifest.json`` – manifest referencing the two derived artifacts
+* ``tiles/<tile_id>_lakes.geojson`` – per-tile lake subsets
+* ``tiles/<tile_id>_region.geojson`` – per-tile export regions
+* ``smoke_manifest.json`` – manifest referencing the per-tile artifacts
 """
 
 from __future__ import annotations
@@ -20,11 +21,20 @@ import os.path
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # pylint: disable=import-error
 from shapely import wkt
-from shapely.geometry import mapping
+from shapely.geometry import box, mapping
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
+
+_CONTINENT_TILE_BOUNDS: list[tuple[str, tuple[float, float, float, float]]] = [
+    ("north_america", (-170.0, 5.0, -50.0, 85.0)),
+    ("south_america", (-95.0, -60.0, -30.0, 15.0)),
+    ("europe", (-25.0, 34.0, 45.0, 72.0)),
+    ("africa", (-25.0, -40.0, 60.0, 38.0)),
+    ("asia", (45.0, 0.0, 180.0, 82.0)),
+    ("oceania", (110.0, -50.0, 180.0, 10.0)),
+]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -50,7 +60,7 @@ def _parse_args() -> argparse.Namespace:
         "--buffer-deg",
         type=float,
         default=0.05,
-        help="Padding added around the union bbox when writing smoke_region.geojson.",
+        help="Padding added around each tile's union bbox when writing tile regions.",
     )
     parser.add_argument(
         "--geometry-output",
@@ -59,21 +69,16 @@ def _parse_args() -> argparse.Namespace:
         help="Output path for the smoke lake polygons GeoJSON.",
     )
     parser.add_argument(
-        "--region-output",
-        default=fixtures_dir / "smoke_region.geojson",
+        "--tiles-dir",
+        default=fixtures_dir / "tiles",
         type=Path,
-        help="Output path for the buffered smoke bounding box GeoJSON.",
+        help="Directory where per-tile geometry and region GeoJSON files are written.",
     )
     parser.add_argument(
         "--manifest-output",
         default=fixtures_dir / "smoke_manifest.json",
         type=Path,
         help="Output path for the derived smoke tile manifest JSON.",
-    )
-    parser.add_argument(
-        "--tile-id",
-        default="smoke",
-        help="Tile id written into the generated manifest (default: smoke).",
     )
     return parser.parse_args()
 
@@ -96,11 +101,11 @@ def _bridge_hydrofetch_env() -> None:
 
 
 def _load_lake_geometries(limit: int, offset: int) -> list[tuple[int, BaseGeometry]]:
-    from lakeanalysis.dbconnect.client import atlas_db, series_db
+    from lakeanalysis.dbconnect.client import atlas_db, series_db  # pylint: disable=import-error
     from lakeanalysis.dbconnect.lake import (
         fetch_area_quality_hylak_ids,
         fetch_lake_geometry_wkt_by_ids,
-    )
+    )  # pylint: disable=import-error
 
     with series_db.connection_context() as series_conn:
         hylak_ids = fetch_area_quality_hylak_ids(series_conn, limit=limit, offset=offset)
@@ -126,6 +131,24 @@ def _load_lake_geometries(limit: int, offset: int) -> list[tuple[int, BaseGeomet
 
 def _feature_collection(features: list[dict]) -> dict:
     return {"type": "FeatureCollection", "features": features}
+
+
+def _continent_tile_id(geom: BaseGeometry) -> str:
+    point = geom.representative_point()
+    for tile_id, bounds in _CONTINENT_TILE_BOUNDS:
+        if box(*bounds).covers(point):
+            return tile_id
+    return "misc"
+
+
+def _group_lakes_by_tile(
+    lake_geometries: list[tuple[int, BaseGeometry]],
+) -> dict[str, list[tuple[int, BaseGeometry]]]:
+    grouped: dict[str, list[tuple[int, BaseGeometry]]] = {}
+    for hylak_id, geom in lake_geometries:
+        tile_id = _continent_tile_id(geom)
+        grouped.setdefault(tile_id, []).append((hylak_id, geom))
+    return grouped
 
 
 def _lake_feature_collection(lake_geometries: list[tuple[int, BaseGeometry]]) -> dict:
@@ -171,21 +194,38 @@ def _manifest_ref(manifest_path: Path, target_path: Path) -> str:
     return os.path.relpath(target_path, manifest_path.parent)
 
 
-def _tile_manifest(
+def _tile_manifest_entries(
     *,
     manifest_path: Path,
-    geometry_path: Path,
-    region_path: Path,
-    tile_id: str,
-) -> dict:
-    return {
-        "tiles": [
+    tiles_dir: Path,
+    grouped_lakes: dict[str, list[tuple[int, BaseGeometry]]],
+) -> list[dict]:
+    entries: list[dict] = []
+    for tile_id in grouped_lakes:
+        geometry_path = tiles_dir / f"{tile_id}_lakes.geojson"
+        region_path = tiles_dir / f"{tile_id}_region.geojson"
+        entries.append(
             {
                 "tile_id": tile_id,
                 "region_path": _manifest_ref(manifest_path, region_path),
                 "geometry_path": _manifest_ref(manifest_path, geometry_path),
             }
-        ]
+        )
+    return entries
+
+
+def _tile_manifest(
+    *,
+    manifest_path: Path,
+    tiles_dir: Path,
+    grouped_lakes: dict[str, list[tuple[int, BaseGeometry]]],
+) -> dict:
+    return {
+        "tiles": _tile_manifest_entries(
+            manifest_path=manifest_path,
+            tiles_dir=tiles_dir,
+            grouped_lakes=grouped_lakes,
+        )
     }
 
 
@@ -199,6 +239,22 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _write_tile_artifacts(
+    *,
+    grouped_lakes: dict[str, list[tuple[int, BaseGeometry]]],
+    tiles_dir: Path,
+    buffer_deg: float,
+) -> None:
+    for tile_id, tile_lakes in grouped_lakes.items():
+        geometry_path = tiles_dir / f"{tile_id}_lakes.geojson"
+        region_path = tiles_dir / f"{tile_id}_region.geojson"
+        _write_geojson(geometry_path, _lake_feature_collection(tile_lakes))
+        _write_geojson(
+            region_path,
+            _derived_region_feature(tile_lakes, buffer_deg=buffer_deg, tile_id=tile_id),
+        )
+
+
 def main() -> None:
     args = _parse_args()
     if args.env_file:
@@ -208,31 +264,30 @@ def main() -> None:
     _bridge_hydrofetch_env()
 
     geometry_output = args.geometry_output.resolve()
-    region_output = args.region_output.resolve()
     manifest_output = args.manifest_output.resolve()
+    tiles_dir = args.tiles_dir.resolve()
 
     lake_geometries = _load_lake_geometries(limit=args.limit, offset=args.offset)
     lake_payload = _lake_feature_collection(lake_geometries)
-    region_payload = _derived_region_feature(
-        lake_geometries,
-        buffer_deg=args.buffer_deg,
-        tile_id=args.tile_id,
-    )
+    grouped_lakes = _group_lakes_by_tile(lake_geometries)
     manifest_payload = _tile_manifest(
         manifest_path=manifest_output,
-        geometry_path=geometry_output,
-        region_path=region_output,
-        tile_id=args.tile_id,
+        tiles_dir=tiles_dir,
+        grouped_lakes=grouped_lakes,
     )
 
     _write_geojson(geometry_output, lake_payload)
-    _write_geojson(region_output, region_payload)
+    _write_tile_artifacts(
+        grouped_lakes=grouped_lakes,
+        tiles_dir=tiles_dir,
+        buffer_deg=args.buffer_deg,
+    )
     _write_json(manifest_output, manifest_payload)
 
     print(
         "Generated smoke fixtures:",
         f"{len(lake_geometries)} lakes -> {geometry_output}",
-        f"region -> {region_output}",
+        f"{len(grouped_lakes)} tile(s) -> {tiles_dir}",
         f"manifest -> {manifest_output}",
         sep="\n",
     )

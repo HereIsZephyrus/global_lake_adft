@@ -56,7 +56,8 @@ def load_polygons(
     Raises:
         ValueError: If the file contains no eligible features.
     """
-    from shapely.geometry import shape  # pylint: disable=import-outside-toplevel
+    from shapely import make_valid  # pylint: disable=import-outside-toplevel
+    from shapely.geometry import MultiPolygon, shape  # pylint: disable=import-outside-toplevel
 
     with path.open(encoding="utf-8") as fh:
         data: dict[str, Any] = json.load(fh)
@@ -72,7 +73,21 @@ def load_polygons(
         lid = props.get(id_column)
         if lid is None:
             continue
-        rows.append({id_column: lid, "geometry": shape(geom_data)})
+        geom = shape(geom_data)
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        if geom.geom_type == "GeometryCollection":
+            polys = [g for g in geom.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+            if not polys:
+                continue
+            geom = MultiPolygon(
+                [poly for g in polys for poly in (g.geoms if g.geom_type == "MultiPolygon" else [g])]
+            )
+        if geom.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        if geom.is_empty:
+            continue
+        rows.append({id_column: lid, "geometry": geom})
 
     df = pd.DataFrame(rows)
     if df.empty:
@@ -124,9 +139,12 @@ def sample_raster_by_polygons_weighted(
     records: list[dict] = []
 
     with rasterio.open(raster_path) as src:
-        band_names: list[str] = (
-            list(src.descriptions) if src.descriptions else [f"band_{i + 1}" for i in range(src.count)]
-        )
+        band_names: list[str]
+        descriptions = list(src.descriptions) if src.descriptions else []
+        if descriptions and all(desc for desc in descriptions):
+            band_names = [str(desc) for desc in descriptions]
+        else:
+            band_names = [f"band_{i + 1}" for i in range(src.count)]
         nodata = src.nodata
         raster_bounds = src.bounds  # BoundingBox(left, bottom, right, top)
 
@@ -156,9 +174,33 @@ def sample_raster_by_polygons_weighted(
             )
             # Round to whole pixels and clamp to raster extent.
             window = raw_window.round_lengths().round_offsets()
-            window = window.intersection(
-                rasterio.windows.Window(0, 0, src.width, src.height)
-            )
+            # #region agent log H_A/H_C: capture rounded window before intersection
+            import json as _json, time as _time  # noqa: E401
+            _dbg_rounded = {"col_off": window.col_off, "row_off": window.row_off, "width": window.width, "height": window.height}
+            _dbg_pre_zero = window.width <= 0 or window.height <= 0
+            open("/mnt/repo/lake/global_lake_adft/.cursor/debug-6b34d8.log", "a").write(
+                _json.dumps({"sessionId": "6b34d8", "hypothesisId": "H_A_H_C", "location": "raster.py:pre_intersection",
+                    "message": "rounded window before intersection", "timestamp": int(_time.time() * 1000),
+                    "data": {"lake_id": lake_id, "rounded_window": _dbg_rounded, "already_zero_before_intersection": _dbg_pre_zero,
+                             "geom_bounds": [minx, miny, maxx, maxy], "raster_bounds": [raster_bounds.left, raster_bounds.bottom, raster_bounds.right, raster_bounds.top],
+                             "raster_wh": [src.width, src.height]}}) + "\n")
+            # #endregion
+            try:
+                window = window.intersection(
+                    rasterio.windows.Window(0, 0, src.width, src.height)
+                )
+            except Exception as _intersection_exc:
+                # #region agent log H_A/H_C: intersection raised exception
+                open("/mnt/repo/lake/global_lake_adft/.cursor/debug-6b34d8.log", "a").write(
+                    _json.dumps({"sessionId": "6b34d8", "hypothesisId": "H_A_H_C", "location": "raster.py:intersection_exc",
+                        "message": "intersection raised exception", "timestamp": int(_time.time() * 1000),
+                        "data": {"lake_id": lake_id, "rounded_window": _dbg_rounded, "already_zero": _dbg_pre_zero,
+                                 "exc_type": type(_intersection_exc).__name__, "exc_msg": str(_intersection_exc)}}) + "\n")
+                # #endregion
+                for name in band_names:
+                    entry[name] = np.nan
+                records.append(entry)
+                continue
 
             win_w = int(window.width)
             win_h = int(window.height)
@@ -191,7 +233,8 @@ def sample_raster_by_polygons_weighted(
                     if w_sum == 0.0:
                         entry[name] = np.nan
                     else:
-                        entry[name] = float(np.sum(band_data * w) / w_sum)
+                        weighted_values = np.where(valid, band_data, 0.0) * w
+                        entry[name] = float(np.sum(weighted_values) / w_sum)
 
             records.append(entry)
 

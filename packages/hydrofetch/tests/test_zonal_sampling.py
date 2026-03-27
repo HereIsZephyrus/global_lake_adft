@@ -44,7 +44,7 @@ def _make_polygon_feature(hylak_id: int, minx: float, miny: float, maxx: float, 
 def _write_geotiff(path: Path, data: np.ndarray, transform, nodata: float | None = None) -> None:
     """Write a tiny float32 GeoTIFF for testing.  data shape: (bands, rows, cols)."""
     import rasterio
-    from rasterio.crs import CRS
+    from rasterio.crs import CRS  # pylint: disable=no-name-in-module,import-error
 
     bands, rows, cols = data.shape
     profile = {
@@ -110,6 +110,26 @@ class TestLoadPolygons:
         _write_geojson(gj, [feat])
         with pytest.raises(ValueError):
             load_polygons(gj)
+
+    def test_repairs_invalid_polygon_with_make_valid(self, tmp_path):
+        gj = tmp_path / "invalid.geojson"
+        # Bow-tie self-intersection: invalid polygon that should be repaired.
+        feat = {
+            "type": "Feature",
+            "properties": {"hylak_id": 42},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]],
+                ],
+            },
+        }
+        _write_geojson(gj, [feat])
+
+        df = load_polygons(gj)
+        assert len(df) == 1
+        assert df.iloc[0]["hylak_id"] == 42
+        assert df.iloc[0]["geometry"].is_valid
 
 
 # ---------------------------------------------------------------------------
