@@ -16,7 +16,7 @@ from hydrofetch.state_machine.download import DownloadState
 from hydrofetch.state_machine.export_state import ExportState
 from hydrofetch.state_machine.hold import HoldState
 from hydrofetch.state_machine.sample import SampleState
-from hydrofetch.state_machine.write_state import WriteState
+from hydrofetch.state_machine.write_state import WriteState, cleanup_after_write
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,11 @@ class JobRunner:
             if new_record is not record:
                 self._store.save(new_record)
                 changed += 1
+                # Delete intermediate files only AFTER the COMPLETED state
+                # has been safely persisted, preventing the recovery gap
+                # where a crash could leave WRITE state with no sample file.
+                if new_record.state == JobState.COMPLETED:
+                    cleanup_after_write(new_record)
         return changed
 
     def run_until_done(self) -> None:

@@ -1,4 +1,10 @@
-"""Tests for WriteState local file cleanup after successful write."""
+"""Tests for WriteState and cleanup_after_write file cleanup.
+
+WriteState itself no longer deletes files — it only transitions the job to
+COMPLETED.  The runner calls ``cleanup_after_write`` *after* persisting the
+COMPLETED state, so a crash between write and persist cannot lose the sample
+file while the job is still in WRITE state.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +24,7 @@ from hydrofetch.jobs.models import (
 )
 from hydrofetch.monitor.throttle import ConcurrencyThrottle
 from hydrofetch.state_machine.base import StateContext
-from hydrofetch.state_machine.write_state import WriteState
+from hydrofetch.state_machine.write_state import WriteState, cleanup_after_write
 
 
 def _make_context(tmp_path: Path) -> StateContext:
@@ -78,8 +84,27 @@ def _make_record(
 
 
 class TestWriteStateCleanup:
+    """WriteState must NOT delete files — only transition to COMPLETED."""
+
     @patch("hydrofetch.write.factory.get_writer")
-    def test_raw_file_deleted_after_db_write(self, mock_get_writer, tmp_path):
+    def test_write_state_does_not_delete_files(self, mock_get_writer, tmp_path):
+        """After WriteState.handle, files must still exist on disk."""
+        mock_writer = MagicMock()
+        mock_get_writer.return_value = mock_writer
+
+        record = _make_record(tmp_path, sinks=["db"])
+        raw_path = Path(record.local_raw_path)
+        sample_path = Path(record.local_sample_path)
+        context = _make_context(tmp_path)
+
+        updated, _ = WriteState().handle(record, context)
+
+        assert updated.state == JobState.COMPLETED
+        assert raw_path.exists(), "WriteState must NOT delete raw file (runner does it after save)"
+        assert sample_path.exists(), "WriteState must NOT delete sample file"
+
+    @patch("hydrofetch.write.factory.get_writer")
+    def test_cleanup_after_write_deletes_raw_for_db_sink(self, mock_get_writer, tmp_path):
         mock_writer = MagicMock()
         mock_get_writer.return_value = mock_writer
 
@@ -88,12 +113,12 @@ class TestWriteStateCleanup:
         context = _make_context(tmp_path)
 
         updated, _ = WriteState().handle(record, context)
+        cleanup_after_write(updated)
 
-        assert updated.state == JobState.COMPLETED
-        assert not raw_path.exists(), "raw GeoTIFF should be deleted after db-only write"
+        assert not raw_path.exists(), "raw GeoTIFF should be deleted by cleanup_after_write"
 
     @patch("hydrofetch.write.factory.get_writer")
-    def test_sample_parquet_deleted_for_db_only_sink(self, mock_get_writer, tmp_path):
+    def test_cleanup_after_write_deletes_sample_for_db_only_sink(self, mock_get_writer, tmp_path):
         mock_writer = MagicMock()
         mock_get_writer.return_value = mock_writer
 
@@ -101,12 +126,13 @@ class TestWriteStateCleanup:
         sample_path = Path(record.local_sample_path)
         context = _make_context(tmp_path)
 
-        WriteState().handle(record, context)
+        updated, _ = WriteState().handle(record, context)
+        cleanup_after_write(updated)
 
         assert not sample_path.exists(), "staged sample Parquet should be deleted for db-only sink"
 
     @patch("hydrofetch.write.factory.get_writer")
-    def test_sample_parquet_kept_for_file_sink(self, mock_get_writer, tmp_path):
+    def test_cleanup_keeps_sample_for_file_sink(self, mock_get_writer, tmp_path):
         mock_writer = MagicMock()
         mock_get_writer.return_value = mock_writer
 
@@ -114,15 +140,15 @@ class TestWriteStateCleanup:
         sample_path = Path(record.local_sample_path)
         context = _make_context(tmp_path)
 
-        WriteState().handle(record, context)
+        updated, _ = WriteState().handle(record, context)
+        cleanup_after_write(updated)
 
         assert sample_path.exists(), (
-            "staged sample Parquet should be kept when 'file' sink is present "
-            "(FileWriter may still need it)"
+            "staged sample Parquet should be kept when 'file' sink is present"
         )
 
     @patch("hydrofetch.write.factory.get_writer")
-    def test_sample_parquet_kept_for_file_and_db_sink(self, mock_get_writer, tmp_path):
+    def test_cleanup_keeps_sample_for_file_and_db_sink(self, mock_get_writer, tmp_path):
         mock_writer = MagicMock()
         mock_get_writer.return_value = mock_writer
 
@@ -130,7 +156,8 @@ class TestWriteStateCleanup:
         sample_path = Path(record.local_sample_path)
         context = _make_context(tmp_path)
 
-        WriteState().handle(record, context)
+        updated, _ = WriteState().handle(record, context)
+        cleanup_after_write(updated)
 
         assert sample_path.exists()
 
@@ -145,3 +172,4 @@ class TestWriteStateCleanup:
 
         updated, _ = WriteState().handle(record, context)
         assert updated.state == JobState.COMPLETED
+        cleanup_after_write(updated)  # should not raise

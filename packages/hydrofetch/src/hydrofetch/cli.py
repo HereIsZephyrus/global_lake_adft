@@ -68,6 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_era5_parser(sub)
     _add_status_parser(sub)
     _add_retry_parser(sub)
+    _add_auth_parser(sub)
 
     return parser
 
@@ -199,6 +200,35 @@ def _add_status_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disa
 def _add_retry_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disable=protected-access
     p = sub.add_parser("retry", help="Reset a failed job to HOLD so it can be re-tried.")
     p.add_argument("--job-id", required=True, metavar="ID", help="Job ID to reset.")
+
+
+# ---------------------------------------------------------------------------
+# `auth` sub-command
+# ---------------------------------------------------------------------------
+
+
+def _add_auth_parser(sub: argparse._SubParsersAction) -> None:  # pylint: disable=protected-access
+    sub.add_parser(
+        "auth",
+        help=(
+            "Run the Google Drive OAuth browser flow and save the token. "
+            "Set HYDROFETCH_TOKEN_FILE and HYDROFETCH_CREDENTIALS_FILE "
+            "to control where the token is saved and which credentials are used."
+        ),
+    )
+
+
+def _cmd_auth(_args: argparse.Namespace) -> None:
+    from hydrofetch.config import get_credentials_file, get_token_file  # pylint: disable=import-outside-toplevel
+    from hydrofetch.drive.client import DriveClient  # pylint: disable=import-outside-toplevel
+
+    cred = get_credentials_file()
+    token = get_token_file()
+    print(f"Credentials : {cred}")
+    print(f"Token target: {token}")
+    client = DriveClient(credentials_file=cred, token_file=token)
+    client.connect()
+    print(f"Auth OK — token saved to {token}")
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +527,8 @@ def _reset_failed_record(record):
         last_error=None,
         task_id=None,
         drive_file_id=None,
+        local_raw_path=None,
+        local_sample_path=None,
         updated_at=datetime.now(tz=timezone.utc).isoformat(),
     )
 
@@ -533,6 +565,7 @@ def main(argv: list[str] | None = None) -> None:
         "era5": _cmd_era5,
         "status": _cmd_status,
         "retry": _cmd_retry,
+        "auth": _cmd_auth,
     }
     handler = dispatch.get(args.command)
     if handler is None:
