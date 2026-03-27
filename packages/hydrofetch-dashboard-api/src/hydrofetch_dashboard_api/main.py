@@ -8,21 +8,27 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hydrofetch_dashboard_api import config
 from hydrofetch_dashboard_api.api.routes import router
+from hydrofetch_dashboard_api.services.process_manager import manager as proc_manager
 
 app = FastAPI(
     title="Hydrofetch Dashboard API",
-    description="Read-only monitoring API for Hydrofetch job status, failures and ingest progress.",
-    version="0.1.0",
+    description="Monitoring and control API for Hydrofetch job status, failures and ingest progress.",
+    version="0.2.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
 app.include_router(router)
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    proc_manager.recover()
 
 
 def main() -> None:

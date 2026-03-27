@@ -3,6 +3,7 @@ import ErrorBox from '../components/ErrorBox'
 import Loading from '../components/Loading'
 import Table from '../components/Table'
 import { useIngest } from '../hooks/useApi'
+import { formatDateTimeShanghai } from '../utils/time'
 
 const RECENT_COLS = [
   { key: 'hylak_id', label: 'HyLak ID', width: 120 },
@@ -55,7 +56,7 @@ export default function Ingest() {
           { label: '总行数', value: data.total_rows.toLocaleString(), color: '#3b82f6' },
           { label: '最早日期', value: data.min_date ?? '—', color: '#6b7280' },
           { label: '最新日期', value: data.max_date ?? '—', color: '#10b981' },
-          { label: '最近入库', value: data.latest_ingested_at ? data.latest_ingested_at.slice(0, 19) : '—', color: '#a78bfa' },
+          { label: '最近入库', value: formatDateTimeShanghai(data.latest_ingested_at), color: '#a78bfa' },
         ].map(item => (
           <div key={item.label} style={{
             background: '#1e2130', borderRadius: 10, padding: '14px 18px',
@@ -76,7 +77,14 @@ export default function Ingest() {
 
       <div style={{ background: '#1e2130', borderRadius: 10, padding: 16 }}>
         <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>最近入库记录</div>
-        <Table columns={RECENT_COLS} rows={data.recent_rows} maxHeight={300} />
+        <Table
+          columns={RECENT_COLS}
+          rows={data.recent_rows.map(r => ({
+            ...r,
+            ingested_at: r.ingested_at == null ? null : formatDateTimeShanghai(r.ingested_at),
+          }))}
+          maxHeight={300}
+        />
       </div>
     </div>
   )

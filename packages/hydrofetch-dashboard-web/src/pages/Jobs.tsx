@@ -28,7 +28,11 @@ const btnStyle = {
   padding: '5px 14px', marginLeft: 8,
 }
 
-export default function Jobs() {
+interface Props {
+  projectId: string
+}
+
+export default function Jobs({ projectId }: Props) {
   const [state, setState] = useState('')
   const [tileId, setTileId] = useState('')
   const [minAttempt, setMinAttempt] = useState(0)
@@ -38,8 +42,14 @@ export default function Jobs() {
   const [filter, setFilter] = useState({ state: '', tileId: '', minAttempt: 0 })
 
   const { data, error, isLoading } = useSWR(
-    ['jobs', filter, offset],
-    () => api.jobs({ state: filter.state || undefined, tile_id: filter.tileId || undefined, min_attempt: filter.minAttempt, limit, offset }),
+    ['jobs', projectId, filter, offset],
+    () => api.jobs(projectId, {
+      state: filter.state || undefined,
+      tile_id: filter.tileId || undefined,
+      min_attempt: filter.minAttempt,
+      limit,
+      offset,
+    }),
     { revalidateOnFocus: false },
   )
 
@@ -57,7 +67,12 @@ export default function Jobs() {
           {STATE_ORDER.map(s => <option key={s} value={s}>{s || '全部状态'}</option>)}
         </select>
         <input style={inputStyle} placeholder="Tile ID" value={tileId} onChange={e => setTileId(e.target.value)} />
-        <input style={{ ...inputStyle, width: 80 }} type="number" min={0} placeholder="最少尝试" value={minAttempt} onChange={e => setMinAttempt(Number(e.target.value))} />
+        <input
+          style={{ ...inputStyle, width: 80 }}
+          type="number" min={0} placeholder="最少尝试"
+          value={minAttempt}
+          onChange={e => setMinAttempt(Number(e.target.value))}
+        />
         <button style={btnStyle} onClick={apply}>查询</button>
       </div>
 

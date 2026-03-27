@@ -1,57 +1,22 @@
 import useSWR, { type SWRConfiguration } from 'swr'
-import { api } from '../api/client'
+import { api, type ProjectConfig } from '../api/client'
 
-type ApiKey = keyof typeof api
+// ---------------------------------------------------------------------------
+// Global (non-project-scoped) hooks
+// ---------------------------------------------------------------------------
 
-const INTERVALS: Record<string, number> = {
-  overview: 10_000,
-  states: 10_000,
-  timeline: 20_000,
-  tileProgress: 30_000,
-  dateProgress: 30_000,
-  failures: 15_000,
-  jobs: 0,
-  ingest: 60_000,
-  dbSize: 60_000,
-  alerts: 15_000,
-  logs: 30_000,
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useApiData<T>(key: ApiKey, fetcher: () => Promise<T>, extra?: SWRConfiguration<T>) {
-  return useSWR<T>(key, fetcher, {
-    refreshInterval: INTERVALS[key] ?? 15_000,
+export function useProjects() {
+  return useSWR<ProjectConfig[]>('projects', api.projects, {
+    refreshInterval: 5_000,
     revalidateOnFocus: false,
-    ...extra,
   })
 }
 
-export function useOverview() {
-  return useApiData('overview', api.overview)
-}
-
-export function useStates() {
-  return useApiData('states', api.states)
-}
-
-export function useTimeline(hours = 6) {
-  return useApiData('timeline', () => api.timeline(hours))
-}
-
-export function useFailures() {
-  return useApiData('failures', api.failures)
-}
-
-export function useAlerts() {
-  return useApiData('alerts', api.alerts)
-}
-
 export function useIngest() {
-  return useApiData('ingest', api.ingest)
-}
-
-export function useLogs() {
-  return useApiData('logs', api.logs)
+  return useSWR('ingest', api.ingest, {
+    refreshInterval: 60_000,
+    revalidateOnFocus: false,
+  })
 }
 
 export function useDbSize() {
@@ -59,4 +24,50 @@ export function useDbSize() {
     refreshInterval: 60_000,
     revalidateOnFocus: false,
   })
+}
+
+// ---------------------------------------------------------------------------
+// Per-project hooks (projectId: null → suspended, no request sent)
+// ---------------------------------------------------------------------------
+
+function useProjectData<T>(
+  key: string,
+  projectId: string | null,
+  fetcher: (pid: string) => Promise<T>,
+  extra?: SWRConfiguration<T>,
+) {
+  return useSWR<T>(
+    projectId ? [key, projectId] : null,
+    () => fetcher(projectId!),
+    { revalidateOnFocus: false, ...extra },
+  )
+}
+
+export function useOverview(projectId: string | null) {
+  return useProjectData('overview', projectId, api.overview, { refreshInterval: 10_000 })
+}
+
+export function useStates(projectId: string | null) {
+  return useProjectData('states', projectId, api.states, { refreshInterval: 10_000 })
+}
+
+export function useTimeline(projectId: string | null, hours = 6) {
+  return useProjectData(
+    'timeline',
+    projectId,
+    (pid) => api.timeline(pid, hours),
+    { refreshInterval: 20_000 },
+  )
+}
+
+export function useFailures(projectId: string | null) {
+  return useProjectData('failures', projectId, api.failures, { refreshInterval: 15_000 })
+}
+
+export function useAlerts(projectId: string | null) {
+  return useProjectData('alerts', projectId, api.alerts, { refreshInterval: 15_000 })
+}
+
+export function useLogs(projectId: string | null) {
+  return useProjectData('logs', projectId, api.logs, { refreshInterval: 30_000 })
 }

@@ -6,6 +6,57 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function post<T = void>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    let detail = `API POST ${path} → ${res.status}`
+    try {
+      const json = await res.json()
+      if (json?.detail) detail = String(json.detail)
+    } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
+}
+
+async function del<T = void>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok) {
+    let detail = `API DELETE ${path} → ${res.status}`
+    try {
+      const json = await res.json()
+      if (json?.detail) detail = String(json.detail)
+    } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ProjectConfig {
+  project_id: string
+  project_name: string
+  gee_project: string
+  credentials_file: string
+  start_date: string
+  end_date: string
+  max_concurrent: number
+  created_at: string
+  status: 'running' | 'stopped' | 'finished'
+  active_jobs: number
+}
+
+export type CreateProjectBody = Omit<ProjectConfig, 'project_id' | 'created_at' | 'status' | 'active_jobs'>
+
 export interface KPIs {
   total_jobs: number
   active_jobs: number
@@ -17,6 +68,8 @@ export interface KPIs {
   job_dir: string
   log_dir: string
   db_table: string
+  project_name?: string
+  process_status?: 'running' | 'stopped' | 'finished'
 }
 
 export interface StateCount { state: string; count: number }
@@ -90,24 +143,39 @@ export interface DBSizeStats {
   tables: TableSizeRow[]
 }
 
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+
 export const api = {
-  overview: () => get<KPIs>('/overview'),
-  states: () => get<StateCount[]>('/states'),
-  timeline: (hours = 6) => get<TimelinePoint[]>(`/timeline?hours=${hours}`),
-  tileProgress: () => get<TileProgress[]>('/tile-progress'),
-  dateProgress: () => get<{ date_iso: string; total: number; completed: number; failed: number; active: number }[]>('/date-progress'),
-  failures: () => get<Failures>('/failures'),
-  jobs: (params?: { state?: string; tile_id?: string; min_attempt?: number; limit?: number; offset?: number }) => {
+  // Project management
+  projects: () => get<ProjectConfig[]>('/projects'),
+  createProject: (body: CreateProjectBody) => post<ProjectConfig>('/projects', body),
+  deleteProject: (id: string) => del(`/projects/${id}`),
+  startProject: (id: string) => post<{ status: string }>(`/projects/${id}/start`),
+  stopProject: (id: string) => post<{ status: string }>(`/projects/${id}/stop`),
+
+  // Per-project data endpoints
+  overview: (pid: string) => get<KPIs>(`/projects/${pid}/overview`),
+  states: (pid: string) => get<StateCount[]>(`/projects/${pid}/states`),
+  timeline: (pid: string, hours = 6) => get<TimelinePoint[]>(`/projects/${pid}/timeline?hours=${hours}`),
+  failures: (pid: string) => get<Failures>(`/projects/${pid}/failures`),
+  jobs: (pid: string, params?: { state?: string; tile_id?: string; min_attempt?: number; limit?: number; offset?: number }) => {
     const q = new URLSearchParams()
     if (params?.state) q.set('state', params.state)
     if (params?.tile_id) q.set('tile_id', params.tile_id)
     if (params?.min_attempt) q.set('min_attempt', String(params.min_attempt))
     if (params?.limit) q.set('limit', String(params.limit))
     if (params?.offset) q.set('offset', String(params.offset))
-    return get<JobsPage>(`/jobs${q.toString() ? '?' + q : ''}`)
+    return get<JobsPage>(`/projects/${pid}/jobs${q.toString() ? '?' + q : ''}`)
   },
+  alerts: (pid: string) => get<Alerts>(`/projects/${pid}/alerts`),
+  logs: (pid: string) => get<LogsResult>(`/projects/${pid}/logs`),
+
+  // Global endpoints (not per-project)
   ingest: () => get<IngestStats>('/ingest'),
   dbSize: () => get<DBSizeStats>('/db-size'),
-  alerts: () => get<Alerts>('/alerts'),
-  logs: () => get<LogsResult>('/logs'),
+  globalLogs: () => get<LogsResult>('/logs'),
+  tileProgress: () => get<TileProgress[]>('/tile-progress'),
+  dateProgress: () => get<{ date_iso: string; total: number; completed: number; failed: number; active: number }[]>('/date-progress'),
 }

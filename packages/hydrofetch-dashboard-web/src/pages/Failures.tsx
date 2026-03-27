@@ -13,8 +13,12 @@ const DETAIL_COLS = [
   { key: 'updated_at', label: '更新时间', width: 160 },
 ]
 
-export default function Failures() {
-  const { data, error } = useFailures()
+interface Props {
+  projectId: string
+}
+
+export default function Failures({ projectId }: Props) {
+  const { data, error } = useFailures(projectId)
 
   if (error) return <ErrorBox msg={`失败数据加载失败: ${error.message}`} />
   if (!data) return <Loading />

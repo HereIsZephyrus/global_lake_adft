@@ -40,9 +40,13 @@ function Section({ title, count, color, children }: { title: string; count: numb
   )
 }
 
-export default function Alerts() {
-  const { data: alerts, error: aErr } = useAlerts()
-  const { data: logs, error: lErr } = useLogs()
+interface Props {
+  projectId: string
+}
+
+export default function Alerts({ projectId }: Props) {
+  const { data: alerts, error: aErr } = useAlerts(projectId)
+  const { data: logs, error: lErr } = useLogs(projectId)
 
   if (aErr) return <ErrorBox msg={`告警加载失败: ${aErr.message}`} />
 
