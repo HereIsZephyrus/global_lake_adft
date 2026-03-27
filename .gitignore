@@ -202,7 +202,7 @@ cython_debug/
 .cursorindexingignore
 
 # Monorepo package secrets and local outputs
-client_secret.json
+client_secret*.json
 credentials.json
 packages/*/logs/
 packages/*/data/
