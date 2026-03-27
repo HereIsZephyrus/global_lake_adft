@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import re
 
 import pandas as pd
@@ -63,15 +62,25 @@ def state_counts(jobs_df: pd.DataFrame) -> list[dict]:
 def timeline(jobs_df: pd.DataFrame, hours: int = 6) -> list[dict]:
     if jobs_df.empty:
         return []
-    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(hours=hours)
+    bucket = "10min"
+    now_bucket = pd.Timestamp.utcnow().floor(bucket)
+    cutoff = now_bucket - pd.Timedelta(hours=hours)
     recent = jobs_df.loc[jobs_df["updated_ts"] >= cutoff, ["updated_ts", "state"]].copy()
-    if recent.empty:
-        return []
-    recent["hour"] = recent["updated_ts"].dt.floor("h")
+    recent["hour"] = recent["updated_ts"].dt.floor(bucket)
     grouped = (
         recent.groupby(["hour", "state"], observed=False)
         .size()
         .reset_index(name="count")
+    )
+    all_buckets = pd.date_range(start=cutoff, end=now_bucket, freq=bucket, tz="UTC")
+    full_index = pd.MultiIndex.from_product(
+        [all_buckets, STATE_ORDER],
+        names=["hour", "state"],
+    )
+    grouped = (
+        grouped.set_index(["hour", "state"])
+        .reindex(full_index, fill_value=0)
+        .reset_index()
         .sort_values(["hour", "state"])
     )
     return [

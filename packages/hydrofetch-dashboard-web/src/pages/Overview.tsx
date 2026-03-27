@@ -27,6 +27,14 @@ function usagePercent(bytes: number) {
   return (bytes / (TOTAL_CAPACITY_GIB * GiB) * 100).toFixed(1)
 }
 
+function formatLocalTimeLabel(iso: string) {
+  return new Date(iso).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 // ── Right panel: Ingest + DB size ─────────────────────────────────────────────
 function IngestPanel() {
   const { data: ingest, error: iErr } = useIngest()
@@ -193,13 +201,28 @@ export default function Overview() {
   const hours = Array.from(new Set((timeline ?? []).map(p => p.hour))).sort()
   const tlOption = timeline && hours.length ? {
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: Array<{ axisValue: string; seriesName: string; value: number; color: string }>) => {
+        if (!params.length) return ''
+        const lines = [`<div>${formatLocalTimeLabel(params[0].axisValue)}</div>`]
+        for (const item of params) {
+          lines.push(`${item.color} ${item.seriesName}: ${item.value}`)
+        }
+        return lines.join('<br/>')
+      },
+    },
     legend: { data: CHART_STATES, textStyle: { color: '#9ca3af', fontSize: 10 }, top: 0 },
     grid: { left: 50, right: 20, top: 40, bottom: 40 },
     xAxis: {
       type: 'category',
-      data: hours.map(h => h.slice(11, 16)),
-      axisLabel: { color: '#9ca3af', fontSize: 10 },
+      data: hours,
+      axisLabel: {
+        color: '#9ca3af',
+        fontSize: 10,
+        interval: 0,
+        formatter: (value: string) => formatLocalTimeLabel(value),
+      },
       axisLine: { lineStyle: { color: '#2d3148' } },
     },
     yAxis: { type: 'value', axisLabel: { color: '#9ca3af', fontSize: 11 }, splitLine: { lineStyle: { color: '#1e2130' } } },
