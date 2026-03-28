@@ -50,6 +50,15 @@ class DBClient:
     # Connection helpers
     # ------------------------------------------------------------------
 
+    _KEEPALIVE_PARAMS: dict = {
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 10,
+        "keepalives_interval": 5,
+        "keepalives_count": 3,
+        "tcp_user_timeout": 30000,
+    }
+
     def connect(self) -> psycopg.Connection:
         """Return a new psycopg connection.  Caller is responsible for closing."""
         log.debug(
@@ -59,7 +68,7 @@ class DBClient:
             self._params["port"],
             self._params["user"],
         )
-        return psycopg.connect(**self._params)
+        return psycopg.connect(**self._params, **self._KEEPALIVE_PARAMS)
 
     @contextmanager
     def connection_context(self) -> Generator[psycopg.Connection, None, None]:

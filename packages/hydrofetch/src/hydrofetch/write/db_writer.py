@@ -22,8 +22,8 @@ class DBWriter(BaseWriter):
     """Write sampled forcing data to a PostgreSQL table.
 
     The target table is created (or extended with missing band columns) on the
-    first write call.  Subsequent calls only invoke the upsert, so the
-    idempotency overhead is negligible.
+    first write call per process.  Subsequent calls only invoke the upsert, so
+    the idempotency overhead is negligible.
 
     Args:
         params: Write configuration (``db_table`` is read from here).
@@ -32,10 +32,11 @@ class DBWriter(BaseWriter):
             the writer itself has no knowledge of connection strings.
     """
 
+    _ensured_tables: set[str] = set()
+
     def __init__(self, params: WriteParams, db: "DBClient") -> None:
         self._params = params
         self._db = db
-        self._table_ensured = False
 
     # ------------------------------------------------------------------
     # BaseWriter interface
@@ -74,9 +75,9 @@ class DBWriter(BaseWriter):
         table = self._params.db_table
 
         with self._db.connection_context() as conn:
-            if not self._table_ensured:
+            if table not in DBWriter._ensured_tables:
                 ensure_forcing_table(conn, table, band_cols)
-                self._table_ensured = True
+                DBWriter._ensured_tables.add(table)
             upsert_forcing(conn, table, df)
 
         log.info(

@@ -18,11 +18,12 @@ class HoldState(TaskState):
 
     After a restart-recovery (stalled jobs reset to HOLD), local artefacts
     from a previous run may already exist.  This handler fast-tracks through
-    stages whose output is already on disk:
+    stages whose output is already on disk or on Drive:
 
-    * ``local_sample_path`` exists → skip to WRITE
-    * ``local_raw_path`` exists   → skip to SAMPLE
-    * otherwise                   → submit a fresh GEE export
+    * ``local_sample_path`` exists on disk  → skip to WRITE
+    * ``local_raw_path`` exists on disk     → skip to SAMPLE
+    * ``drive_file_id`` set or tif on Drive → skip to DOWNLOAD
+    * otherwise                             → submit a fresh GEE export
     """
 
     def handle(
@@ -58,6 +59,23 @@ class HoldState(TaskState):
 
             return updated, SampleState()
 
+        # ---- fast-track: Drive file known or discoverable → DOWNLOAD -----
+        file_id = record.drive_file_id
+        if not file_id:
+            file_id = self._probe_drive(record, context)
+        if file_id:
+            if not context.throttle.acquire():
+                return record, None
+            log.info(
+                "Job %s: Drive file %s found, fast-tracking to DOWNLOAD",
+                record.spec.job_id,
+                file_id,
+            )
+            updated = record.advance(JobState.DOWNLOAD, drive_file_id=file_id)
+            from hydrofetch.state_machine.download import DownloadState  # pylint: disable=import-outside-toplevel
+
+            return updated, DownloadState()
+
         # ---- normal path: acquire slot and submit GEE export -------------
         if not context.throttle.acquire():
             log.debug(
@@ -88,6 +106,32 @@ class HoldState(TaskState):
         from hydrofetch.state_machine.export_state import ExportState  # pylint: disable=import-outside-toplevel
 
         return updated, ExportState()
+
+
+    @staticmethod
+    def _probe_drive(record: JobRecord, context: StateContext) -> str | None:
+        """Check Google Drive for an already-exported tif matching *record*.
+
+        Returns the Drive file ID if found, ``None`` otherwise.  Exceptions
+        are swallowed so that a transient Drive error never blocks the queue.
+        """
+        try:
+            files = context.drive.find_files_by_name_prefix(
+                record.spec.export_name,
+                folder_name=record.spec.gee.drive_folder,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            log.debug(
+                "Job %s: Drive probe failed (non-fatal): %s",
+                record.spec.job_id,
+                exc,
+            )
+            return None
+
+        tif_files = [f for f in files if f["name"].endswith(".tif")]
+        if tif_files:
+            return tif_files[0]["id"]
+        return None
 
 
 def _params_to_mock_spec(gee: GeeExportParams):  # type: ignore[return]
