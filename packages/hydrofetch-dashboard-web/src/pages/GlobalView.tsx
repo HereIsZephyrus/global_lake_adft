@@ -38,6 +38,9 @@ const previewCardWrapStyle: React.CSSProperties = {
   gap: 10,
 }
 
+/** 数据库体积：表列表区域最大高度，超出滚动；左侧总大小卡片与该行等高 */
+const DB_TABLES_MAX_HEIGHT = 320
+
 function ProjectPreview({ projectId, projectName }: { projectId: string; projectName: string }) {
   const { data: kpis, error } = useOverview(projectId)
 
@@ -81,124 +84,173 @@ export default function GlobalView() {
     <div>
       <h2 style={{ color: '#f3f4f6', marginBottom: 16, fontSize: 18 }}>全局视图</h2>
 
-      {/* Ingest */}
-      <div style={{ background: '#1e2130', borderRadius: 10, padding: 18, marginBottom: 16 }}>
-        <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
-          入库进度 · era5_forcing
-        </div>
-        {iErr ? <ErrorBox msg={iErr.message} /> :
-          !ingest ? <Loading label="加载入库信息…" /> :
-          !ingest.available ? (
-            <div style={{ color: '#fbbf24', fontSize: 13 }}>{ingest.message}</div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-                <div style={kpiStyle('#3b82f6')}>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>总行数</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>{ingest.total_rows.toLocaleString()}</div>
-                </div>
-                <div style={kpiStyle('#10b981')}>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>最新日期</div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.max_date ?? '—'}</div>
-                </div>
-                <div style={kpiStyle('#a78bfa')}>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>起始日期</div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.min_date ?? '—'}</div>
-                </div>
-                <div style={kpiStyle('#f59e0b')}>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>最近入库</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
-                    {formatDateTimeShanghai(ingest.latest_ingested_at)}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 16,
+        marginBottom: 16,
+        alignItems: 'flex-start',
+      }}>
+        {/* Ingest */}
+        <div style={{
+          flex: '1 1 420px',
+          minWidth: 0,
+          background: '#1e2130',
+          borderRadius: 10,
+          padding: 18,
+        }}>
+          <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
+            入库进度 · era5_forcing
+          </div>
+          {iErr ? <ErrorBox msg={iErr.message} /> :
+            !ingest ? <Loading label="加载入库信息…" /> :
+            !ingest.available ? (
+              <div style={{ color: '#fbbf24', fontSize: 13 }}>{ingest.message}</div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+                  <div style={kpiStyle('#3b82f6')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>总行数</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>{ingest.total_rows.toLocaleString()}</div>
                   </div>
-                </div>
-              </div>
-
-              {ingest.daily_counts.length > 0 && (() => {
-                const sorted = [...ingest.daily_counts].sort((a, b) => a.date < b.date ? -1 : 1)
-                const option = {
-                  backgroundColor: 'transparent',
-                  tooltip: { trigger: 'axis' },
-                  grid: { left: 44, right: 12, top: 10, bottom: 36 },
-                  xAxis: {
-                    type: 'category',
-                    data: sorted.map(d => d.date.slice(5)),
-                    axisLabel: { color: '#6b7280', fontSize: 9, rotate: 45, interval: Math.floor(sorted.length / 8) },
-                    axisLine: { lineStyle: { color: '#2d3148' } },
-                  },
-                  yAxis: {
-                    type: 'value',
-                    axisLabel: { color: '#6b7280', fontSize: 9 },
-                    splitLine: { lineStyle: { color: '#1e2130' } },
-                  },
-                  series: [{ type: 'bar', data: sorted.map(d => d.row_count), itemStyle: { color: '#10b981' } }],
-                }
-                return <ReactECharts option={option} style={{ height: 180 }} theme="dark" />
-              })()}
-            </>
-          )}
-      </div>
-
-      {/* DB size */}
-      <div style={{ background: '#1e2130', borderRadius: 10, padding: 18 }}>
-        <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
-          数据库体积
-        </div>
-        {dErr ? <ErrorBox msg={dErr.message} /> :
-          !dbSize ? <Loading label="加载 DB 体积…" /> :
-          !dbSize.available ? (
-            <div style={{ color: '#fbbf24', fontSize: 13 }}>{dbSize.message}</div>
-          ) : (
-            <>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-                background: '#161827', borderRadius: 8, padding: '12px 16px',
-                borderLeft: `3px solid ${byteColor(dbSize.db_size_bytes)}`,
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>数据库总大小 · {dbSize.db_name}</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: byteColor(dbSize.db_size_bytes) }}>
-                    {prettyGiB(dbSize.db_size_bytes)} / {TOTAL_CAPACITY_GIB} GiB
+                  <div style={kpiStyle('#10b981')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>最新日期</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.max_date ?? '—'}</div>
                   </div>
-                  <div style={{ fontSize: 10, color: '#6b7280' }}>
-                    {dbSize.db_size_pretty} · 已用 {usagePercent(dbSize.db_size_bytes)}%
+                  <div style={kpiStyle('#a78bfa')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>起始日期</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.min_date ?? '—'}</div>
                   </div>
-                </div>
-                {dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * WARN_RATIO && (
-                  <div style={{
-                    background: dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * CRIT_RATIO ? '#3b1f1f' : '#2a1f0e',
-                    color: byteColor(dbSize.db_size_bytes),
-                    borderRadius: 6, padding: '4px 8px', fontSize: 11, fontWeight: 600,
-                  }}>
-                    {dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * CRIT_RATIO ? '⚠ 磁盘告警' : '△ 注意空间'}
-                  </div>
-                )}
-              </div>
-
-              {dbSize.tables.map(t => (
-                <div key={t.table_name} style={{
-                  background: '#161827', borderRadius: 8, padding: '8px 14px',
-                  marginBottom: 6, borderLeft: `3px solid ${byteColor(t.total_bytes)}`,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: 11, color: '#d1d5db', fontWeight: 600 }}>{t.table_name}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: byteColor(t.total_bytes) }}>{t.total_pretty}</div>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
-                    数据 {t.data_pretty} &nbsp;·&nbsp; 索引 {t.index_pretty}
-                  </div>
-                  {dbSize.db_size_bytes > 0 && (
-                    <div style={{ marginTop: 4, height: 3, background: '#2d3148', borderRadius: 2 }}>
-                      <div style={{
-                        height: '100%', borderRadius: 2,
-                        background: byteColor(t.total_bytes),
-                        width: `${Math.min(100, t.total_bytes / dbSize.db_size_bytes * 100).toFixed(1)}%`,
-                      }} />
+                  <div style={kpiStyle('#f59e0b')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>最近入库</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
+                      {formatDateTimeShanghai(ingest.latest_ingested_at)}
                     </div>
-                  )}
+                  </div>
                 </div>
-              ))}
-            </>
-          )}
+
+                {ingest.daily_counts.length > 0 && (() => {
+                  const sorted = [...ingest.daily_counts].sort((a, b) => a.date < b.date ? -1 : 1)
+                  const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: { trigger: 'axis' },
+                    grid: { left: 44, right: 12, top: 10, bottom: 36 },
+                    xAxis: {
+                      type: 'category',
+                      data: sorted.map(d => d.date.slice(5)),
+                      axisLabel: { color: '#6b7280', fontSize: 9, rotate: 45, interval: Math.floor(sorted.length / 8) },
+                      axisLine: { lineStyle: { color: '#2d3148' } },
+                    },
+                    yAxis: {
+                      type: 'value',
+                      axisLabel: { color: '#6b7280', fontSize: 9 },
+                      splitLine: { lineStyle: { color: '#1e2130' } },
+                    },
+                    series: [{ type: 'bar', data: sorted.map(d => d.row_count), itemStyle: { color: '#10b981' } }],
+                  }
+                  return <ReactECharts option={option} style={{ height: 180 }} theme="dark" />
+                })()}
+              </>
+            )}
+        </div>
+
+        {/* DB size */}
+        <div style={{
+          flex: '1 1 480px',
+          minWidth: 420,
+          background: '#1e2130',
+          borderRadius: 10,
+          padding: 18,
+        }}>
+          <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
+            数据库体积
+          </div>
+          {dErr ? <ErrorBox msg={dErr.message} /> :
+            !dbSize ? <Loading label="加载 DB 体积…" /> :
+            !dbSize.available ? (
+              <div style={{ color: '#fbbf24', fontSize: 13 }}>{dbSize.message}</div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(300px, 42%) minmax(0, 1fr)',
+                gap: 12,
+                alignItems: 'stretch',
+              }}>
+                {/* 与右侧同一行高：Grid 行高 = max(左内容, min(右内容, maxHeight)) */}
+                <div style={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
+                  <div style={{
+                    width: '100%',
+                    minHeight: '100%',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    background: '#161827',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    borderLeft: `3px solid ${byteColor(dbSize.db_size_bytes)}`,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 10, color: '#9ca3af' }}>数据库总大小 · {dbSize.db_name}</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: byteColor(dbSize.db_size_bytes) }}>
+                        {prettyGiB(dbSize.db_size_bytes)} / {TOTAL_CAPACITY_GIB} GiB
+                      </div>
+                      <div style={{ fontSize: 10, color: '#6b7280' }}>
+                        {dbSize.db_size_pretty} · 已用 {usagePercent(dbSize.db_size_bytes)}%
+                      </div>
+                    </div>
+                    {dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * WARN_RATIO && (
+                      <div style={{
+                        flexShrink: 0,
+                        alignSelf: 'flex-start',
+                        marginTop: 2,
+                        background: dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * CRIT_RATIO ? '#3b1f1f' : '#2a1f0e',
+                        color: byteColor(dbSize.db_size_bytes),
+                        borderRadius: 6, padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                      }}>
+                        {dbSize.db_size_bytes >= TOTAL_CAPACITY_GIB * GiB * CRIT_RATIO ? '⚠ 磁盘告警' : '△ 注意空间'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{
+                  minWidth: 0,
+                  minHeight: 0,
+                  maxHeight: DB_TABLES_MAX_HEIGHT,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}>
+                  {dbSize.tables.map(t => (
+                    <div key={t.table_name} style={{
+                      background: '#161827', borderRadius: 8, padding: '8px 14px',
+                      borderLeft: `3px solid ${byteColor(t.total_bytes)}`,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 11, color: '#d1d5db', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.table_name}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: byteColor(t.total_bytes), flexShrink: 0 }}>{t.total_pretty}</div>
+                      </div>
+                      <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                        数据 {t.data_pretty} &nbsp;·&nbsp; 索引 {t.index_pretty}
+                      </div>
+                      {dbSize.db_size_bytes > 0 && (
+                        <div style={{ marginTop: 4, height: 3, background: '#2d3148', borderRadius: 2 }}>
+                          <div style={{
+                            height: '100%', borderRadius: 2,
+                            background: byteColor(t.total_bytes),
+                            width: `${Math.min(100, t.total_bytes / dbSize.db_size_bytes * 100).toFixed(1)}%`,
+                          }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+        </div>
       </div>
 
       {/* Project previews */}
