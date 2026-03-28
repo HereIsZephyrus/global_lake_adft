@@ -108,9 +108,11 @@ class JobRunner:
                     deferred.append(job_id)
 
         # --- 2. Pull HOLD jobs while throttle has spare capacity --------
-        # Process only jobs that were already queued; deferred items are
-        # appended afterwards so they wait until the next cycle.
-        hold_budget = len(self._hold_queue)
+        # Cap the batch to max_concurrent so that one cycle doesn't
+        # monopolise the runner when many jobs fast-track through the
+        # full pipeline (HOLD→WRITE→CLEANUP→COMPLETED) in a single step.
+        max_per_cycle = self._context.throttle.max_concurrent
+        hold_budget = min(len(self._hold_queue), max_per_cycle)
         attempts = 0
         while attempts < hold_budget and self._context.throttle.can_acquire():
             job_id = self._hold_queue.popleft()
@@ -174,7 +176,13 @@ class JobRunner:
     # ------------------------------------------------------------------
 
     def _step_job(self, record: JobRecord) -> JobRecord:
-        """Run the state handler for *record* and return the (possibly new) record."""
+        """Run the state handler for *record*, chaining any follow-up handlers.
+
+        When a handler returns a non-None *next_handler*, it is executed
+        immediately within the same step.  This lets fast transitions like
+        WRITE → CLEANUP → COMPLETED complete in a single poll cycle instead
+        of wasting a concurrency slot for an entire cycle on trivial work.
+        """
         handler_cls = _STATE_HANDLERS.get(record.state)
         if handler_cls is None:
             log.debug(
@@ -186,7 +194,7 @@ class JobRunner:
 
         handler = handler_cls()
         try:
-            updated, _next_handler = handler.handle(record, self._context)
+            updated, next_handler = handler.handle(record, self._context)
         except Exception as exc:  # pylint: disable=broad-except
             log.exception(
                 "Job %s: unhandled exception in %s: %s",
@@ -194,7 +202,23 @@ class JobRunner:
                 handler_cls.__name__,
                 exc,
             )
-            updated = record.fail(f"Unhandled exception: {exc}")
+            return record.fail(f"Unhandled exception: {exc}")
+
+        while next_handler is not None and updated.state not in (
+            JobState.HOLD, JobState.FAILED,
+        ):
+            try:
+                updated, next_handler = next_handler.handle(
+                    updated, self._context,
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                log.exception(
+                    "Job %s: unhandled exception in chained %s: %s",
+                    updated.spec.job_id,
+                    type(next_handler).__name__,
+                    exc,
+                )
+                return updated.fail(f"Unhandled exception: {exc}")
 
         return updated
 

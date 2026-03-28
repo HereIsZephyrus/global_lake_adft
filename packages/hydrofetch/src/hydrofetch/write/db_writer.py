@@ -21,18 +21,15 @@ log = logging.getLogger(__name__)
 class DBWriter(BaseWriter):
     """Write sampled forcing data to a PostgreSQL table.
 
-    The target table is created (or extended with missing band columns) on the
-    first write call per process.  Subsequent calls only invoke the upsert, so
-    the idempotency overhead is negligible.
+    ``ensure_forcing_table`` is called on every write; it uses
+    ``CREATE TABLE IF NOT EXISTS`` (ShareLock only) so concurrent
+    calls never block each other or ongoing DML.
 
     Args:
         params: Write configuration (``db_table`` is read from here).
         db: Authenticated :class:`~hydrofetch.db.client.DBClient` instance
-            injected by the factory.  This is the only external dependency;
-            the writer itself has no knowledge of connection strings.
+            injected by the factory.
     """
-
-    _ensured_tables: set[str] = set()
 
     def __init__(self, params: WriteParams, db: "DBClient") -> None:
         self._params = params
@@ -66,7 +63,6 @@ class DBWriter(BaseWriter):
 
         df = pd.read_parquet(str(src))
 
-        # Normalise the id column to "hylak_id" for the DB schema.
         id_col = record.spec.sample.id_column
         if id_col != "hylak_id":
             df = df.rename(columns={id_col: "hylak_id"})
@@ -75,9 +71,7 @@ class DBWriter(BaseWriter):
         table = self._params.db_table
 
         with self._db.connection_context() as conn:
-            if table not in DBWriter._ensured_tables:
-                ensure_forcing_table(conn, table, band_cols)
-                DBWriter._ensured_tables.add(table)
+            ensure_forcing_table(conn, table, band_cols)
             upsert_forcing(conn, table, df)
 
         log.info(

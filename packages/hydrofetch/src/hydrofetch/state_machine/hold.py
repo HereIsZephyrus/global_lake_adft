@@ -40,10 +40,7 @@ class HoldState(TaskState):
                 record.spec.job_id,
                 record.local_sample_path,
             )
-            updated = record.advance(JobState.WRITE)
-            from hydrofetch.state_machine.write_state import WriteState  # pylint: disable=import-outside-toplevel
-
-            return updated, WriteState()
+            return record.advance(JobState.WRITE), None
 
         # ---- fast-track: raw raster already on disk → skip to SAMPLE -----
         if record.local_raw_path and os.path.isfile(record.local_raw_path):
@@ -54,10 +51,7 @@ class HoldState(TaskState):
                 record.spec.job_id,
                 record.local_raw_path,
             )
-            updated = record.advance(JobState.SAMPLE)
-            from hydrofetch.state_machine.sample import SampleState  # pylint: disable=import-outside-toplevel
-
-            return updated, SampleState()
+            return record.advance(JobState.SAMPLE), None
 
         # ---- fast-track: Drive file known or discoverable → DOWNLOAD -----
         file_id = record.drive_file_id
@@ -71,10 +65,7 @@ class HoldState(TaskState):
                 record.spec.job_id,
                 file_id,
             )
-            updated = record.advance(JobState.DOWNLOAD, drive_file_id=file_id)
-            from hydrofetch.state_machine.download import DownloadState  # pylint: disable=import-outside-toplevel
-
-            return updated, DownloadState()
+            return record.advance(JobState.DOWNLOAD, drive_file_id=file_id), None
 
         # ---- normal path: acquire slot and submit GEE export -------------
         if not context.throttle.acquire():
@@ -103,9 +94,7 @@ class HoldState(TaskState):
 
         updated = record.advance(JobState.EXPORT, task_id=task_id)
         log.info("Job %s: submitted GEE task %s", record.spec.job_id, task_id)
-        from hydrofetch.state_machine.export_state import ExportState  # pylint: disable=import-outside-toplevel
-
-        return updated, ExportState()
+        return updated, None
 
 
     @staticmethod

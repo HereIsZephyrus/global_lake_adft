@@ -114,7 +114,7 @@ class TestHoldState:
         updated, next_state = handler.handle(record, context)
         assert updated.state == JobState.EXPORT
         assert updated.task_id == "gee_task_xyz"
-        assert isinstance(next_state, ExportState)
+        assert next_state is None
         assert context.throttle.current == 1
 
     @patch("hydrofetch.state_machine.hold.submit_image_export", side_effect=RuntimeError("GEE error"))
