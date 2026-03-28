@@ -5,10 +5,13 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from hydrofetch.jobs.store import JobStore
 
 from hydrofetch_dashboard_api import config
 from hydrofetch_dashboard_api.services import metrics as svc
+from hydrofetch_dashboard_api.services.db_metrics import manager as db_metrics_manager
 from hydrofetch_dashboard_api.services.process_manager import manager as proc_manager
+from hydrofetch_dashboard_api.services import snapshots as snapshot_svc
 from hydrofetch_dashboard_api.sources import database as db_src
 from hydrofetch_dashboard_api.sources import logs as log_src
 from hydrofetch_dashboard_api.sources.jobs import load_jobs
@@ -52,20 +55,11 @@ def _project_jobs_df(project_id: str):
 
 
 def _project_to_response(cfg: ProjectConfig) -> dict[str, Any]:
-    paths = resolve_paths(config.PROJECTS_DIR, cfg.project_id)
+    """Lightweight project summary — no job-file scanning."""
     status = proc_manager.status(cfg.project_id)
-    # Count active jobs from job dir (best-effort)
-    active_jobs = 0
-    try:
-        df = load_jobs(paths["job_dir"]).jobs_df
-        if "is_active" in df.columns:
-            active_jobs = int(df["is_active"].sum())
-    except Exception:
-        pass
     return {
         **cfg.to_dict(),
         "status": status,
-        "active_jobs": active_jobs,
     }
 
 
@@ -111,7 +105,6 @@ def get_project(project_id: str):
 
 @router.delete("/projects/{project_id}", status_code=204)
 def del_project(project_id: str):
-    # Stop running process first
     proc_manager.stop(project_id)
     try:
         delete_project(config.PROJECTS_DIR, project_id)
@@ -155,9 +148,36 @@ def start_project(project_id: str):
 
 @router.post("/projects/{project_id}/stop")
 def stop_project(project_id: str):
-    _get_project(project_id)  # ensure project exists
+    _get_project(project_id)
     proc_manager.stop(project_id)
     return {"status": "stopped", "project_id": project_id}
+
+
+@router.get("/projects/{project_id}/summary")
+def project_summary(project_id: str):
+    """Lightweight KPI counts using hydrofetch's fast state scanner."""
+    _get_project(project_id)
+    paths = resolve_paths(config.PROJECTS_DIR, project_id)
+    store = JobStore(paths["job_dir"])
+    counts: dict[str, int] = {}
+    total = 0
+    for p in paths["job_dir"].glob("*.json"):
+        s = store._quick_state(p)  # pylint: disable=protected-access
+        if s:
+            counts[s] = counts.get(s, 0) + 1
+            total += 1
+    completed = counts.get("completed", 0)
+    failed = counts.get("failed", 0)
+    active = total - completed - failed - counts.get("hold", 0)
+    return {
+        "total_jobs": total,
+        "active_jobs": active,
+        "completed_jobs": completed,
+        "failed_jobs": failed,
+        "completion_rate": round(completed / total * 100, 4) if total else 0.0,
+        "failure_rate": round(failed / total * 100, 4) if total else 0.0,
+        "process_status": proc_manager.status(project_id),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +210,9 @@ def project_timeline(
     project_id: str,
     hours: Annotated[int, Query(ge=1, le=168)] = 6,
 ):
-    return svc.timeline(_project_jobs_df(project_id), hours=hours)
+    _get_project(project_id)
+    paths = resolve_paths(config.PROJECTS_DIR, project_id)
+    return snapshot_svc.timeline(paths["job_dir"], hours=hours)
 
 
 @router.get("/projects/{project_id}/failures")
@@ -253,7 +275,7 @@ def states():
 
 @router.get("/timeline")
 def timeline_route(hours: Annotated[int, Query(ge=1, le=168)] = 6):
-    return svc.timeline(_jobs_df(), hours=hours)
+    return snapshot_svc.timeline(config.JOB_DIR, hours=hours)
 
 
 @router.get("/tile-progress")
@@ -297,7 +319,7 @@ def ingest():
 
 @router.get("/db-size")
 def db_size():
-    return db_src.load_db_size(table_names=[config.DB_TABLE])
+    return db_metrics_manager.get_stats()
 
 
 @router.get("/alerts")

@@ -8,7 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hydrofetch_dashboard_api import config
 from hydrofetch_dashboard_api.api.routes import router
+from hydrofetch_dashboard_api.services.db_metrics import manager as db_metrics_manager
 from hydrofetch_dashboard_api.services.process_manager import manager as proc_manager
+from hydrofetch_dashboard_api.services.snapshots import manager as snapshot_manager
+from hydrofetch_dashboard_api.sources.database import terminate_zombie_sessions
 
 app = FastAPI(
     title="Hydrofetch Dashboard API",
@@ -28,7 +31,16 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    terminate_zombie_sessions()
     proc_manager.recover()
+    db_metrics_manager.start()
+    snapshot_manager.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    db_metrics_manager.stop()
+    snapshot_manager.stop()
 
 
 def main() -> None:

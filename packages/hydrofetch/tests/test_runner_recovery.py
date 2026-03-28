@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -52,22 +53,21 @@ def runner_env(tmp_path):
 
     store = JobStore(job_dir)
     drive = MagicMock()
-    throttle = ConcurrencyThrottle(max_concurrent=5, initial_count=0)
+    throttle = ConcurrencyThrottle(max_concurrent=5)
     context = StateContext(drive=drive, throttle=throttle, raw_dir=raw_dir, sample_dir=sample_dir)
     runner = JobRunner(store=store, context=context, poll_interval=0.01)
     return store, context, runner
 
 
-class TestRunnerThrottleInit:
-    """After a restart, active job count should seed the throttle."""
+class TestRunnerRecovery:
+    """from_config resets stalled in-flight jobs to HOLD and starts throttle at 0."""
 
-    def test_from_config_seeds_throttle(self, tmp_path):
+    def test_from_config_resets_stalled_jobs(self, tmp_path):
         job_dir = tmp_path / "jobs"
         raw_dir = tmp_path / "raw"
         sample_dir = tmp_path / "sample"
 
         store = JobStore(job_dir)
-        # Simulate 2 jobs already in-flight (EXPORT state = active)
         for i in range(2):
             rec = JobRecord(
                 spec=_make_spec(f"job_{i}", f"2020-0{i+1}-01"),
@@ -75,21 +75,24 @@ class TestRunnerThrottleInit:
                 task_id=f"gee_task_{i}",
             )
             store.save(rec)
+        store.save(JobRecord(spec=_make_spec("job_hold"), state=JobState.HOLD))
 
         drive = MagicMock()
+        runner = JobRunner.from_config(
+            job_dir=job_dir,
+            raw_dir=raw_dir,
+            sample_dir=sample_dir,
+            drive=drive,
+            max_concurrent=5,
+            poll_interval=0.01,
+        )
 
-        with patch("hydrofetch.monitor.runner.DriveClient"):
-            runner = JobRunner.from_config(
-                job_dir=job_dir,
-                raw_dir=raw_dir,
-                sample_dir=sample_dir,
-                drive=drive,
-                max_concurrent=5,
-                poll_interval=0.01,
-            )
-
-        # 2 active jobs should be pre-counted in the throttle
-        assert runner._context.throttle.current == 2  # pylint: disable=protected-access
+        assert runner._context.throttle.current == 0  # pylint: disable=protected-access
+        for i in range(2):
+            loaded = store.load(f"job_{i}")
+            assert loaded.state == JobState.HOLD
+            assert loaded.task_id is None
+        assert len(runner._hold_queue) == 3  # pylint: disable=protected-access
 
 
 class TestRunnerDeduplication:
@@ -110,13 +113,14 @@ class TestRunnerDeduplication:
 
 
 class TestRunnerStepOnce:
-    """step_once should advance HOLD jobs when slots are available."""
+    """step_once should advance HOLD jobs from the queue when slots are available."""
 
     @patch("hydrofetch.state_machine.hold.submit_image_export", return_value="task_new")
     def test_hold_advances_to_export(self, mock_submit, runner_env):
         store, context, runner = runner_env
         spec = _make_spec("job_hold", "2020-05-15")
         store.save(JobRecord(spec=spec))
+        runner._hold_queue.append("job_hold")  # pylint: disable=protected-access
 
         changed = runner.step_once()
 
@@ -134,10 +138,10 @@ class TestRunnerStepOnce:
         spec = _make_spec("job_export", "2020-06-01")
         rec = JobRecord(spec=spec, state=JobState.EXPORT, task_id="t1")
         store.save(rec)
+        runner._active_ids.add("job_export")  # pylint: disable=protected-access
 
         changed = runner.step_once()
 
-        # No state change while task is RUNNING
         assert changed == 0
         loaded = store.load("job_export")
         assert loaded.state == JobState.EXPORT
@@ -156,6 +160,7 @@ class TestRunnerFailureAndRetry:
         rec = JobRecord(spec=spec, state=JobState.EXPORT, task_id="t_fail", max_attempts=3)
         context.throttle._count = 1  # pylint: disable=protected-access
         store.save(rec)
+        runner._active_ids.add("job_fail_retry")  # pylint: disable=protected-access
 
         runner.step_once()
 
@@ -174,6 +179,7 @@ class TestRunnerFailureAndRetry:
         rec = JobRecord(spec=spec, state=JobState.EXPORT, task_id="t_perm", max_attempts=1)
         context.throttle._count = 1  # pylint: disable=protected-access
         store.save(rec)
+        runner._active_ids.add("job_perm_fail")  # pylint: disable=protected-access
 
         runner.step_once()
 

@@ -17,14 +17,20 @@ from typing import Any
 
 
 class JobState(str, Enum):
-    """Ordered states of a hydrofetch export job."""
+    """Ordered states of a hydrofetch export job.
+
+    Pipeline order::
+
+        HOLD → EXPORT → DOWNLOAD → SAMPLE → WRITE → CLEANUP → COMPLETED
+                                                         ↑ throttle released
+    """
 
     HOLD = "hold"
     EXPORT = "export"
     DOWNLOAD = "download"
-    CLEANUP = "cleanup"
     SAMPLE = "sample"
     WRITE = "write"
+    CLEANUP = "cleanup"
     COMPLETED = "completed"
     FAILED = "failed"
 

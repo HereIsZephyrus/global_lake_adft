@@ -29,6 +29,9 @@ export default function Ingest() {
   }
 
   const sortedDaily = [...data.daily_counts].sort((a, b) => a.date < b.date ? -1 : 1)
+  const writeRateLabel = `${data.recent_write_rate_per_min.toLocaleString('zh-CN', {
+    maximumFractionDigits: 1,
+  })} 行/分钟`
   const dailyOption = sortedDaily.length ? {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
@@ -53,10 +56,9 @@ export default function Ingest() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         {[
-          { label: '总行数', value: data.total_rows.toLocaleString(), color: '#3b82f6' },
-          { label: '最早日期', value: data.min_date ?? '—', color: '#6b7280' },
-          { label: '最新日期', value: data.max_date ?? '—', color: '#10b981' },
           { label: '最近入库', value: formatDateTimeShanghai(data.latest_ingested_at), color: '#a78bfa' },
+          { label: '连接数', value: data.db_connection_count.toLocaleString('zh-CN'), color: '#f59e0b' },
+          { label: '近 5 分钟写入速率', value: writeRateLabel, color: '#10b981' },
         ].map(item => (
           <div key={item.label} style={{
             background: '#1e2130', borderRadius: 10, padding: '14px 18px',

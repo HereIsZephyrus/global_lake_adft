@@ -6,8 +6,9 @@ import Loading from '../components/Loading'
 import { useOverview, useStates, useTimeline } from '../hooks/useApi'
 import { api } from '../api/client'
 import { STATE_COLORS } from '../utils/colors'
+import { formatStateLabel } from '../utils/stateLabels'
 
-const CHART_STATES = ['export', 'download', 'cleanup', 'sample', 'write', 'failed']
+const CHART_STATES = ['export', 'download', 'sample', 'write', 'cleanup', 'failed']
 
 function formatLocalTimeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString('zh-CN', {
@@ -78,7 +79,7 @@ export default function Overview({ projectId }: Props) {
     grid: { left: 50, right: 20, top: 20, bottom: 40 },
     xAxis: {
       type: 'category',
-      data: CHART_STATES,
+      data: CHART_STATES.map(formatStateLabel),
       axisLabel: { color: '#9ca3af', fontSize: 11, rotate: 30 },
       axisLine: { lineStyle: { color: '#2d3148' } },
     },
@@ -106,7 +107,7 @@ export default function Overview({ projectId }: Props) {
         return lines.join('<br/>')
       },
     },
-    legend: { data: CHART_STATES, textStyle: { color: '#9ca3af', fontSize: 10 }, top: 0 },
+    legend: { data: CHART_STATES.map(formatStateLabel), textStyle: { color: '#9ca3af', fontSize: 10 }, top: 0 },
     grid: { left: 50, right: 20, top: 40, bottom: 40 },
     xAxis: {
       type: 'category',
@@ -121,7 +122,7 @@ export default function Overview({ projectId }: Props) {
     },
     yAxis: { type: 'value', axisLabel: { color: '#9ca3af', fontSize: 11 }, splitLine: { lineStyle: { color: '#1e2130' } } },
     series: CHART_STATES.map(s => ({
-      name: s,
+      name: formatStateLabel(s),
       type: 'line',
       smooth: true,
       symbol: 'none',

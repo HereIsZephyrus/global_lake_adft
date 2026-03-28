@@ -35,7 +35,7 @@ function Inner() {
   const { data: projects = [], mutate: mutateProjects } = useSWR(
     'projects',
     api.projects,
-    { refreshInterval: 5_000, revalidateOnFocus: false },
+    { refreshInterval: 60_000, revalidateOnFocus: false },
   )
 
   const handleDelete = async (id: string) => {

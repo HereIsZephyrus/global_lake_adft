@@ -1,18 +1,20 @@
 """Manage per-project hydrofetch subprocess lifecycle.
 
-A single ``ProcessManager`` instance (module-level singleton ``manager``) is
-shared across the FastAPI app.  It spawns one ``hydrofetch era5 --run``
-subprocess per project and tracks its state.
+Process state is persisted to a PID file (``hydrofetch.pid``) inside each
+project directory so that the FastAPI backend can be restarted at any time
+without losing track of running hydrofetch processes.
 
-The hydrofetch CLI itself persists job records to disk, so if the Dashboard API
-is restarted the job progress is not lost — the user can call ``start`` again
-and hydrofetch will skip already-completed jobs (idempotent).
+PID file format (two lines)::
+
+    <pid>
+    <pgid>
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -26,13 +28,53 @@ ProcessStatus = Literal["running", "stopped", "finished"]
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _HYDROFETCH_ENV_FILE = _REPO_ROOT / "packages" / "hydrofetch" / ".env"
 
+_PID_FILENAME = "hydrofetch.pid"
+
+
+def _pid_path(project_dir: Path) -> Path:
+    return project_dir / _PID_FILENAME
+
+
+def _write_pid(project_dir: Path, pid: int, pgid: int) -> None:
+    _pid_path(project_dir).write_text(f"{pid}\n{pgid}\n")
+
+
+def _read_pid(project_dir: Path) -> tuple[int, int] | None:
+    """Return ``(pid, pgid)`` from the PID file, or ``None`` if absent/corrupt."""
+    p = _pid_path(project_dir)
+    if not p.is_file():
+        return None
+    try:
+        lines = p.read_text().strip().splitlines()
+        return int(lines[0]), int(lines[1])
+    except (IndexError, ValueError):
+        p.unlink(missing_ok=True)
+        return None
+
+
+def _remove_pid(project_dir: Path) -> None:
+    _pid_path(project_dir).unlink(missing_ok=True)
+
+
+def _is_alive(pid: int) -> bool:
+    """Check whether *pid* is still running (signal 0 probe)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
 
 class ProcessManager:
-    """Thread-safe manager for per-project hydrofetch subprocesses."""
+    """Thread-safe manager for per-project hydrofetch subprocesses.
+
+    Process tracking is persisted via PID files so that the FastAPI backend
+    can be restarted independently of the hydrofetch workers.
+    """
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._procs: dict[str, subprocess.Popen] = {}
+        self._lock = threading.RLock()
+        self._project_dirs: dict[str, Path] = {}
 
     # ------------------------------------------------------------------
     # Public interface
@@ -57,21 +99,22 @@ class ProcessManager:
 
         Raises ``RuntimeError`` if the project is already running.
         """
+        project_dir = job_dir.parent
+
         with self._lock:
-            existing = self._procs.get(project_id)
-            if existing is not None and existing.poll() is None:
+            if self.status(project_id) == "running":
                 raise RuntimeError(f"Project '{project_id}' is already running")
+            self._project_dirs[project_id] = project_dir
 
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
         log_path = log_dir / f"hydrofetch_{ts}.log"
 
-        # Per-project token file lives alongside config.json
-        project_dir = job_dir.parent
         token_file = project_dir / "token.json"
 
         env = {
             **os.environ,
+            "PYTHONUNBUFFERED": "1",
             "HYDROFETCH_GEE_PROJECT": gee_project,
             "HYDROFETCH_CREDENTIALS_FILE": credentials_file,
             "HYDROFETCH_TOKEN_FILE": str(token_file),
@@ -112,59 +155,140 @@ class ProcessManager:
             stdout=log_file,
             stderr=subprocess.STDOUT,
             cwd=str(_REPO_ROOT),
+            start_new_session=True,
         )
 
-        with self._lock:
-            self._procs[project_id] = proc
+        pgid = os.getpgid(proc.pid)
+        _write_pid(project_dir, proc.pid, pgid)
+        log.info(
+            "hydrofetch started for project=%s (pid=%d, pgid=%d)",
+            project_id, proc.pid, pgid,
+        )
 
     def stop(self, project_id: str) -> None:
-        """Terminate the running subprocess for *project_id*.
-
-        No-op if the project is not running.
-        """
-        with self._lock:
-            proc = self._procs.get(project_id)
-        if proc is None or proc.poll() is not None:
+        """Terminate the running hydrofetch process group for *project_id*."""
+        project_dir = self._resolve_dir(project_id)
+        if project_dir is None:
             return
-        log.info("Stopping hydrofetch for project=%s (pid=%d)", project_id, proc.pid)
-        proc.terminate()
+
+        info = _read_pid(project_dir)
+        if info is None:
+            return
+        pid, pgid = info
+
+        if not _is_alive(pid):
+            _remove_pid(project_dir)
+            return
+
+        log.info(
+            "Stopping hydrofetch for project=%s (pid=%d, pgid=%d)",
+            project_id, pid, pgid,
+        )
+
         try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            _remove_pid(project_dir)
+            return
+
+        import time
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if not _is_alive(pid):
+                break
+            time.sleep(0.5)
+        else:
+            log.warning("Grace period expired for project=%s, sending SIGKILL", project_id)
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        _remove_pid(project_dir)
 
     def status(self, project_id: str) -> ProcessStatus:
         """Return the process status for *project_id*.
 
-        ``"running"``  – subprocess is alive.
-        ``"finished"`` – subprocess exited on its own (all jobs done).
-        ``"stopped"``  – subprocess was never started, or was terminated.
+        Reads the PID file and probes the process — no in-memory state needed.
         """
-        with self._lock:
-            proc = self._procs.get(project_id)
-        if proc is None:
+        project_dir = self._resolve_dir(project_id)
+        if project_dir is None:
             return "stopped"
-        rc = proc.poll()
-        if rc is None:
+
+        info = _read_pid(project_dir)
+        if info is None:
+            return "stopped"
+        pid, _pgid = info
+
+        if _is_alive(pid):
             return "running"
-        if rc == 0:
-            return "finished"
-        return "stopped"
 
-    def recover(self) -> None:
-        """Called on API startup.
+        _remove_pid(project_dir)
+        return "finished"
 
-        Nothing to auto-restart — subprocesses do not survive a Python process
-        restart.  This is a no-op placeholder so callers don't need to check.
+    def recover(self, projects_dir: Path | None = None) -> None:
+        """Scan all project directories for PID files and re-register them.
+
+        Called on API startup so that ``status()`` / ``stop()`` work for
+        processes that were launched before a backend restart.
         """
-        log.info("ProcessManager.recover(): no in-memory processes to restore")
+        if projects_dir is None:
+            from hydrofetch_dashboard_api import config  # pylint: disable=import-outside-toplevel
+            projects_dir = config.PROJECTS_DIR
+
+        recovered = 0
+        stale = 0
+        for child in sorted(projects_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            pid_file = child / _PID_FILENAME
+            if not pid_file.is_file():
+                continue
+            project_id = child.name
+            info = _read_pid(child)
+            if info is None:
+                continue
+            pid, _pgid = info
+            if _is_alive(pid):
+                with self._lock:
+                    self._project_dirs[project_id] = child
+                recovered += 1
+                log.info(
+                    "Recovered running process for project=%s (pid=%d)",
+                    project_id, pid,
+                )
+            else:
+                _remove_pid(child)
+                stale += 1
+
+        log.info(
+            "ProcessManager.recover(): %d running, %d stale PID files cleaned",
+            recovered, stale,
+        )
 
     def all_statuses(self) -> dict[str, ProcessStatus]:
         """Return a status dict for every known project_id."""
         with self._lock:
-            ids = list(self._procs.keys())
+            ids = list(self._project_dirs.keys())
         return {pid: self.status(pid) for pid in ids}
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_dir(self, project_id: str) -> Path | None:
+        """Return the project directory, checking in-memory cache first."""
+        with self._lock:
+            d = self._project_dirs.get(project_id)
+        if d is not None:
+            return d
+        from hydrofetch_dashboard_api import config  # pylint: disable=import-outside-toplevel
+        candidate = config.PROJECTS_DIR / project_id
+        if candidate.is_dir():
+            with self._lock:
+                self._project_dirs[project_id] = candidate
+            return candidate
+        return None
 
 
 # Module-level singleton shared by the FastAPI app

@@ -38,6 +38,8 @@ cp packages/hydrofetch/.env.example packages/hydrofetch/.env
 | `HYDROFETCH_DASHBOARD_LOG_DIR` | `logs/` | 单目录模式下的日志目录 |
 | `HYDROFETCH_DASHBOARD_PROJECTS_DIR` | `data/projects` | 多项目根目录 |
 | `HYDROFETCH_DASHBOARD_DB_TABLE` | `era5_forcing` | Dashboard 默认统计的目标表 |
+| `HYDROFETCH_DASHBOARD_SNAPSHOT_INTERVAL_SECONDS` | `60` | 后台趋势快照采样间隔（秒） |
+| `HYDROFETCH_DASHBOARD_SNAPSHOT_RETENTION_HOURS` | `168` | 本地趋势快照保留时长（小时） |
 | `HYDROFETCH_TILE_MANIFEST` | （若存在）`data/continents/continents_manifest.json` | 启动项目时传给 `hydrofetch era5 --tile-manifest` 的路径 |
 | `HYDROFETCH_DASHBOARD_API_PORT` | `8050` | API 端口 |
 | `HYDROFETCH_DB` | — | PostgreSQL 数据库名 |
@@ -103,14 +105,14 @@ curl -X DELETE http://127.0.0.1:8050/api/projects/north-america-2020
 | POST | `/api/projects/{project_id}/stop` | 停止项目 |
 | GET | `/api/projects/{project_id}/overview` | 单项目 KPI 汇总 |
 | GET | `/api/projects/{project_id}/states` | 单项目状态统计 |
-| GET | `/api/projects/{project_id}/timeline?hours=6` | 单项目趋势 |
+| GET | `/api/projects/{project_id}/timeline?hours=6` | 单项目趋势（读取周期性快照） |
 | GET | `/api/projects/{project_id}/failures` | 单项目失败统计 |
 | GET | `/api/projects/{project_id}/jobs` | 单项目分页任务列表 |
 | GET | `/api/projects/{project_id}/alerts` | 单项目告警 |
 | GET | `/api/projects/{project_id}/logs` | 单项目日志 |
 | GET | `/api/overview` | 全局 KPI 汇总 |
 | GET | `/api/states` | 全局状态数量 |
-| GET | `/api/timeline?hours=6` | 全局最近 N 小时趋势 |
+| GET | `/api/timeline?hours=6` | 全局最近 N 小时趋势（读取周期性快照） |
 | GET | `/api/failures` | 全局失败任务与错误摘要 |
 | GET | `/api/jobs` | 全局分页任务列表 |
 | GET | `/api/tile-progress` | 按 tile 聚合进度 |
@@ -128,9 +130,14 @@ src/hydrofetch_dashboard_api/
   services/
     metrics.py          # 聚合计算逻辑
     process_manager.py  # 启停 hydrofetch 子进程
+  snapshots.py        # 周期性状态快照与趋势读取
   sources/
     jobs.py             # 读取 job JSON（带缓存）
     logs.py             # 解析日志文件
     database.py         # PostgreSQL 查询
     projects.py         # 项目配置 CRUD
 ```
+
+## 趋势快照机制
+
+`/api/*/timeline` 不再根据当前 job 的 `updated_at` 临时现算，而是由 API 进程后台每隔固定秒数把各状态计数写入本地 JSONL 快照文件，再按 10 分钟桶回放最近 N 小时趋势。

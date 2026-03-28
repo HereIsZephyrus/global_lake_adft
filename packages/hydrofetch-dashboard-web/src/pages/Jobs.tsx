@@ -4,8 +4,9 @@ import ErrorBox from '../components/ErrorBox'
 import Loading from '../components/Loading'
 import Table from '../components/Table'
 import { api } from '../api/client'
+import { formatStateLabel } from '../utils/stateLabels'
 
-const STATE_ORDER = ['', 'hold', 'export', 'download', 'cleanup', 'sample', 'write', 'completed', 'failed']
+const STATE_ORDER = ['', 'hold', 'export', 'download', 'sample', 'write', 'cleanup', 'completed', 'failed']
 
 const COLS = [
   { key: 'state', label: '状态', width: 90 },
@@ -64,7 +65,7 @@ export default function Jobs({ projectId }: Props) {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
         <select style={inputStyle} value={state} onChange={e => setState(e.target.value)}>
-          {STATE_ORDER.map(s => <option key={s} value={s}>{s || '全部状态'}</option>)}
+          {STATE_ORDER.map(s => <option key={s} value={s}>{s ? formatStateLabel(s) : '全部状态'}</option>)}
         </select>
         <input style={inputStyle} placeholder="Tile ID" value={tileId} onChange={e => setTileId(e.target.value)} />
         <input
