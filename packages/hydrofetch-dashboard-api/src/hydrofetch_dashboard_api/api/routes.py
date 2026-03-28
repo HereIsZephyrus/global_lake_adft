@@ -8,7 +8,9 @@ from fastapi import APIRouter, Body, HTTPException, Query
 
 from hydrofetch_dashboard_api import config
 from hydrofetch_dashboard_api.services import metrics as svc
+from hydrofetch_dashboard_api.services.db_metrics import manager as db_metrics_manager
 from hydrofetch_dashboard_api.services.process_manager import manager as proc_manager
+from hydrofetch_dashboard_api.services import snapshots as snapshot_svc
 from hydrofetch_dashboard_api.sources import database as db_src
 from hydrofetch_dashboard_api.sources import logs as log_src
 from hydrofetch_dashboard_api.sources.jobs import load_jobs
@@ -190,7 +192,9 @@ def project_timeline(
     project_id: str,
     hours: Annotated[int, Query(ge=1, le=168)] = 6,
 ):
-    return svc.timeline(_project_jobs_df(project_id), hours=hours)
+    _get_project(project_id)
+    paths = resolve_paths(config.PROJECTS_DIR, project_id)
+    return snapshot_svc.timeline(paths["job_dir"], hours=hours)
 
 
 @router.get("/projects/{project_id}/failures")
@@ -253,7 +257,7 @@ def states():
 
 @router.get("/timeline")
 def timeline_route(hours: Annotated[int, Query(ge=1, le=168)] = 6):
-    return svc.timeline(_jobs_df(), hours=hours)
+    return snapshot_svc.timeline(config.JOB_DIR, hours=hours)
 
 
 @router.get("/tile-progress")
@@ -297,7 +301,7 @@ def ingest():
 
 @router.get("/db-size")
 def db_size():
-    return db_src.load_db_size(table_names=[config.DB_TABLE])
+    return db_metrics_manager.get_stats()
 
 
 @router.get("/alerts")

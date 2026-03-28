@@ -1,4 +1,4 @@
-"""PostgreSQL ingest statistics source."""
+"""PostgreSQL ingest and database size statistics sources."""
 
 from __future__ import annotations
 
@@ -17,11 +17,21 @@ class DBIngestStats:
     message: str
     table_name: str
     total_rows: int = 0
-    min_date: str | None = None
-    max_date: str | None = None
     latest_ingested_at: str | None = None
     daily_counts: list[dict] = field(default_factory=list)
     recent_rows: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class DBSizeStats:
+    available: bool
+    message: str
+    db_name: str = ""
+    db_size_bytes: int = 0
+    db_size_pretty: str = ""
+    total_updated_at: str | None = None
+    tables_updated_at: str | None = None
+    tables: list[dict] = field(default_factory=list)
 
 
 def _get_conn_params() -> dict:
@@ -68,8 +78,107 @@ def _connection() -> Generator[psycopg.Connection, None, None]:
         yield conn
 
 
+def _zero_table_row(table_name: str) -> dict:
+    return {
+        "table_name": table_name,
+        "total_bytes": 0,
+        "total_pretty": "0 bytes",
+        "data_bytes": 0,
+        "data_pretty": "0 bytes",
+        "index_bytes": 0,
+        "index_pretty": "0 bytes",
+    }
+
+
+def query_db_total_size(cur: psycopg.Cursor) -> tuple[str, int, str]:
+    """Query total size of the current database."""
+
+    cur.execute(
+        """
+        SELECT current_database(),
+               pg_database_size(current_database()),
+               pg_size_pretty(pg_database_size(current_database()))
+        """
+    )
+    db_name, db_size_bytes, db_size_pretty = cur.fetchone()
+    return db_name, int(db_size_bytes or 0), db_size_pretty or ""
+
+
+def query_table_sizes(
+    cur: psycopg.Cursor,
+    table_names: list[str] | None = None,
+) -> list[dict]:
+    """Query per-table sizes, optionally restricted to named tables."""
+
+    if table_names:
+        cur.execute(
+            """
+            SELECT
+                c.relname AS table_name,
+                pg_total_relation_size(c.oid) AS total_bytes,
+                pg_size_pretty(pg_total_relation_size(c.oid)) AS total_pretty,
+                pg_relation_size(c.oid) AS data_bytes,
+                pg_size_pretty(pg_relation_size(c.oid)) AS data_pretty,
+                pg_total_relation_size(c.oid) - pg_relation_size(c.oid) AS index_bytes,
+                pg_size_pretty(pg_total_relation_size(c.oid) - pg_relation_size(c.oid)) AS index_pretty
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind IN ('r', 'm', 'p')
+              AND c.relname = ANY(%s)
+            ORDER BY total_bytes DESC, table_name ASC
+            """,
+            (table_names,),
+        )
+        fetched = {
+            str(r[0]): {
+                "table_name": r[0],
+                "total_bytes": r[1],
+                "total_pretty": r[2],
+                "data_bytes": r[3],
+                "data_pretty": r[4],
+                "index_bytes": r[5],
+                "index_pretty": r[6],
+            }
+            for r in cur.fetchall()
+        }
+        return [fetched.get(name, _zero_table_row(name)) for name in table_names]
+
+    cur.execute(
+        """
+        SELECT
+            relname AS table_name,
+            pg_total_relation_size(relid) AS total_bytes,
+            pg_size_pretty(pg_total_relation_size(relid)) AS total_pretty,
+            pg_relation_size(relid) AS data_bytes,
+            pg_size_pretty(pg_relation_size(relid)) AS data_pretty,
+            pg_total_relation_size(relid) - pg_relation_size(relid) AS index_bytes,
+            pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_pretty
+        FROM pg_stat_user_tables
+        WHERE schemaname = 'public'
+        ORDER BY total_bytes DESC
+        LIMIT 20
+        """
+    )
+    return [
+        {
+            "table_name": r[0],
+            "total_bytes": r[1],
+            "total_pretty": r[2],
+            "data_bytes": r[3],
+            "data_pretty": r[4],
+            "index_bytes": r[5],
+            "index_pretty": r[6],
+        }
+        for r in cur.fetchall()
+    ]
+
+
 def load_ingest_stats(
-    table_name: str, days: int = 30, recent_limit: int = 20
+    table_name: str,
+    days: int = 30,
+    recent_limit: int = 20,
+    recent_scan_limit: int = 100,
 ) -> DBIngestStats:
     """Query lightweight ingest statistics from PostgreSQL."""
 
@@ -93,11 +202,11 @@ def load_ingest_stats(
                     )
 
                 cur.execute(
-                    sql.SQL(
-                        "SELECT COUNT(*), MIN(date), MAX(date), MAX(ingested_at) FROM {t}"
-                    ).format(t=sql.Identifier(table_name))
+                    sql.SQL("SELECT COUNT(*) FROM {t}").format(
+                        t=sql.Identifier(table_name)
+                    )
                 )
-                total_rows, min_date, max_date, latest_at = cur.fetchone()
+                total_rows = cur.fetchone()[0]
 
                 cur.execute(
                     sql.SQL(
@@ -124,11 +233,16 @@ def load_ingest_stats(
                         LIMIT %s
                         """
                     ).format(t=sql.Identifier(table_name)),
-                    (recent_limit,),
+                    (max(recent_limit, recent_scan_limit),),
+                )
+                recent_scan_rows = cur.fetchall()
+                latest_at = next(
+                    (r[2] for r in recent_scan_rows if r[2] is not None),
+                    None,
                 )
                 recent_rows = [
                     {"hylak_id": r[0], "date": r[1], "ingested_at": r[2]}
-                    for r in cur.fetchall()
+                    for r in recent_scan_rows[:recent_limit]
                 ]
 
         return DBIngestStats(
@@ -136,8 +250,6 @@ def load_ingest_stats(
             message="ok",
             table_name=table_name,
             total_rows=int(total_rows or 0),
-            min_date=str(min_date) if min_date else None,
-            max_date=str(max_date) if max_date else None,
             latest_ingested_at=str(latest_at) if latest_at else None,
             daily_counts=daily_counts,
             recent_rows=recent_rows,
@@ -150,83 +262,21 @@ def load_ingest_stats(
         )
 
 
-@dataclass
-class DBSizeStats:
-    available: bool
-    message: str
-    db_name: str = ""
-    db_size_bytes: int = 0
-    db_size_pretty: str = ""
-    tables: list[dict] = field(default_factory=list)
-
-
 def load_db_size(table_names: list[str] | None = None) -> DBSizeStats:
     """Query database total size and per-table sizes from PostgreSQL."""
 
     try:
         with _connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT current_database(),
-                           pg_database_size(current_database()),
-                           pg_size_pretty(pg_database_size(current_database()))
-                    """
-                )
-                db_name, db_size_bytes, db_size_pretty = cur.fetchone()
-
-                cur.execute(
-                    """
-                    SELECT
-                        relname AS table_name,
-                        pg_total_relation_size(relid) AS total_bytes,
-                        pg_size_pretty(pg_total_relation_size(relid)) AS total_pretty,
-                        pg_relation_size(relid) AS data_bytes,
-                        pg_size_pretty(pg_relation_size(relid)) AS data_pretty,
-                        pg_total_relation_size(relid) - pg_relation_size(relid) AS index_bytes,
-                        pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_pretty
-                    FROM pg_stat_user_tables
-                    WHERE schemaname = 'public'
-                    ORDER BY total_bytes DESC
-                    LIMIT 20
-                    """
-                )
-                all_tables = [
-                    {
-                        "table_name": r[0],
-                        "total_bytes": r[1],
-                        "total_pretty": r[2],
-                        "data_bytes": r[3],
-                        "data_pretty": r[4],
-                        "index_bytes": r[5],
-                        "index_pretty": r[6],
-                    }
-                    for r in cur.fetchall()
-                ]
-
-                if table_names:
-                    name_set = set(table_names)
-                    tables = [t for t in all_tables if t["table_name"] in name_set]
-                    for name in table_names:
-                        if not any(t["table_name"] == name for t in tables):
-                            tables.append({
-                                "table_name": name,
-                                "total_bytes": 0,
-                                "total_pretty": "0 bytes",
-                                "data_bytes": 0,
-                                "data_pretty": "0 bytes",
-                                "index_bytes": 0,
-                                "index_pretty": "0 bytes",
-                            })
-                else:
-                    tables = all_tables
+                db_name, db_size_bytes, db_size_pretty = query_db_total_size(cur)
+                tables = query_table_sizes(cur, table_names=table_names)
 
         return DBSizeStats(
             available=True,
             message="ok",
             db_name=db_name,
-            db_size_bytes=int(db_size_bytes or 0),
-            db_size_pretty=db_size_pretty or "",
+            db_size_bytes=db_size_bytes,
+            db_size_pretty=db_size_pretty,
             tables=tables,
         )
     except Exception as exc:
@@ -236,4 +286,11 @@ def load_db_size(table_names: list[str] | None = None) -> DBSizeStats:
         )
 
 
-__all__ = ["DBIngestStats", "DBSizeStats", "load_db_size", "load_ingest_stats"]
+__all__ = [
+    "DBIngestStats",
+    "DBSizeStats",
+    "load_db_size",
+    "load_ingest_stats",
+    "query_db_total_size",
+    "query_table_sizes",
+]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +14,9 @@ STATE_ORDER = [
     "hold",
     "export",
     "download",
-    "cleanup",
     "sample",
     "write",
+    "cleanup",
     "completed",
     "failed",
 ]
@@ -122,7 +122,7 @@ def load_jobs(job_dir: str | Path) -> LoadResult:
         jobs_df["date"] = pd.to_datetime(jobs_df["date_iso"], errors="coerce")
         jobs_df["created_ts"] = pd.to_datetime(jobs_df["created_at"], utc=True, errors="coerce")
         jobs_df["updated_ts"] = pd.to_datetime(jobs_df["updated_at"], utc=True, errors="coerce")
-        now_ts = pd.Timestamp.utcnow()
+        now_ts = pd.Timestamp.now(tz="UTC")
         jobs_df["updated_age_hours"] = (
             (now_ts - jobs_df["updated_ts"]).dt.total_seconds() / 3600.0
         ).round(2)

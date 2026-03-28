@@ -32,6 +32,12 @@ const kpiStyle = (color: string): React.CSSProperties => ({
   flex: '1 1 140px',
 })
 
+const ingestDateValueStyle: React.CSSProperties = {
+  fontSize: 16,
+  fontWeight: 600,
+  color: '#f3f4f6',
+}
+
 const previewCardWrapStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
@@ -113,17 +119,9 @@ export default function GlobalView() {
                     <div style={{ fontSize: 10, color: '#9ca3af' }}>总行数</div>
                     <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>{ingest.total_rows.toLocaleString()}</div>
                   </div>
-                  <div style={kpiStyle('#10b981')}>
-                    <div style={{ fontSize: 10, color: '#9ca3af' }}>最新日期</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.max_date ?? '—'}</div>
-                  </div>
-                  <div style={kpiStyle('#a78bfa')}>
-                    <div style={{ fontSize: 10, color: '#9ca3af' }}>起始日期</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#f3f4f6' }}>{ingest.min_date ?? '—'}</div>
-                  </div>
                   <div style={kpiStyle('#f59e0b')}>
                     <div style={{ fontSize: 10, color: '#9ca3af' }}>最近入库</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
+                    <div style={ingestDateValueStyle}>
                       {formatDateTimeShanghai(ingest.latest_ingested_at)}
                     </div>
                   </div>

@@ -54,8 +54,6 @@ export default function Ingest() {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         {[
           { label: '总行数', value: data.total_rows.toLocaleString(), color: '#3b82f6' },
-          { label: '最早日期', value: data.min_date ?? '—', color: '#6b7280' },
-          { label: '最新日期', value: data.max_date ?? '—', color: '#10b981' },
           { label: '最近入库', value: formatDateTimeShanghai(data.latest_ingested_at), color: '#a78bfa' },
         ].map(item => (
           <div key={item.label} style={{

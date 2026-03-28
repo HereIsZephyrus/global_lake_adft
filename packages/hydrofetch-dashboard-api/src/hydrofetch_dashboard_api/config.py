@@ -29,6 +29,18 @@ LOG_DIR: Path = _path_env(
 DB_TABLE: str = os.getenv("HYDROFETCH_DASHBOARD_DB_TABLE", "era5_forcing")
 API_PORT: int = int(os.getenv("HYDROFETCH_DASHBOARD_API_PORT", "8050"))
 CORS_ORIGINS: list[str] = ["http://localhost:5170", "http://127.0.0.1:5170"]
+DB_SIZE_TOTAL_REFRESH_SECONDS: int = int(
+    os.getenv("HYDROFETCH_DASHBOARD_DB_SIZE_TOTAL_REFRESH_SECONDS", "7200")
+)
+DB_SIZE_TABLE_REFRESH_SECONDS: int = int(
+    os.getenv("HYDROFETCH_DASHBOARD_DB_SIZE_TABLE_REFRESH_SECONDS", "1800")
+)
+SNAPSHOT_INTERVAL_SECONDS: int = int(
+    os.getenv("HYDROFETCH_DASHBOARD_SNAPSHOT_INTERVAL_SECONDS", "60")
+)
+SNAPSHOT_RETENTION_HOURS: int = int(
+    os.getenv("HYDROFETCH_DASHBOARD_SNAPSHOT_RETENTION_HOURS", "168")
+)
 
 # Multi-project support
 PROJECTS_DIR: Path = _path_env(

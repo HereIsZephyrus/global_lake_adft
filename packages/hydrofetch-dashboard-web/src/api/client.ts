@@ -114,8 +114,6 @@ export interface IngestStats {
   message: string
   table_name: string
   total_rows: number
-  min_date: string | null
-  max_date: string | null
   latest_ingested_at: string | null
   daily_counts: DailyCount[]
   recent_rows: { hylak_id: string | null; date: string | null; ingested_at: string | null }[]
@@ -140,6 +138,8 @@ export interface DBSizeStats {
   db_name: string
   db_size_bytes: number
   db_size_pretty: string
+  total_updated_at: string | null
+  tables_updated_at: string | null
   tables: TableSizeRow[]
 }
 

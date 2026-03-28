@@ -72,6 +72,7 @@ class ProcessManager:
 
         env = {
             **os.environ,
+            "PYTHONUNBUFFERED": "1",
             "HYDROFETCH_GEE_PROJECT": gee_project,
             "HYDROFETCH_CREDENTIALS_FILE": credentials_file,
             "HYDROFETCH_TOKEN_FILE": str(token_file),
