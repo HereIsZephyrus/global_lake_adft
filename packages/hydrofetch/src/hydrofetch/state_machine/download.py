@@ -24,8 +24,8 @@ class DownloadState(TaskState):
         record: JobRecord,
         context: StateContext,
     ) -> tuple[JobRecord, TaskState | None]:
-        from hydrofetch.state_machine.cleanup import (  # pylint: disable=import-outside-toplevel
-            CleanupState,
+        from hydrofetch.state_machine.sample import (  # pylint: disable=import-outside-toplevel
+            SampleState,
         )
 
         dest = context.raw_dir / f"{record.spec.export_name}.tif"
@@ -39,10 +39,10 @@ class DownloadState(TaskState):
                 dest,
             )
             updated = record.advance(
-                JobState.CLEANUP,
+                JobState.SAMPLE,
                 local_raw_path=str(dest),
             )
-            return updated, CleanupState()
+            return updated, SampleState()
 
         # Clean up any partial download from a previous crash.
         tmp_dest = dest.with_suffix(".tif.tmp")
@@ -71,12 +71,12 @@ class DownloadState(TaskState):
             return failed, None
 
         updated = record.advance(
-            JobState.CLEANUP,
+            JobState.SAMPLE,
             drive_file_id=file_id,
             local_raw_path=str(dest),
         )
         log.info("Job %s: downloaded to %s", record.spec.job_id, dest)
-        return updated, CleanupState()
+        return updated, SampleState()
 
     @staticmethod
     def _find_drive_file(record: JobRecord, context: StateContext) -> str | None:

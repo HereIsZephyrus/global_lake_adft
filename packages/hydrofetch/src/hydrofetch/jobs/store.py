@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from collections import deque
 from pathlib import Path
+from typing import Iterator
 
 from hydrofetch.jobs.models import (
     JobRecord,
     JobState,
     record_from_file,
-    record_to_dict,
     record_to_json,
 )
 
 log = logging.getLogger(__name__)
+
+_STATE_RE = re.compile(r'"state"\s*:\s*"(\w+)"')
 
 
 class JobStore:
@@ -72,8 +76,7 @@ class JobStore:
         if not path.is_file():
             return None
         try:
-            record = record_from_file(path)
-            return record
+            return record_from_file(path)
         except Exception as exc:  # pylint: disable=broad-except
             log.error("Failed to load job %s: %s", job_id, exc)
             return None
@@ -96,6 +99,84 @@ class JobStore:
         return [r for r in self.load_all() if not r.state.is_terminal]
 
     # ------------------------------------------------------------------
+    # Fast state scanning (without full JSON parse)
+    # ------------------------------------------------------------------
+
+    def _quick_state(self, path: Path) -> str | None:
+        """Extract just the ``state`` value from a job file via regex.
+
+        Much faster than full JSON parse for large files with embedded
+        GeoJSON coordinates.
+        """
+        try:
+            text = path.read_text(encoding="utf-8")
+            m = _STATE_RE.search(text)
+            return m.group(1) if m else None
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+    # ------------------------------------------------------------------
+    # Recovery: scan once, classify, reset stalled → HOLD
+    # ------------------------------------------------------------------
+
+    def recover_stalled(self) -> tuple[deque[str], int]:
+        """Scan all jobs once.  Reset in-flight (stalled) jobs to HOLD.
+
+        Returns:
+            ``(hold_queue, reset_count)`` where *hold_queue* is a
+            :class:`~collections.deque` of job IDs in HOLD state (including
+            those just reset), and *reset_count* is how many were reset.
+        """
+        hold_ids: deque[str] = deque()
+        reset_count = 0
+
+        for path in sorted(self._dir.glob("*.json")):
+            state_str = self._quick_state(path)
+            if state_str is None:
+                continue
+
+            job_id = path.stem
+
+            if state_str == JobState.HOLD.value:
+                hold_ids.append(job_id)
+            elif state_str in (JobState.COMPLETED.value, JobState.FAILED.value):
+                pass
+            else:
+                record = self.load(job_id)
+                if record is None:
+                    continue
+                reset = record.advance(
+                    JobState.HOLD,
+                    task_id=None,
+                    drive_file_id=None,
+                )
+                self.save(reset)
+                hold_ids.append(job_id)
+                reset_count += 1
+                log.info(
+                    "Recovery: reset stalled job %s (%s → HOLD)",
+                    job_id,
+                    state_str,
+                )
+
+        return hold_ids, reset_count
+
+    # ------------------------------------------------------------------
+    # Lazy iteration for hold jobs
+    # ------------------------------------------------------------------
+
+    def iter_hold_jobs(self) -> Iterator[JobRecord]:
+        """Yield HOLD records one at a time without loading all files."""
+        for path in sorted(self._dir.glob("*.json")):
+            state_str = self._quick_state(path)
+            if state_str != JobState.HOLD.value:
+                continue
+            try:
+                yield record_from_file(path)
+            except Exception as exc:  # pylint: disable=broad-except
+                log.error("Skipping corrupt job file %s: %s", path, exc)
+
+    # ------------------------------------------------------------------
     # Existence / deduplication
     # ------------------------------------------------------------------
 
@@ -109,18 +190,29 @@ class JobStore:
         return record is not None and record.state == JobState.COMPLETED
 
     # ------------------------------------------------------------------
-    # Counting (for concurrency initialisation after restart)
+    # Counting
     # ------------------------------------------------------------------
 
     def count_active(self) -> int:
         """Return the number of non-terminal, non-HOLD records (holding a slot)."""
-        return sum(1 for r in self.load_all() if r.state.is_active)
+        count = 0
+        for path in self._dir.glob("*.json"):
+            state_str = self._quick_state(path)
+            if state_str and state_str not in (
+                JobState.HOLD.value,
+                JobState.COMPLETED.value,
+                JobState.FAILED.value,
+            ):
+                count += 1
+        return count
 
     def summarise(self) -> dict[str, int]:
         """Return a count of records per :class:`~hydrofetch.jobs.models.JobState`."""
         counts: dict[str, int] = {s.value: 0 for s in JobState}
-        for record in self.load_all():
-            counts[record.state.value] += 1
+        for path in self._dir.glob("*.json"):
+            state_str = self._quick_state(path)
+            if state_str and state_str in counts:
+                counts[state_str] += 1
         return {k: v for k, v in counts.items() if v > 0}
 
     # ------------------------------------------------------------------

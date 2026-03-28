@@ -193,7 +193,7 @@ class TestCleanupState:
         updated, next_state = CleanupState().handle(record, context)
         context.drive.delete_file.assert_called_once_with("drive_abc")
         assert context.throttle.current == 0
-        assert updated.state == JobState.SAMPLE
+        assert updated.state == JobState.COMPLETED
 
     def test_cleanup_tolerates_failed_drive_delete(self, tmp_path):
         record = _make_record(state=JobState.CLEANUP)
@@ -201,5 +201,5 @@ class TestCleanupState:
         context = _make_context(tmp_path, initial=1)
         context.drive.delete_file.side_effect = Exception("permission denied")
         updated, next_state = CleanupState().handle(record, context)
-        assert updated.state == JobState.SAMPLE
+        assert updated.state == JobState.COMPLETED
         assert context.throttle.current == 0

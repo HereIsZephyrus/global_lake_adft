@@ -1,9 +1,8 @@
-"""Tests for WriteState and cleanup_after_write file cleanup.
+"""Tests for the WRITE → CLEANUP → COMPLETED pipeline.
 
-WriteState itself no longer deletes files — it only transitions the job to
-COMPLETED.  The runner calls ``cleanup_after_write`` *after* persisting the
-COMPLETED state, so a crash between write and persist cannot lose the sample
-file while the job is still in WRITE state.
+WriteState persists sampled outputs and transitions to CLEANUP.
+CleanupState deletes Drive/local artefacts, releases the throttle slot,
+and transitions to COMPLETED.
 """
 
 from __future__ import annotations
@@ -24,7 +23,8 @@ from hydrofetch.jobs.models import (
 )
 from hydrofetch.monitor.throttle import ConcurrencyThrottle
 from hydrofetch.state_machine.base import StateContext
-from hydrofetch.state_machine.write_state import WriteState, cleanup_after_write
+from hydrofetch.state_machine.cleanup import CleanupState
+from hydrofetch.state_machine.write_state import WriteState
 
 
 def _make_context(tmp_path: Path) -> StateContext:
@@ -41,6 +41,7 @@ def _make_record(
     sinks: list[str] | None = None,
     raw_exists: bool = True,
     sample_exists: bool = True,
+    drive_file_id: str | None = "fake_drive_id",
 ) -> JobRecord:
     sinks = sinks or ["db"]
     raw_path = tmp_path / "raw" / "job.tif"
@@ -74,102 +75,121 @@ def _make_record(
         ),
         write=WriteParams(output_dir="", sinks=sinks),
     )
-    record = JobRecord(
+    return JobRecord(
         spec=spec,
         state=JobState.WRITE,
+        drive_file_id=drive_file_id,
         local_raw_path=str(raw_path),
         local_sample_path=str(sample_path),
     )
-    return record
 
 
-class TestWriteStateCleanup:
-    """WriteState must NOT delete files — only transition to COMPLETED."""
+class TestWriteState:
+    """WriteState transitions to CLEANUP and does not delete files."""
 
     @patch("hydrofetch.write.factory.get_writer")
-    def test_write_state_does_not_delete_files(self, mock_get_writer, tmp_path):
-        """After WriteState.handle, files must still exist on disk."""
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
-        record = _make_record(tmp_path, sinks=["db"])
-        raw_path = Path(record.local_raw_path)
-        sample_path = Path(record.local_sample_path)
+    def test_transitions_to_cleanup(self, mock_get_writer, tmp_path):
+        mock_get_writer.return_value = MagicMock()
+        record = _make_record(tmp_path)
         context = _make_context(tmp_path)
 
-        updated, _ = WriteState().handle(record, context)
+        updated, next_handler = WriteState().handle(record, context)
+
+        assert updated.state == JobState.CLEANUP
+        assert isinstance(next_handler, CleanupState)
+
+    @patch("hydrofetch.write.factory.get_writer")
+    def test_does_not_delete_files(self, mock_get_writer, tmp_path):
+        mock_get_writer.return_value = MagicMock()
+        record = _make_record(tmp_path)
+        context = _make_context(tmp_path)
+
+        WriteState().handle(record, context)
+
+        assert Path(record.local_raw_path).exists()
+        assert Path(record.local_sample_path).exists()
+
+
+class TestCleanupState:
+    """CleanupState deletes artefacts, releases throttle, transitions to COMPLETED."""
+
+    def test_deletes_raw_and_sample_for_db_sink(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["db"])
+        record = record.advance(JobState.CLEANUP)
+        context = _make_context(tmp_path)
+        context.throttle.acquire()
+
+        raw_path = Path(record.local_raw_path)
+        sample_path = Path(record.local_sample_path)
+
+        updated, _ = CleanupState().handle(record, context)
 
         assert updated.state == JobState.COMPLETED
-        assert raw_path.exists(), "WriteState must NOT delete raw file (runner does it after save)"
-        assert sample_path.exists(), "WriteState must NOT delete sample file"
+        assert not raw_path.exists()
+        assert not sample_path.exists()
+        assert context.throttle.current == 0
 
-    @patch("hydrofetch.write.factory.get_writer")
-    def test_cleanup_after_write_deletes_raw_for_db_sink(self, mock_get_writer, tmp_path):
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
-        record = _make_record(tmp_path, sinks=["db"])
-        raw_path = Path(record.local_raw_path)
-        context = _make_context(tmp_path)
-
-        updated, _ = WriteState().handle(record, context)
-        cleanup_after_write(updated)
-
-        assert not raw_path.exists(), "raw GeoTIFF should be deleted by cleanup_after_write"
-
-    @patch("hydrofetch.write.factory.get_writer")
-    def test_cleanup_after_write_deletes_sample_for_db_only_sink(self, mock_get_writer, tmp_path):
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
-        record = _make_record(tmp_path, sinks=["db"])
-        sample_path = Path(record.local_sample_path)
-        context = _make_context(tmp_path)
-
-        updated, _ = WriteState().handle(record, context)
-        cleanup_after_write(updated)
-
-        assert not sample_path.exists(), "staged sample Parquet should be deleted for db-only sink"
-
-    @patch("hydrofetch.write.factory.get_writer")
-    def test_cleanup_keeps_sample_for_file_sink(self, mock_get_writer, tmp_path):
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
+    def test_keeps_sample_for_file_sink(self, tmp_path):
         record = _make_record(tmp_path, sinks=["file"])
-        sample_path = Path(record.local_sample_path)
+        record = record.advance(JobState.CLEANUP)
         context = _make_context(tmp_path)
+        context.throttle.acquire()
 
-        updated, _ = WriteState().handle(record, context)
-        cleanup_after_write(updated)
-
-        assert sample_path.exists(), (
-            "staged sample Parquet should be kept when 'file' sink is present"
-        )
-
-    @patch("hydrofetch.write.factory.get_writer")
-    def test_cleanup_keeps_sample_for_file_and_db_sink(self, mock_get_writer, tmp_path):
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
-        record = _make_record(tmp_path, sinks=["file", "db"])
         sample_path = Path(record.local_sample_path)
-        context = _make_context(tmp_path)
+        updated, _ = CleanupState().handle(record, context)
 
-        updated, _ = WriteState().handle(record, context)
-        cleanup_after_write(updated)
-
+        assert updated.state == JobState.COMPLETED
         assert sample_path.exists()
 
-    @patch("hydrofetch.write.factory.get_writer")
-    def test_missing_raw_file_does_not_raise(self, mock_get_writer, tmp_path):
-        """Non-existent raw path should be logged as a warning, not crash."""
-        mock_writer = MagicMock()
-        mock_get_writer.return_value = mock_writer
-
-        record = _make_record(tmp_path, sinks=["db"], raw_exists=False)
+    def test_keeps_sample_for_file_and_db_sink(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["file", "db"])
+        record = record.advance(JobState.CLEANUP)
         context = _make_context(tmp_path)
+        context.throttle.acquire()
 
-        updated, _ = WriteState().handle(record, context)
+        sample_path = Path(record.local_sample_path)
+        updated, _ = CleanupState().handle(record, context)
+
         assert updated.state == JobState.COMPLETED
-        cleanup_after_write(updated)  # should not raise
+        assert sample_path.exists()
+
+    def test_releases_throttle(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["db"])
+        record = record.advance(JobState.CLEANUP)
+        context = _make_context(tmp_path)
+        context.throttle.acquire()
+        assert context.throttle.current == 1
+
+        CleanupState().handle(record, context)
+
+        assert context.throttle.current == 0
+
+    def test_calls_drive_delete(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["db"], drive_file_id="abc123")
+        record = record.advance(JobState.CLEANUP)
+        context = _make_context(tmp_path)
+        context.throttle.acquire()
+
+        CleanupState().handle(record, context)
+
+        context.drive.delete_file.assert_called_once_with("abc123")
+
+    def test_drive_delete_failure_is_nonfatal(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["db"])
+        record = record.advance(JobState.CLEANUP)
+        context = _make_context(tmp_path)
+        context.throttle.acquire()
+        context.drive.delete_file.side_effect = RuntimeError("API error")
+
+        updated, _ = CleanupState().handle(record, context)
+
+        assert updated.state == JobState.COMPLETED
+
+    def test_missing_raw_does_not_raise(self, tmp_path):
+        record = _make_record(tmp_path, sinks=["db"], raw_exists=False)
+        record = record.advance(JobState.CLEANUP)
+        context = _make_context(tmp_path)
+        context.throttle.acquire()
+
+        updated, _ = CleanupState().handle(record, context)
+        assert updated.state == JobState.COMPLETED

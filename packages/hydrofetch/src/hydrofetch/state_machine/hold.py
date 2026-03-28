@@ -1,8 +1,9 @@
-"""HoldState: deduplication check and concurrency-slot acquisition."""
+"""HoldState: fast-track recovery, deduplication, and concurrency-slot acquisition."""
 
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 
 from hydrofetch.export.image_export import submit_image_export
@@ -13,13 +14,15 @@ log = logging.getLogger(__name__)
 
 
 class HoldState(TaskState):
-    """Wait for a concurrency slot, then submit the GEE export.
+    """Wait for a concurrency slot, then start (or resume) the pipeline.
 
-    Responsibilities:
-    - Check whether the output already exists (idempotency).
-    - Check whether a slot is available (throttle).
-    - Submit the GEE Export.image.toDrive task.
-    - Transition to :class:`~hydrofetch.state_machine.export_state.ExportState`.
+    After a restart-recovery (stalled jobs reset to HOLD), local artefacts
+    from a previous run may already exist.  This handler fast-tracks through
+    stages whose output is already on disk:
+
+    * ``local_sample_path`` exists → skip to WRITE
+    * ``local_raw_path`` exists   → skip to SAMPLE
+    * otherwise                   → submit a fresh GEE export
     """
 
     def handle(
@@ -27,23 +30,35 @@ class HoldState(TaskState):
         record: JobRecord,
         context: StateContext,
     ) -> tuple[JobRecord, TaskState | None]:
-        from hydrofetch.state_machine.export_state import (  # pylint: disable=import-outside-toplevel
-            ExportState,
-        )
+        # ---- fast-track: sample already on disk → skip to WRITE ----------
+        if record.local_sample_path and os.path.isfile(record.local_sample_path):
+            if not context.throttle.acquire():
+                return record, None
+            log.info(
+                "Job %s: sample already exists at %s, fast-tracking to WRITE",
+                record.spec.job_id,
+                record.local_sample_path,
+            )
+            updated = record.advance(JobState.WRITE)
+            from hydrofetch.state_machine.write_state import WriteState  # pylint: disable=import-outside-toplevel
 
-        # Skip if the final output already exists (re-run idempotency).
-        if record.local_sample_path:
-            import os  # pylint: disable=import-outside-toplevel
+            return updated, WriteState()
 
-            if os.path.isfile(record.local_sample_path):
-                log.info(
-                    "Job %s: sample output already exists at %s, marking completed",
-                    record.spec.job_id,
-                    record.local_sample_path,
-                )
-                updated = record.advance(JobState.COMPLETED)
-                return updated, None
+        # ---- fast-track: raw raster already on disk → skip to SAMPLE -----
+        if record.local_raw_path and os.path.isfile(record.local_raw_path):
+            if not context.throttle.acquire():
+                return record, None
+            log.info(
+                "Job %s: raw file already exists at %s, fast-tracking to SAMPLE",
+                record.spec.job_id,
+                record.local_raw_path,
+            )
+            updated = record.advance(JobState.SAMPLE)
+            from hydrofetch.state_machine.sample import SampleState  # pylint: disable=import-outside-toplevel
 
+            return updated, SampleState()
+
+        # ---- normal path: acquire slot and submit GEE export -------------
         if not context.throttle.acquire():
             log.debug(
                 "Job %s: no concurrency slot available (%s), staying in Hold",
@@ -52,7 +67,6 @@ class HoldState(TaskState):
             )
             return record, None
 
-        # Slot acquired – submit the GEE task.
         gee: GeeExportParams = record.spec.gee
         day = date.fromisoformat(record.spec.date_iso)
 
@@ -71,6 +85,8 @@ class HoldState(TaskState):
 
         updated = record.advance(JobState.EXPORT, task_id=task_id)
         log.info("Job %s: submitted GEE task %s", record.spec.job_id, task_id)
+        from hydrofetch.state_machine.export_state import ExportState  # pylint: disable=import-outside-toplevel
+
         return updated, ExportState()
 
 
