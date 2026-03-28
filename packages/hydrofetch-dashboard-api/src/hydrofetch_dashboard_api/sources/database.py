@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
@@ -10,6 +11,11 @@ from typing import Generator
 import psycopg
 from psycopg import sql
 
+_log = logging.getLogger(__name__)
+
+_CONNECT_TIMEOUT = 5
+_STATEMENT_TIMEOUT_MS = 10_000
+
 
 @dataclass
 class DBIngestStats:
@@ -17,6 +23,9 @@ class DBIngestStats:
     message: str
     table_name: str
     total_rows: int = 0
+    db_connection_count: int = 0
+    recent_write_rows_5m: int = 0
+    recent_write_rate_per_min: float = 0.0
     latest_ingested_at: str | None = None
     daily_counts: list[dict] = field(default_factory=list)
     recent_rows: list[dict] = field(default_factory=list)
@@ -35,10 +44,7 @@ class DBSizeStats:
 
 
 def _get_conn_params() -> dict:
-    """Read DB connection params from environment variables.
-
-    Supports both HYDROFETCH_DB_* and DASHBOARD_DB_* prefixes, in that order.
-    """
+    """Read DB connection params from environment variables."""
     from dotenv import load_dotenv  # pylint: disable=import-outside-toplevel
     from pathlib import Path  # pylint: disable=import-outside-toplevel
 
@@ -73,9 +79,23 @@ def _get_conn_params() -> dict:
 
 
 @contextmanager
-def _connection() -> Generator[psycopg.Connection, None, None]:
-    with closing(psycopg.connect(**_get_conn_params())) as conn:
+def _connection(
+    statement_timeout_ms: int = _STATEMENT_TIMEOUT_MS,
+) -> Generator[psycopg.Connection, None, None]:
+    """Open a short-lived connection with connect and statement timeouts."""
+    conn = psycopg.connect(
+        **_get_conn_params(),
+        connect_timeout=_CONNECT_TIMEOUT,
+    )
+    try:
+        conn.execute(
+            sql.SQL("SET statement_timeout = {}").format(
+                sql.Literal(statement_timeout_ms)
+            )
+        )
         yield conn
+    finally:
+        conn.close()
 
 
 def _zero_table_row(table_name: str) -> dict:
@@ -92,7 +112,6 @@ def _zero_table_row(table_name: str) -> dict:
 
 def query_db_total_size(cur: psycopg.Cursor) -> tuple[str, int, str]:
     """Query total size of the current database."""
-
     cur.execute(
         """
         SELECT current_database(),
@@ -108,8 +127,7 @@ def query_table_sizes(
     cur: psycopg.Cursor,
     table_names: list[str] | None = None,
 ) -> list[dict]:
-    """Query per-table sizes, optionally restricted to named tables."""
-
+    """Query per-table sizes using pg_class (no sequential scans)."""
     if table_names:
         cur.execute(
             """
@@ -174,14 +192,36 @@ def query_table_sizes(
     ]
 
 
+def _estimate_row_count(cur: psycopg.Cursor, table_name: str) -> int:
+    """Fast row-count estimate from pg_class (no table scan)."""
+    cur.execute(
+        """
+        SELECT GREATEST(c.reltuples, 0)::bigint
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = %s
+        """,
+        (table_name,),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 def load_ingest_stats(
     table_name: str,
-    days: int = 30,
+    days: int = 7,
     recent_limit: int = 20,
-    recent_scan_limit: int = 100,
 ) -> DBIngestStats:
-    """Query lightweight ingest statistics from PostgreSQL."""
+    """Query lightweight ingest statistics from PostgreSQL.
 
+    All queries are designed to hit indexes:
+
+    * ``total_rows`` — ``pg_class.reltuples`` (no table scan).
+    * ``daily_counts`` — PK ``(hylak_id, date)`` supports GROUP BY date
+      with a narrow date range.
+    * ``recent_write_rows_5m`` — ``idx … (ingested_at DESC)`` index scan.
+    * ``recent_rows`` — same index, ``ORDER BY ingested_at DESC LIMIT``.
+    """
     try:
         with _connection() as conn:
             with conn.cursor() as cur:
@@ -202,11 +242,15 @@ def load_ingest_stats(
                     )
 
                 cur.execute(
-                    sql.SQL("SELECT COUNT(*) FROM {t}").format(
-                        t=sql.Identifier(table_name)
-                    )
+                    """
+                    SELECT COUNT(*)
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                    """
                 )
-                total_rows = cur.fetchone()[0]
+                db_connection_count = int(cur.fetchone()[0] or 0)
+
+                total_rows = _estimate_row_count(cur, table_name)
 
                 cur.execute(
                     sql.SQL(
@@ -227,29 +271,42 @@ def load_ingest_stats(
                 cur.execute(
                     sql.SQL(
                         """
+                        SELECT COUNT(*)
+                        FROM {t}
+                        WHERE ingested_at >= NOW() - INTERVAL '5 minutes'
+                        """
+                    ).format(t=sql.Identifier(table_name))
+                )
+                recent_write_rows_5m = int(cur.fetchone()[0] or 0)
+                recent_write_rate_per_min = recent_write_rows_5m / 5.0
+
+                cur.execute(
+                    sql.SQL(
+                        """
                         SELECT hylak_id, date::text, ingested_at::text
                         FROM {t}
-                        ORDER BY ingested_at DESC NULLS LAST
+                        WHERE ingested_at IS NOT NULL
+                        ORDER BY ingested_at DESC
                         LIMIT %s
                         """
                     ).format(t=sql.Identifier(table_name)),
-                    (max(recent_limit, recent_scan_limit),),
+                    (recent_limit,),
                 )
-                recent_scan_rows = cur.fetchall()
-                latest_at = next(
-                    (r[2] for r in recent_scan_rows if r[2] is not None),
-                    None,
-                )
+                recent_rows_raw = cur.fetchall()
+                latest_at = recent_rows_raw[0][2] if recent_rows_raw else None
                 recent_rows = [
                     {"hylak_id": r[0], "date": r[1], "ingested_at": r[2]}
-                    for r in recent_scan_rows[:recent_limit]
+                    for r in recent_rows_raw
                 ]
 
         return DBIngestStats(
             available=True,
             message="ok",
             table_name=table_name,
-            total_rows=int(total_rows or 0),
+            total_rows=total_rows,
+            db_connection_count=db_connection_count,
+            recent_write_rows_5m=recent_write_rows_5m,
+            recent_write_rate_per_min=recent_write_rate_per_min,
             latest_ingested_at=str(latest_at) if latest_at else None,
             daily_counts=daily_counts,
             recent_rows=recent_rows,
@@ -264,7 +321,6 @@ def load_ingest_stats(
 
 def load_db_size(table_names: list[str] | None = None) -> DBSizeStats:
     """Query database total size and per-table sizes from PostgreSQL."""
-
     try:
         with _connection() as conn:
             with conn.cursor() as cur:
@@ -286,6 +342,50 @@ def load_db_size(table_names: list[str] | None = None) -> DBSizeStats:
         )
 
 
+def terminate_zombie_sessions() -> int:
+    """Kill PostgreSQL sessions stuck on ``ClientWrite`` (dead client connections).
+
+    Only targets the root-cause blocker (``ClientWrite``).  Downstream
+    sessions waiting on ``Lock/relation`` are left alone — they unblock
+    automatically once the zombie is terminated.
+    """
+    try:
+        params = _get_conn_params()
+    except ValueError:
+        _log.debug("DB not configured, skipping zombie cleanup")
+        return 0
+
+    try:
+        conn = psycopg.connect(**params, connect_timeout=_CONNECT_TIMEOUT)
+    except psycopg.OperationalError as exc:
+        _log.warning("Could not connect for zombie cleanup: %s", exc)
+        return 0
+
+    conn.autocommit = True
+    try:
+        cur = conn.execute("""
+            SELECT pid, wait_event_type, wait_event,
+                   now() - state_change AS duration,
+                   left(query, 80) AS query
+            FROM pg_stat_activity
+            WHERE pid <> pg_backend_pid()
+              AND state = 'active'
+              AND wait_event = 'ClientWrite'
+        """)
+        targets = cur.fetchall()
+        for pid, wt, we, dur, q in targets:
+            conn.execute("SELECT pg_terminate_backend(%s)", (pid,))
+            _log.info(
+                "Terminated zombie session pid=%s (%s/%s, %s): %s",
+                pid, wt, we, dur, q,
+            )
+        if targets:
+            _log.info("Zombie cleanup: terminated %d session(s)", len(targets))
+        return len(targets)
+    finally:
+        conn.close()
+
+
 __all__ = [
     "DBIngestStats",
     "DBSizeStats",
@@ -293,4 +393,5 @@ __all__ = [
     "load_ingest_stats",
     "query_db_total_size",
     "query_table_sizes",
+    "terminate_zombie_sessions",
 ]

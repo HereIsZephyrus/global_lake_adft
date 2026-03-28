@@ -6,7 +6,7 @@ import Table from '../components/Table'
 import { api } from '../api/client'
 import { formatStateLabel } from '../utils/stateLabels'
 
-const STATE_ORDER = ['', 'hold', 'export', 'download', 'cleanup', 'sample', 'write', 'completed', 'failed']
+const STATE_ORDER = ['', 'hold', 'export', 'download', 'sample', 'write', 'cleanup', 'completed', 'failed']
 
 const COLS = [
   { key: 'state', label: '状态', width: 90 },

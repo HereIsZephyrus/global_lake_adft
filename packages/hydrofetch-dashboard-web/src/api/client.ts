@@ -114,6 +114,9 @@ export interface IngestStats {
   message: string
   table_name: string
   total_rows: number
+  db_connection_count: number
+  recent_write_rows_5m: number
+  recent_write_rate_per_min: number
   latest_ingested_at: string | null
   daily_counts: DailyCount[]
   recent_rows: { hylak_id: string | null; date: string | null; ingested_at: string | null }[]
@@ -156,6 +159,7 @@ export const api = {
   stopProject: (id: string) => post<{ status: string }>(`/projects/${id}/stop`),
 
   // Per-project data endpoints
+  summary: (pid: string) => get<KPIs>(`/projects/${pid}/summary`),
   overview: (pid: string) => get<KPIs>(`/projects/${pid}/overview`),
   states: (pid: string) => get<StateCount[]>(`/projects/${pid}/states`),
   timeline: (pid: string, hours = 6) => get<TimelinePoint[]>(`/projects/${pid}/timeline?hours=${hours}`),

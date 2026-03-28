@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from hydrofetch.jobs.store import JobStore
 
 from hydrofetch_dashboard_api import config
 from hydrofetch_dashboard_api.services import metrics as svc
@@ -54,20 +55,11 @@ def _project_jobs_df(project_id: str):
 
 
 def _project_to_response(cfg: ProjectConfig) -> dict[str, Any]:
-    paths = resolve_paths(config.PROJECTS_DIR, cfg.project_id)
+    """Lightweight project summary — no job-file scanning."""
     status = proc_manager.status(cfg.project_id)
-    # Count active jobs from job dir (best-effort)
-    active_jobs = 0
-    try:
-        df = load_jobs(paths["job_dir"]).jobs_df
-        if "is_active" in df.columns:
-            active_jobs = int(df["is_active"].sum())
-    except Exception:
-        pass
     return {
         **cfg.to_dict(),
         "status": status,
-        "active_jobs": active_jobs,
     }
 
 
@@ -113,7 +105,6 @@ def get_project(project_id: str):
 
 @router.delete("/projects/{project_id}", status_code=204)
 def del_project(project_id: str):
-    # Stop running process first
     proc_manager.stop(project_id)
     try:
         delete_project(config.PROJECTS_DIR, project_id)
@@ -157,9 +148,36 @@ def start_project(project_id: str):
 
 @router.post("/projects/{project_id}/stop")
 def stop_project(project_id: str):
-    _get_project(project_id)  # ensure project exists
+    _get_project(project_id)
     proc_manager.stop(project_id)
     return {"status": "stopped", "project_id": project_id}
+
+
+@router.get("/projects/{project_id}/summary")
+def project_summary(project_id: str):
+    """Lightweight KPI counts using hydrofetch's fast state scanner."""
+    _get_project(project_id)
+    paths = resolve_paths(config.PROJECTS_DIR, project_id)
+    store = JobStore(paths["job_dir"])
+    counts: dict[str, int] = {}
+    total = 0
+    for p in paths["job_dir"].glob("*.json"):
+        s = store._quick_state(p)  # pylint: disable=protected-access
+        if s:
+            counts[s] = counts.get(s, 0) + 1
+            total += 1
+    completed = counts.get("completed", 0)
+    failed = counts.get("failed", 0)
+    active = total - completed - failed - counts.get("hold", 0)
+    return {
+        "total_jobs": total,
+        "active_jobs": active,
+        "completed_jobs": completed,
+        "failed_jobs": failed,
+        "completion_rate": round(completed / total * 100, 4) if total else 0.0,
+        "failure_rate": round(failed / total * 100, 4) if total else 0.0,
+        "process_status": proc_manager.status(project_id),
+    }
 
 
 # ---------------------------------------------------------------------------

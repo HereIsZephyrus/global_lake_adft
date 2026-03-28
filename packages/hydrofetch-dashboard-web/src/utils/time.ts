@@ -6,10 +6,18 @@ function hasExplicitTimeZone(iso: string): boolean {
   return /[zZ]$/.test(iso) || /[+-]\d{2}(?::\d{2}){1,2}$/.test(iso)
 }
 
+function normalizePostgresOffset(iso: string): string {
+  if (/[zZ]$/.test(iso)) return iso
+  if (/[+-]\d{2}$/.test(iso)) return `${iso}:00`
+  if (/[+-]\d{4}$/.test(iso)) return `${iso.slice(0, -2)}:${iso.slice(-2)}`
+  return iso
+}
+
 function parsePostgresInstant(raw: string): Date | null {
   const t = raw.trim()
   if (!t) return null
   let iso = t.includes('T') ? t : t.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2')
+  iso = normalizePostgresOffset(iso)
   if (!hasExplicitTimeZone(iso)) iso += 'Z'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? null : d

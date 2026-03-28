@@ -2,7 +2,7 @@ import ReactECharts from 'echarts-for-react'
 import Card from '../components/Card'
 import ErrorBox from '../components/ErrorBox'
 import Loading from '../components/Loading'
-import { useDbSize, useIngest, useOverview, useProjects } from '../hooks/useApi'
+import { useDbSize, useIngest, useSummary, useProjects } from '../hooks/useApi'
 import { formatDateTimeShanghai } from '../utils/time'
 
 const GiB = 1024 ** 3
@@ -48,7 +48,7 @@ const previewCardWrapStyle: React.CSSProperties = {
 const DB_TABLES_MAX_HEIGHT = 320
 
 function ProjectPreview({ projectId, projectName }: { projectId: string; projectName: string }) {
-  const { data: kpis, error } = useOverview(projectId)
+  const { data: kpis, error } = useSummary(projectId)
 
   return (
     <div style={{
@@ -85,6 +85,9 @@ export default function GlobalView() {
   const { data: dbSize, error: dErr } = useDbSize()
   const { data: projects, error: pErr } = useProjects()
   const projectList = projects ?? []
+  const writeRateLabel = ingest ? `${ingest.recent_write_rate_per_min.toLocaleString('zh-CN', {
+    maximumFractionDigits: 1,
+  })} 行/分钟` : ''
 
   return (
     <div>
@@ -115,14 +118,22 @@ export default function GlobalView() {
             ) : (
               <>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-                  <div style={kpiStyle('#3b82f6')}>
-                    <div style={{ fontSize: 10, color: '#9ca3af' }}>总行数</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>{ingest.total_rows.toLocaleString()}</div>
-                  </div>
                   <div style={kpiStyle('#f59e0b')}>
                     <div style={{ fontSize: 10, color: '#9ca3af' }}>最近入库</div>
                     <div style={ingestDateValueStyle}>
                       {formatDateTimeShanghai(ingest.latest_ingested_at)}
+                    </div>
+                  </div>
+                  <div style={kpiStyle('#3b82f6')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>连接数</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>
+                      {ingest.db_connection_count.toLocaleString('zh-CN')}
+                    </div>
+                  </div>
+                  <div style={kpiStyle('#10b981')}>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>近 5 分钟写入速率</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#f3f4f6' }}>
+                      {writeRateLabel}
                     </div>
                   </div>
                 </div>

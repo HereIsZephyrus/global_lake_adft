@@ -8,7 +8,7 @@ import { api } from '../api/client'
 import { STATE_COLORS } from '../utils/colors'
 import { formatStateLabel } from '../utils/stateLabels'
 
-const CHART_STATES = ['export', 'download', 'cleanup', 'sample', 'write', 'failed']
+const CHART_STATES = ['export', 'download', 'sample', 'write', 'cleanup', 'failed']
 
 function formatLocalTimeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString('zh-CN', {

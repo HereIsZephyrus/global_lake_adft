@@ -192,6 +192,11 @@ def jobs_page(
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
+    def _py_value(value, *, as_int: bool = False):
+        if pd.isna(value):
+            return None
+        return int(value) if as_int else str(value)
+
     filtered = jobs_df.copy()
     if state:
         filtered = filtered.loc[filtered["state"].astype(str) == state]
@@ -206,8 +211,22 @@ def jobs_page(
         "updated_at", "last_error",
     ]
     page = filtered[cols].iloc[offset : offset + limit].copy()
-    page["state"] = page["state"].astype(str)
-    items = page.where(page.notna(), other=None).to_dict("records")
+    items = [
+        {
+            "job_id": _py_value(row["job_id"]),
+            "state": _py_value(row["state"]),
+            "tile_id": _py_value(row["tile_id"]),
+            "date_iso": _py_value(row["date_iso"]),
+            "attempt": _py_value(row["attempt"], as_int=True),
+            "task_id": _py_value(row["task_id"]),
+            "drive_file_id": _py_value(row["drive_file_id"]),
+            "local_raw_path": _py_value(row["local_raw_path"]),
+            "local_sample_path": _py_value(row["local_sample_path"]),
+            "updated_at": _py_value(row["updated_at"]),
+            "last_error": _py_value(row["last_error"]),
+        }
+        for _, row in page.iterrows()
+    ]
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
