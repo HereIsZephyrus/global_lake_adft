@@ -8,14 +8,14 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
-      - "packages/**"
+      - "packages/lakeanalysis/**"
   pull_request:
     paths:
       - ".github/workflows/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
-      - "packages/**"
+      - "packages/lakeanalysis/**"
 
 jobs:
   workspace-check:
@@ -27,18 +27,6 @@ jobs:
         with:
           python-version-file: ".python-version"
       - run: uv lock --check
-
-  hydrofetch-lint-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: ".python-version"
-      - run: uv sync --package hydrofetch --group dev
-      - run: uv run --package hydrofetch pylint packages/hydrofetch/src/hydrofetch
-      - run: uv run --package hydrofetch pytest packages/hydrofetch/tests
 
   lakeanalysis-lint-test:
     runs-on: ubuntu-latest
