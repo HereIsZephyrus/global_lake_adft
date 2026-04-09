@@ -1,6 +1,6 @@
 # lakeanalysis
 
-`lakeanalysis` 是 monorepo 中负责湖泊分析、建模和数据库访问的 Python package。
+`lakeanalysis` 是当前仓库的核心 Python package，用于湖泊分析、统计建模、数据库访问和研究型脚本执行。
 
 ## 快速开始
 
@@ -44,30 +44,26 @@ uv run --package lakeanalysis pytest packages/lakeanalysis/tests
 uv run --package lakeanalysis pylint packages/lakeanalysis/src/lakeanalysis
 ```
 
-如果需要验证与 `hydrofetch` 的协作契约，可额外查看 `tests/integration/README.md` 中约定的跨包测试范围。
+如果本地尚未通过 `uv sync` 安装，也可以临时用源码路径做最小验证：
 
-## 与 `hydrofetch` 的关系
-
-`lakeanalysis` 不负责 GEE/Drive 认证，也不直接启动抓取任务。通常工作流是：
-
-1. 使用 `hydrofetch` 生产采样结果或入库数据。
-2. 在 `lakeanalysis` 中读取数据库或中间结果做分析、统计和建模。
-
-因此如果你在排查抓取失败、认证失败或 Dashboard 启动问题，应优先查看 `hydrofetch` 与 Dashboard 文档。
+```bash
+PYTHONPATH=packages/lakeanalysis/src ./.venv/bin/pytest packages/lakeanalysis/tests
+```
 
 ## 文档
 
-- 包级结构说明见 `packages/lakeanalysis/docs/refactor-plan.md`
-- 研究型方法文档已统一收敛到根级 `docs/research/`
-- `geeconnect` 退役迁移说明见 `docs/migration/geeconnect-to-hydrofetch.md`
+- `packages/lakeanalysis/docs/refactor-plan.md`
+- `docs/architecture/repository-layout.md`
+- `docs/architecture/package-boundaries.md`
+- `docs/research/README.md`
 
 ## 包结构
 
 ```text
 packages/lakeanalysis/
 ├── docs/
-├── src/lakeanalysis/
 ├── scripts/
+├── src/lakeanalysis/
 ├── tests/
 └── .env.example
 ```

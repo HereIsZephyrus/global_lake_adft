@@ -1,28 +1,20 @@
-# Package Boundaries
-
-## hydrofetch
-
-`hydrofetch` 是数据生产侧包，负责：
-
-- Earth Engine 导出任务创建与轮询
-- Google Drive 下载与清理
-- 本地 raster 采样
-- 结果写出到文件或数据库
-
-`hydrofetch` 应尽量保持为清晰的生产流水线入口，不承载分析建模职责。
-
 ## lakeanalysis
 
-`lakeanalysis` 是数据消费和分析侧包，负责：
+`lakeanalysis` 是当前仓库唯一正式维护的代码包，负责：
 
-- 湖泊时间序列分析
-- 统计建模和诊断
-- 数据库访问与分析辅助模块
+- 湖泊相关统计分析与建模
+- 数据库访问与批量查询
+- 研究脚本与可视化产出
 
-`lakeanalysis` 应避免直接依赖 `hydrofetch` 内部实现细节；优先通过数据契约协作。
+## 数据边界
 
-## Collaboration Rules
+仓库内 `data/` 目录用于本地输入、缓存和分析输出，不视为可发布源码的一部分。
 
-- 默认通过数据文件、数据库表、schema 与约定的目录结构协作。
-- 只有在确实需要共享 Python API 时，才通过 workspace source 建立显式依赖。
-- 若未来出现稳定共享代码，再评估新增第三个共享 package。
+- 代码只应依赖明确的数据契约、数据库表结构或脚本参数
+- 本地运行目录与中间产物不应成为包级 API 的一部分
+
+## 文档边界
+
+- 面向方法和研究说明的内容放在 `docs/research/`
+- 面向仓库结构和工程边界的内容放在 `docs/architecture/`
+- 包级使用方式放在 `packages/lakeanalysis/README.md`

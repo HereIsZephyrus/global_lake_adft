@@ -1,26 +1,19 @@
 [project]
 name = "global-lake-adft-workspace"
 version = "0.1.0"
-description = "Monorepo workspace for hydrofetch and lakeanalysis"
+description = "Workspace for lakeanalysis"
 requires-python = ">=3.12"
-dependencies = [
-    "pyarrow>=23.0.1",
-]
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
 members = [
-    "packages/hydrofetch",
     "packages/lakeanalysis",
-    "packages/hydrofetch-dashboard-api",
 ]
 
 [tool.uv.sources]
-hydrofetch = { workspace = true }
 lakeanalysis = { workspace = true }
-hydrofetch-dashboard-api = { workspace = true }
 
 [dependency-groups]
 dev = [
