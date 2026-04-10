@@ -33,13 +33,14 @@ def test_result_row_shapers_emit_expected_keys() -> None:
         min_valid_observations=36,
     )
 
-    label_rows = result_to_label_rows(result)
-    extreme_rows = result_to_extreme_rows(result)
-    transition_rows = result_to_transition_rows(result)
+    label_rows = result_to_label_rows(result, workflow_version="test-v1")
+    extreme_rows = result_to_extreme_rows(result, workflow_version="test-v1")
+    transition_rows = result_to_transition_rows(result, workflow_version="test-v1")
 
     assert label_rows
     assert set(label_rows[0]) == {
         "hylak_id",
+        "workflow_version",
         "year",
         "month",
         "water_area",
@@ -51,6 +52,7 @@ def test_result_row_shapers_emit_expected_keys() -> None:
     }
     assert set(extreme_rows[0]) == {
         "hylak_id",
+        "workflow_version",
         "year",
         "month",
         "event_type",
@@ -60,6 +62,8 @@ def test_result_row_shapers_emit_expected_keys() -> None:
         "threshold",
     }
     assert isinstance(transition_rows, list)
+    if transition_rows:
+        assert transition_rows[0]["workflow_version"] == "test-v1"
 
 
 def test_make_run_status_row_validates_and_truncates_message() -> None:
@@ -67,12 +71,16 @@ def test_make_run_status_row_validates_and_truncates_message() -> None:
         hylak_id=5,
         chunk_start=0,
         chunk_end=100,
+        workflow_version="test-v1",
         status=RUN_STATUS_DONE,
         error_message="x" * 800,
     )
     assert row["status"] == RUN_STATUS_DONE
+    assert row["workflow_version"] == "test-v1"
     assert len(row["error_message"]) == 500
 
     with pytest.raises(ValueError, match="Invalid run status"):
-        make_run_status_row(1, 0, 10, "bad-status")
+        make_run_status_row(1, 0, 10, "test-v1", "bad-status")
 
+    with pytest.raises(ValueError, match="workflow_version"):
+        make_run_status_row(1, 0, 10, " ", RUN_STATUS_DONE)

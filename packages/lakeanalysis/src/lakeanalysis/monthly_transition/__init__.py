@@ -1,6 +1,11 @@
 """Monthly anomaly quantile transition workflow."""
 
-from .batch import BatchRunReport, ChunkProcessPayload, process_chunk_lakes, run_monthly_transition_batch
+from .batch import (
+    BatchRunReport,
+    ChunkProcessPayload,
+    process_chunk_lakes,
+    run_monthly_transition_batch,
+)
 from .compute import (
     MonthlyTransitionResult,
     assign_extreme_labels,
@@ -32,6 +37,7 @@ from .store import (
     ensure_monthly_transition_tables,
     fetch_max_hylak_id,
     fetch_processed_hylak_ids_in_chunk,
+    fetch_source_hylak_ids_in_chunk,
     make_run_status_row,
     result_to_extreme_rows,
     result_to_label_rows,
@@ -88,6 +94,7 @@ __all__ = [
     "count_source_lakes_in_chunk",
     "count_processed_lakes_in_chunk",
     "fetch_processed_hylak_ids_in_chunk",
+    "fetch_source_hylak_ids_in_chunk",
     "fetch_max_hylak_id",
     "result_to_label_rows",
     "result_to_extreme_rows",

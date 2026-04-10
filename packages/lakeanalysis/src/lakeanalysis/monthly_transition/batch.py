@@ -17,12 +17,11 @@ from .service import run_single_lake_service
 from .store import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
-    count_processed_lakes_in_chunk,
-    count_source_lakes_in_chunk,
     ensure_monthly_transition_tables,
     fetch_summary_cache_sources,
     fetch_max_hylak_id,
     fetch_processed_hylak_ids_in_chunk,
+    fetch_source_hylak_ids_in_chunk,
     make_run_status_row,
     result_to_extreme_rows,
     result_to_label_rows,
@@ -32,7 +31,12 @@ from .store import (
     upsert_monthly_transition_labels,
     upsert_monthly_transition_run_status,
 )
-from .summary import SummaryAccumulator, cache_root_for, save_summary_plots_from_cache, write_summary_cache
+from .summary import (
+    SummaryAccumulator,
+    cache_root_for,
+    save_summary_plots_from_cache,
+    write_summary_cache,
+)
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +75,7 @@ def process_chunk_lakes(
     *,
     chunk_start: int,
     chunk_end: int,
+    workflow_version: str,
     service_config: MonthlyTransitionServiceConfig,
     processed_hylak_ids: set[int] | None = None,
     run_single_fn: Callable[..., MonthlyTransitionResult] = run_single_lake_service,
@@ -107,6 +112,7 @@ def process_chunk_lakes(
                     hylak_id=hylak_id,
                     chunk_start=chunk_start,
                     chunk_end=chunk_end,
+                    workflow_version=workflow_version,
                     status=RUN_STATUS_ERROR,
                     error_message=str(exc),
                 )
@@ -115,14 +121,21 @@ def process_chunk_lakes(
 
         success_lakes += 1
         summary.update_success(result)
-        label_rows.extend(result_to_label_rows(result))
-        extreme_rows.extend(result_to_extreme_rows(result))
-        transition_rows.extend(result_to_transition_rows(result))
+        label_rows.extend(
+            result_to_label_rows(result, workflow_version=workflow_version)
+        )
+        extreme_rows.extend(
+            result_to_extreme_rows(result, workflow_version=workflow_version)
+        )
+        transition_rows.extend(
+            result_to_transition_rows(result, workflow_version=workflow_version)
+        )
         status_rows.append(
             make_run_status_row(
                 hylak_id=hylak_id,
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
+                workflow_version=workflow_version,
                 status=RUN_STATUS_DONE,
                 error_message=None,
             )
@@ -140,7 +153,9 @@ def process_chunk_lakes(
     )
 
 
-def _iter_chunk_ranges(max_hylak_id: int, chunk_size: int, limit_id: int | None) -> list[tuple[int, int]]:
+def _iter_chunk_ranges(
+    max_hylak_id: int, chunk_size: int, limit_id: int | None
+) -> list[tuple[int, int]]:
     upper_bound = max_hylak_id
     if limit_id is not None:
         upper_bound = min(upper_bound, limit_id - 1)
@@ -157,13 +172,24 @@ def _iter_chunk_ranges(max_hylak_id: int, chunk_size: int, limit_id: int | None)
 
 def _persist_chunk_payload(payload: ChunkProcessPayload) -> None:
     with series_db.connection_context() as conn:
-        upsert_monthly_transition_labels(conn, payload.label_rows)
-        upsert_monthly_transition_extremes(conn, payload.extreme_rows)
-        upsert_monthly_transition_abrupt_transitions(conn, payload.transition_rows)
-        upsert_monthly_transition_run_status(conn, payload.status_rows)
+        try:
+            upsert_monthly_transition_labels(conn, payload.label_rows, commit=False)
+            upsert_monthly_transition_extremes(conn, payload.extreme_rows, commit=False)
+            upsert_monthly_transition_abrupt_transitions(
+                conn, payload.transition_rows, commit=False
+            )
+            upsert_monthly_transition_run_status(
+                conn, payload.status_rows, commit=False
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
-def run_monthly_transition_batch(config: MonthlyTransitionBatchConfig) -> BatchRunReport:
+def run_monthly_transition_batch(
+    config: MonthlyTransitionBatchConfig,
+) -> BatchRunReport:
     """Run chunked batch execution over quality-filtered monthly series."""
     config.output_root.mkdir(parents=True, exist_ok=True)
     service_config = MonthlyTransitionServiceConfig(
@@ -184,21 +210,30 @@ def run_monthly_transition_batch(config: MonthlyTransitionBatchConfig) -> BatchR
     error_lakes = 0
     for chunk_start, chunk_end in chunk_ranges:
         with series_db.connection_context() as conn:
-            source_count = count_source_lakes_in_chunk(conn, chunk_start, chunk_end)
-            processed_count = count_processed_lakes_in_chunk(conn, chunk_start, chunk_end)
+            source_ids = fetch_source_hylak_ids_in_chunk(conn, chunk_start, chunk_end)
+            processed_ids = fetch_processed_hylak_ids_in_chunk(
+                conn,
+                chunk_start,
+                chunk_end,
+                workflow_version=config.workflow_version,
+            )
+        source_count = len(source_ids)
         source_lakes += source_count
-        if source_count == 0 or processed_count >= source_count:
+        if source_count == 0:
+            skipped_chunks += 1
+            continue
+        if source_ids.issubset(processed_ids):
             skipped_chunks += 1
             continue
 
         with series_db.connection_context() as conn:
             lake_map = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
-            processed_ids = fetch_processed_hylak_ids_in_chunk(conn, chunk_start, chunk_end)
 
         payload = process_chunk_lakes(
             lake_map,
             chunk_start=chunk_start,
             chunk_end=chunk_end,
+            workflow_version=config.workflow_version,
             service_config=service_config,
             processed_hylak_ids=processed_ids,
         )
@@ -222,7 +257,10 @@ def run_monthly_transition_batch(config: MonthlyTransitionBatchConfig) -> BatchR
     if config.build_summary_cache:
         cache_root = cache_root_for(config.output_root)
         with series_db.connection_context() as conn:
-            cache_payload = fetch_summary_cache_sources(conn)
+            cache_payload = fetch_summary_cache_sources(
+                conn,
+                workflow_version=config.workflow_version,
+            )
         cache_paths = write_summary_cache(
             cache_root,
             **cache_payload,

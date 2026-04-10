@@ -77,18 +77,20 @@ def build_result() -> MonthlyTransitionResult:
 def test_store_row_helpers_shape_expected_columns() -> None:
     result = build_result()
 
-    label_rows = result_to_label_rows(result)
-    extreme_rows = result_to_extreme_rows(result)
-    transition_rows = result_to_transition_rows(result)
+    label_rows = result_to_label_rows(result, workflow_version="test-v1")
+    extreme_rows = result_to_extreme_rows(result, workflow_version="test-v1")
+    transition_rows = result_to_transition_rows(result, workflow_version="test-v1")
     status_row = make_run_status_row(
         hylak_id=101,
         chunk_start=0,
         chunk_end=1000,
+        workflow_version="test-v1",
         status="done",
         error_message=None,
     )
 
     assert label_rows[0]["extreme_label"] == "extreme_low"
+    assert label_rows[0]["workflow_version"] == "test-v1"
     assert extreme_rows[0]["event_type"] == "low"
     assert transition_rows[0]["transition_type"] == "low_to_high"
     assert status_row["chunk_end"] == 1000
@@ -100,15 +102,9 @@ def test_summary_cache_and_plots_roundtrip(tmp_path: Path) -> None:
         transition_counts=pd.DataFrame(
             [{"transition_type": "low_to_high", "count": 3}]
         ),
-        transition_seasonality=pd.DataFrame(
-            [{"to_month": 2, "count": 3}]
-        ),
-        lake_transition_counts=pd.DataFrame(
-            [{"hylak_id": 101, "transition_count": 3}]
-        ),
-        lake_extreme_counts=pd.DataFrame(
-            [{"hylak_id": 101, "extreme_count": 6}]
-        ),
+        transition_seasonality=pd.DataFrame([{"to_month": 2, "count": 3}]),
+        lake_transition_counts=pd.DataFrame([{"hylak_id": 101, "transition_count": 3}]),
+        lake_extreme_counts=pd.DataFrame([{"hylak_id": 101, "extreme_count": 6}]),
         run_status=pd.DataFrame(
             [{"status": "done", "count": 10}, {"status": "error", "count": 1}]
         ),
