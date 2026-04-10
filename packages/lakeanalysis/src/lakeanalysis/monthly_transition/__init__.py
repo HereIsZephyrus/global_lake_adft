@@ -1,5 +1,6 @@
 """Monthly anomaly quantile transition workflow."""
 
+from .batch import BatchRunReport, ChunkProcessPayload, process_chunk_lakes, run_monthly_transition_batch
 from .compute import (
     MonthlyTransitionResult,
     assign_extreme_labels,
@@ -11,17 +12,48 @@ from .compute import (
     run_monthly_anomaly_transition,
     validate_monthly_series,
 )
+from .config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
 from .plot import (
     plot_anomaly_timeline,
     plot_monthly_timeline,
     plot_transition_count_summary,
+    plot_transition_count_summary_from_cache,
     plot_transition_seasonality_summary,
+    plot_transition_seasonality_summary_from_cache,
     save_lake_plots,
     save_summary_plots,
 )
+from .service import run_monthly_transition_service, run_single_lake_service
+from .store import (
+    RUN_STATUS_DONE,
+    RUN_STATUS_ERROR,
+    count_processed_lakes_in_chunk,
+    count_source_lakes_in_chunk,
+    ensure_monthly_transition_tables,
+    fetch_max_hylak_id,
+    fetch_processed_hylak_ids_in_chunk,
+    make_run_status_row,
+    result_to_extreme_rows,
+    result_to_label_rows,
+    result_to_transition_rows,
+    upsert_monthly_transition_abrupt_transitions,
+    upsert_monthly_transition_extremes,
+    upsert_monthly_transition_labels,
+    upsert_monthly_transition_run_status,
+)
+from .summary import (
+    SummaryAccumulator,
+    load_summary_cache,
+    save_summary_plots_from_cache,
+    write_summary_cache,
+)
 
 __all__ = [
+    "MonthlyTransitionServiceConfig",
+    "MonthlyTransitionBatchConfig",
     "MonthlyTransitionResult",
+    "ChunkProcessPayload",
+    "BatchRunReport",
     "validate_monthly_series",
     "compute_monthly_climatology",
     "compute_monthly_anomalies",
@@ -30,10 +62,35 @@ __all__ = [
     "extract_extreme_events",
     "detect_abrupt_transitions",
     "run_monthly_anomaly_transition",
+    "run_single_lake_service",
+    "run_monthly_transition_service",
+    "process_chunk_lakes",
+    "run_monthly_transition_batch",
     "plot_monthly_timeline",
     "plot_anomaly_timeline",
     "plot_transition_count_summary",
+    "plot_transition_count_summary_from_cache",
     "plot_transition_seasonality_summary",
+    "plot_transition_seasonality_summary_from_cache",
     "save_lake_plots",
     "save_summary_plots",
+    "write_summary_cache",
+    "load_summary_cache",
+    "save_summary_plots_from_cache",
+    "SummaryAccumulator",
+    "RUN_STATUS_DONE",
+    "RUN_STATUS_ERROR",
+    "ensure_monthly_transition_tables",
+    "upsert_monthly_transition_labels",
+    "upsert_monthly_transition_extremes",
+    "upsert_monthly_transition_abrupt_transitions",
+    "upsert_monthly_transition_run_status",
+    "count_source_lakes_in_chunk",
+    "count_processed_lakes_in_chunk",
+    "fetch_processed_hylak_ids_in_chunk",
+    "fetch_max_hylak_id",
+    "result_to_label_rows",
+    "result_to_extreme_rows",
+    "result_to_transition_rows",
+    "make_run_status_row",
 ]

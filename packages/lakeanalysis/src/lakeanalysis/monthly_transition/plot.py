@@ -105,12 +105,44 @@ def plot_transition_count_summary(transitions_df: pd.DataFrame) -> plt.Figure:
     return fig
 
 
+def plot_transition_count_summary_from_cache(counts_df: pd.DataFrame) -> plt.Figure:
+    """Plot transition counts from cached aggregated counts."""
+    counts = (
+        counts_df.set_index("transition_type")["count"]
+        .reindex(["low_to_high", "high_to_low"], fill_value=0)
+    )
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(counts.index, counts.to_numpy(), color=["tab:green", "tab:orange"])
+    ax.set_title("Abrupt Transition Counts")
+    ax.set_xlabel("Transition type")
+    ax.set_ylabel("Count")
+    fig.tight_layout()
+    return fig
+
+
 def plot_transition_seasonality_summary(transitions_df: pd.DataFrame) -> plt.Figure:
     """Plot transition counts by destination month."""
     counts = (
         transitions_df["to_month"].value_counts().sort_index().reindex(range(1, 13), fill_value=0)
         if not transitions_df.empty
         else pd.Series(0, index=range(1, 13))
+    )
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(counts.index, counts.to_numpy(), color="tab:purple")
+    ax.set_xticks(range(1, 13))
+    ax.set_title("Abrupt Transition Seasonality")
+    ax.set_xlabel("Destination month")
+    ax.set_ylabel("Count")
+    fig.tight_layout()
+    return fig
+
+
+def plot_transition_seasonality_summary_from_cache(seasonality_df: pd.DataFrame) -> plt.Figure:
+    """Plot transition seasonality from cached aggregated counts."""
+    month_column = "month" if "month" in seasonality_df.columns else "to_month"
+    counts = (
+        seasonality_df.set_index(month_column)["count"]
+        .reindex(range(1, 13), fill_value=0)
     )
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.bar(counts.index, counts.to_numpy(), color="tab:purple")

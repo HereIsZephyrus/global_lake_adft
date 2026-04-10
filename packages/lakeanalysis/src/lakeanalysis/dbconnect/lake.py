@@ -324,6 +324,67 @@ CREATE TABLE IF NOT EXISTS hawkes_transition_monthly (
 );
 """
 
+_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_labels (
+    hylak_id            INTEGER      NOT NULL,
+    year                INTEGER      NOT NULL,
+    month               INTEGER      NOT NULL,
+    water_area          DOUBLE PRECISION,
+    monthly_climatology DOUBLE PRECISION,
+    anomaly             DOUBLE PRECISION,
+    q_low               DOUBLE PRECISION,
+    q_high              DOUBLE PRECISION,
+    extreme_label       TEXT,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, year, month)
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_extremes (
+    hylak_id            INTEGER      NOT NULL,
+    year                INTEGER      NOT NULL,
+    month               INTEGER      NOT NULL,
+    event_type          TEXT         NOT NULL,
+    water_area          DOUBLE PRECISION,
+    monthly_climatology DOUBLE PRECISION,
+    anomaly             DOUBLE PRECISION,
+    threshold           DOUBLE PRECISION,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, year, month, event_type)
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_abrupt_transitions (
+    hylak_id         INTEGER      NOT NULL,
+    from_year        INTEGER      NOT NULL,
+    from_month       INTEGER      NOT NULL,
+    to_year          INTEGER      NOT NULL,
+    to_month         INTEGER      NOT NULL,
+    transition_type  TEXT         NOT NULL,
+    from_anomaly     DOUBLE PRECISION,
+    to_anomaly       DOUBLE PRECISION,
+    from_label       TEXT,
+    to_label         TEXT,
+    computed_at      TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (
+        hylak_id, from_year, from_month, to_year, to_month, transition_type
+    )
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_run_status (
+    hylak_id      INTEGER PRIMARY KEY,
+    chunk_start   INTEGER,
+    chunk_end     INTEGER,
+    status        TEXT         NOT NULL,
+    error_message TEXT,
+    computed_at   TIMESTAMPTZ DEFAULT now()
+);
+"""
+
 _UPSERT_HAWKES_RESULTS_SQL = """
 INSERT INTO hawkes_results (
     hylak_id, threshold_quantile,
@@ -414,6 +475,99 @@ ON CONFLICT (hylak_id, threshold_quantile, year, month, direction) DO UPDATE SET
     significance_threshold  = EXCLUDED.significance_threshold,
     significant             = EXCLUDED.significant,
     computed_at             = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_LABELS_SQL = """
+INSERT INTO monthly_transition_labels (
+    hylak_id, year, month,
+    water_area, monthly_climatology, anomaly,
+    q_low, q_high, extreme_label, computed_at
+) VALUES (
+    %(hylak_id)s, %(year)s, %(month)s,
+    %(water_area)s, %(monthly_climatology)s, %(anomaly)s,
+    %(q_low)s, %(q_high)s, %(extreme_label)s, now()
+)
+ON CONFLICT (hylak_id, year, month) DO UPDATE SET
+    water_area          = EXCLUDED.water_area,
+    monthly_climatology = EXCLUDED.monthly_climatology,
+    anomaly             = EXCLUDED.anomaly,
+    q_low               = EXCLUDED.q_low,
+    q_high              = EXCLUDED.q_high,
+    extreme_label       = EXCLUDED.extreme_label,
+    computed_at         = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL = """
+INSERT INTO monthly_transition_extremes (
+    hylak_id, year, month, event_type,
+    water_area, monthly_climatology, anomaly, threshold, computed_at
+) VALUES (
+    %(hylak_id)s, %(year)s, %(month)s, %(event_type)s,
+    %(water_area)s, %(monthly_climatology)s, %(anomaly)s, %(threshold)s, now()
+)
+ON CONFLICT (hylak_id, year, month, event_type) DO UPDATE SET
+    water_area          = EXCLUDED.water_area,
+    monthly_climatology = EXCLUDED.monthly_climatology,
+    anomaly             = EXCLUDED.anomaly,
+    threshold           = EXCLUDED.threshold,
+    computed_at         = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL = """
+INSERT INTO monthly_transition_abrupt_transitions (
+    hylak_id, from_year, from_month, to_year, to_month, transition_type,
+    from_anomaly, to_anomaly, from_label, to_label, computed_at
+) VALUES (
+    %(hylak_id)s, %(from_year)s, %(from_month)s, %(to_year)s, %(to_month)s,
+    %(transition_type)s, %(from_anomaly)s, %(to_anomaly)s,
+    %(from_label)s, %(to_label)s, now()
+)
+ON CONFLICT (
+    hylak_id, from_year, from_month, to_year, to_month, transition_type
+) DO UPDATE SET
+    from_anomaly = EXCLUDED.from_anomaly,
+    to_anomaly   = EXCLUDED.to_anomaly,
+    from_label   = EXCLUDED.from_label,
+    to_label     = EXCLUDED.to_label,
+    computed_at  = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_STATUS_SQL = """
+INSERT INTO monthly_transition_run_status (
+    hylak_id, chunk_start, chunk_end, status, error_message, computed_at
+) VALUES (
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+)
+ON CONFLICT (hylak_id) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+"""
+
+_COUNT_AREA_QUALITY_IN_RANGE_SQL = """
+SELECT COUNT(DISTINCT la.hylak_id)
+FROM lake_area la
+JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
+"""
+
+_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL = """
+SELECT COUNT(*)
+FROM monthly_transition_run_status
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+"""
+
+_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL = """
+SELECT hylak_id
+FROM monthly_transition_run_status
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+"""
+
+_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL = """
+SELECT MAX(hylak_id)
+FROM area_quality
 """
 
 
@@ -1057,6 +1211,107 @@ def upsert_hawkes_transition_monthly(conn: psycopg.Connection, rows: list[dict])
         cur.executemany(_UPSERT_HAWKES_TRANSITION_MONTHLY_SQL, rows)
     conn.commit()
     log.info("Upserted %d hawkes_transition_monthly row(s)", len(rows))
+
+
+def ensure_monthly_transition_tables(conn: psycopg.Connection) -> None:
+    """Create monthly transition result and status tables when missing."""
+    with conn.cursor() as cur:
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL)
+    conn.commit()
+    log.debug("Ensured monthly transition tables exist")
+
+
+def upsert_monthly_transition_labels(conn: psycopg.Connection, rows: list[dict]) -> None:
+    """Insert or update monthly transition label rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_LABELS_SQL, rows)
+    conn.commit()
+    log.info("Upserted %d monthly_transition_labels row(s)", len(rows))
+
+
+def upsert_monthly_transition_extremes(conn: psycopg.Connection, rows: list[dict]) -> None:
+    """Insert or update monthly transition extreme rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL, rows)
+    conn.commit()
+    log.info("Upserted %d monthly_transition_extremes row(s)", len(rows))
+
+
+def upsert_monthly_transition_abrupt_transitions(
+    conn: psycopg.Connection,
+    rows: list[dict],
+) -> None:
+    """Insert or update monthly transition abrupt transition rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL, rows)
+    conn.commit()
+    log.info("Upserted %d monthly_transition_abrupt_transitions row(s)", len(rows))
+
+
+def upsert_monthly_transition_run_status(conn: psycopg.Connection, rows: list[dict]) -> None:
+    """Insert or update monthly transition run-status rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_STATUS_SQL, rows)
+    conn.commit()
+    log.info("Upserted %d monthly_transition_run_status row(s)", len(rows))
+
+
+def count_area_quality_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+) -> int:
+    """Count `area_quality` lakes in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_COUNT_AREA_QUALITY_IN_RANGE_SQL, params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def count_monthly_transition_status_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+) -> int:
+    """Count monthly transition run-status rows in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL, params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def fetch_monthly_transition_status_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+) -> set[int]:
+    """Fetch processed monthly transition hylak_ids in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL, params)
+        rows = cur.fetchall()
+    return {int(row[0]) for row in rows}
+
+
+def fetch_max_area_quality_hylak_id(conn: psycopg.Connection) -> int | None:
+    """Return the maximum hylak_id present in area_quality."""
+    with conn.cursor() as cur:
+        cur.execute(_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else None
 
 
 _SAFE_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")

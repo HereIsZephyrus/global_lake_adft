@@ -10,7 +10,8 @@ import pandas as pd
 
 from lakeanalysis.logger import Logger
 from lakeanalysis.monthly_transition import (
-    run_monthly_anomaly_transition,
+    MonthlyTransitionServiceConfig,
+    run_single_lake_service,
     save_lake_plots,
     save_summary_plots,
 )
@@ -41,7 +42,12 @@ def parse_args() -> argparse.Namespace:
         "--frozen-csv",
         type=Path,
         default=None,
-        help="Optional CSV with frozen months via year_month_key or year/month columns.",
+        help="Optional frozen-month CSV used only when --use-frozen-mask is set.",
+    )
+    parser.add_argument(
+        "--use-frozen-mask",
+        action="store_true",
+        help="Explicitly exclude frozen months. Default is to keep them.",
     )
     parser.add_argument(
         "--output-root",
@@ -94,7 +100,8 @@ def _load_frozen_keys(path: Path | None) -> set[int]:
 
 
 def _load_series(args: argparse.Namespace) -> tuple[int | None, pd.DataFrame, set[int]]:
-    frozen_keys = _load_frozen_keys(args.frozen_csv)
+    use_frozen_mask = bool(getattr(args, "use_frozen_mask", False))
+    frozen_keys = _load_frozen_keys(args.frozen_csv) if use_frozen_mask else set()
     if args.csv is not None:
         series_df = pd.read_csv(args.csv)
         hylak_id = _infer_hylak_id(series_df, args.hylak_id)
@@ -115,7 +122,11 @@ def _load_series(args: argparse.Namespace) -> tuple[int | None, pd.DataFrame, se
 
     with series_db.connection_context() as conn:
         series_map = fetch_lake_area_by_ids(conn, [args.hylak_id])
-        frozen_map = fetch_frozen_year_months_by_ids(conn, [args.hylak_id])
+        frozen_map = (
+            fetch_frozen_year_months_by_ids(conn, [args.hylak_id])
+            if use_frozen_mask
+            else {}
+        )
 
     series_df = series_map.get(args.hylak_id)
     if series_df is None:
@@ -137,12 +148,15 @@ def _write_outputs(output_root: Path, result) -> Path:
 def run(args: argparse.Namespace) -> dict[str, Path]:
     """Run the workflow and persist outputs."""
     hylak_id, series_df, frozen_year_months = _load_series(args)
-    result = run_monthly_anomaly_transition(
+    result = run_single_lake_service(
         series_df,
         hylak_id=hylak_id,
+        config=MonthlyTransitionServiceConfig(
+            min_valid_per_month=args.min_valid_per_month,
+            min_valid_observations=args.min_valid_observations,
+        ),
         frozen_year_months=frozen_year_months,
-        min_valid_per_month=args.min_valid_per_month,
-        min_valid_observations=args.min_valid_observations,
+        use_frozen_mask=bool(getattr(args, "use_frozen_mask", False)),
     )
 
     output_root = args.output_root
