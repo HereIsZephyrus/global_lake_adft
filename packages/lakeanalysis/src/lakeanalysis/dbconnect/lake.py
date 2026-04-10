@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 # Default PostGIS relation on ALTAS_DB when LAKE_GEOMETRY_TABLE is unset.
 _DEFAULT_LAKE_GEOMETRY_TABLE = "LakeATLAS_v10_pol"
+_LEGACY_WORKFLOW_VERSION = "legacy"
 
 _FETCH_LAKE_AREA_SQL = """
 SELECT hylak_id,
@@ -324,6 +325,119 @@ CREATE TABLE IF NOT EXISTS hawkes_transition_monthly (
 );
 """
 
+_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_labels (
+    hylak_id            INTEGER      NOT NULL,
+    workflow_version    TEXT         NOT NULL,
+    year                INTEGER      NOT NULL,
+    month               INTEGER      NOT NULL,
+    water_area          DOUBLE PRECISION,
+    monthly_climatology DOUBLE PRECISION,
+    anomaly             DOUBLE PRECISION,
+    q_low               DOUBLE PRECISION,
+    q_high              DOUBLE PRECISION,
+    extreme_label       TEXT,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version, year, month)
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_extremes (
+    hylak_id            INTEGER      NOT NULL,
+    workflow_version    TEXT         NOT NULL,
+    year                INTEGER      NOT NULL,
+    month               INTEGER      NOT NULL,
+    event_type          TEXT         NOT NULL,
+    water_area          DOUBLE PRECISION,
+    monthly_climatology DOUBLE PRECISION,
+    anomaly             DOUBLE PRECISION,
+    threshold           DOUBLE PRECISION,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version, year, month, event_type)
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_abrupt_transitions (
+    hylak_id          INTEGER      NOT NULL,
+    workflow_version  TEXT         NOT NULL,
+    from_year         INTEGER      NOT NULL,
+    from_month        INTEGER      NOT NULL,
+    to_year           INTEGER      NOT NULL,
+    to_month          INTEGER      NOT NULL,
+    transition_type   TEXT         NOT NULL,
+    from_anomaly      DOUBLE PRECISION,
+    to_anomaly        DOUBLE PRECISION,
+    from_label        TEXT,
+    to_label          TEXT,
+    computed_at       TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (
+        hylak_id,
+        workflow_version,
+        from_year,
+        from_month,
+        to_year,
+        to_month,
+        transition_type
+    )
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS monthly_transition_run_status (
+    hylak_id          INTEGER      NOT NULL,
+    workflow_version  TEXT         NOT NULL,
+    chunk_start       INTEGER,
+    chunk_end         INTEGER,
+    status            TEXT         NOT NULL,
+    error_message     TEXT,
+    computed_at       TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version)
+);
+"""
+
+_ENSURE_MONTHLY_TRANSITION_STATUS_WORKFLOW_COLUMN_SQL = """
+ALTER TABLE monthly_transition_run_status
+ADD COLUMN IF NOT EXISTS workflow_version TEXT
+"""
+
+_DROP_MONTHLY_TRANSITION_STATUS_PK_SQL = """
+ALTER TABLE monthly_transition_run_status
+DROP CONSTRAINT IF EXISTS monthly_transition_run_status_pkey
+"""
+
+_ADD_MONTHLY_TRANSITION_STATUS_PK_SQL = """
+ALTER TABLE monthly_transition_run_status
+ADD PRIMARY KEY (hylak_id, workflow_version)
+"""
+
+_CREATE_MONTHLY_TRANSITION_STATUS_VERSION_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS monthly_transition_run_status_version_hylak_idx
+ON monthly_transition_run_status (workflow_version, hylak_id)
+"""
+
+_MONTHLY_TRANSITION_VERSIONED_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("monthly_transition_labels", ("hylak_id", "workflow_version", "year", "month")),
+    (
+        "monthly_transition_extremes",
+        ("hylak_id", "workflow_version", "year", "month", "event_type"),
+    ),
+    (
+        "monthly_transition_abrupt_transitions",
+        (
+            "hylak_id",
+            "workflow_version",
+            "from_year",
+            "from_month",
+            "to_year",
+            "to_month",
+            "transition_type",
+        ),
+    ),
+    ("monthly_transition_run_status", ("hylak_id", "workflow_version")),
+)
+
 _UPSERT_HAWKES_RESULTS_SQL = """
 INSERT INTO hawkes_results (
     hylak_id, threshold_quantile,
@@ -416,6 +530,112 @@ ON CONFLICT (hylak_id, threshold_quantile, year, month, direction) DO UPDATE SET
     computed_at             = now();
 """
 
+_UPSERT_MONTHLY_TRANSITION_LABELS_SQL = """
+INSERT INTO monthly_transition_labels (
+    hylak_id, workflow_version, year, month,
+    water_area, monthly_climatology, anomaly,
+    q_low, q_high, extreme_label, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(year)s, %(month)s,
+    %(water_area)s, %(monthly_climatology)s, %(anomaly)s,
+    %(q_low)s, %(q_high)s, %(extreme_label)s, now()
+)
+ON CONFLICT (hylak_id, workflow_version, year, month) DO UPDATE SET
+    water_area          = EXCLUDED.water_area,
+    monthly_climatology = EXCLUDED.monthly_climatology,
+    anomaly             = EXCLUDED.anomaly,
+    q_low               = EXCLUDED.q_low,
+    q_high              = EXCLUDED.q_high,
+    extreme_label       = EXCLUDED.extreme_label,
+    computed_at         = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL = """
+INSERT INTO monthly_transition_extremes (
+    hylak_id, workflow_version, year, month, event_type,
+    water_area, monthly_climatology, anomaly, threshold, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(year)s, %(month)s, %(event_type)s,
+    %(water_area)s, %(monthly_climatology)s, %(anomaly)s, %(threshold)s, now()
+)
+ON CONFLICT (hylak_id, workflow_version, year, month, event_type) DO UPDATE SET
+    water_area          = EXCLUDED.water_area,
+    monthly_climatology = EXCLUDED.monthly_climatology,
+    anomaly             = EXCLUDED.anomaly,
+    threshold           = EXCLUDED.threshold,
+    computed_at         = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL = """
+INSERT INTO monthly_transition_abrupt_transitions (
+    hylak_id, workflow_version, from_year, from_month, to_year, to_month, transition_type,
+    from_anomaly, to_anomaly, from_label, to_label, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(from_year)s, %(from_month)s,
+    %(to_year)s, %(to_month)s, %(transition_type)s, %(from_anomaly)s, %(to_anomaly)s,
+    %(from_label)s, %(to_label)s, now()
+)
+ON CONFLICT (
+    hylak_id, workflow_version, from_year, from_month, to_year, to_month,
+    transition_type
+) DO UPDATE SET
+    from_anomaly = EXCLUDED.from_anomaly,
+    to_anomaly   = EXCLUDED.to_anomaly,
+    from_label   = EXCLUDED.from_label,
+    to_label     = EXCLUDED.to_label,
+    computed_at  = now();
+"""
+
+_UPSERT_MONTHLY_TRANSITION_STATUS_SQL = """
+INSERT INTO monthly_transition_run_status (
+    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+)
+ON CONFLICT (hylak_id, workflow_version) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+"""
+
+_COUNT_AREA_QUALITY_IN_RANGE_SQL = """
+SELECT COUNT(DISTINCT la.hylak_id)
+FROM lake_area la
+JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
+"""
+
+_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL = """
+SELECT COUNT(*)
+FROM monthly_transition_run_status
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+  AND status = 'done'
+  AND workflow_version = %(workflow_version)s
+"""
+
+_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL = """
+SELECT hylak_id
+FROM monthly_transition_run_status
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+  AND status = 'done'
+  AND workflow_version = %(workflow_version)s
+"""
+
+_FETCH_AREA_QUALITY_IDS_IN_RANGE_SQL = """
+SELECT DISTINCT la.hylak_id
+FROM lake_area la
+JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
+ORDER BY la.hylak_id
+"""
+
+_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL = """
+SELECT MAX(hylak_id)
+FROM area_quality
+"""
+
 
 def fetch_lake_area(
     conn: psycopg.Connection, limit_id: int | None = None
@@ -486,7 +706,10 @@ def fetch_lake_area_chunk(
     }
     log.debug(
         "Fetched lake_area chunk [%d, %d): %d rows, %d lakes",
-        chunk_start, chunk_end, len(df), len(result),
+        chunk_start,
+        chunk_end,
+        len(df),
+        len(result),
     )
     return result
 
@@ -546,7 +769,9 @@ def fetch_lake_area_by_ids(
         for hylak_id, group in df.groupby("hylak_id")
     }
     log.debug(
-        "Fetched lake_area by ids: %d rows, %d lakes", len(df), len(result),
+        "Fetched lake_area by ids: %d rows, %d lakes",
+        len(df),
+        len(result),
     )
     return result
 
@@ -687,11 +912,7 @@ def fetch_seasonal_amplitude_chunk(
         hylak_id = int(r[0])
         annual_means_std = float(r[1]) if r[1] is not None else None
         mean_area = float(r[2]) if r[2] is not None else None
-        if (
-            annual_means_std is not None
-            and mean_area is not None
-            and mean_area > 0
-        ):
+        if annual_means_std is not None and mean_area is not None and mean_area > 0:
             result[hylak_id] = annual_means_std / mean_area
         else:
             result[hylak_id] = None
@@ -811,7 +1032,6 @@ def fetch_atlas_area_chunk(
         cur.execute(_FETCH_ATLAS_AREA_CHUNK_SQL, params)
         rows = cur.fetchall()
     return {int(r[0]): float(r[1]) if r[1] is not None else 0.0 for r in rows}
-
 
 
 _FETCH_AREA_QUALITY_HYLAK_IDS_SQL = """
@@ -1032,7 +1252,9 @@ def ensure_hawkes_results_table(conn: psycopg.Connection) -> None:
         cur.execute(_ENSURE_HAWKES_LRT_TABLE_SQL)
         cur.execute(_ENSURE_HAWKES_TRANSITION_MONTHLY_TABLE_SQL)
     conn.commit()
-    log.debug("Ensured hawkes_results, hawkes_lrt, and hawkes_transition_monthly tables exist")
+    log.debug(
+        "Ensured hawkes_results, hawkes_lrt, and hawkes_transition_monthly tables exist"
+    )
 
 
 def upsert_hawkes_results(conn: psycopg.Connection, rows: list[dict]) -> None:
@@ -1051,12 +1273,204 @@ def upsert_hawkes_lrt(conn: psycopg.Connection, rows: list[dict]) -> None:
     log.info("Upserted %d hawkes_lrt row(s)", len(rows))
 
 
-def upsert_hawkes_transition_monthly(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_hawkes_transition_monthly(
+    conn: psycopg.Connection, rows: list[dict]
+) -> None:
     """Insert or update Hawkes monthly transition-significance rows."""
     with conn.cursor() as cur:
         cur.executemany(_UPSERT_HAWKES_TRANSITION_MONTHLY_SQL, rows)
     conn.commit()
     log.info("Upserted %d hawkes_transition_monthly row(s)", len(rows))
+
+
+def ensure_monthly_transition_tables(conn: psycopg.Connection) -> None:
+    """Create monthly transition result and status tables when missing."""
+    with conn.cursor() as cur:
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL)
+        cur.execute(_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL)
+        _ensure_monthly_transition_workflow_versioning(cur)
+        cur.execute(_CREATE_MONTHLY_TRANSITION_STATUS_VERSION_INDEX_SQL)
+    conn.commit()
+    log.debug("Ensured monthly transition tables exist")
+
+
+def _ensure_monthly_transition_workflow_versioning(cur: psycopg.Cursor) -> None:
+    for table_name, primary_key_columns in _MONTHLY_TRANSITION_VERSIONED_TABLES:
+        table_ident = sql.Identifier(table_name)
+        constraint_ident = sql.Identifier(f"{table_name}_pkey")
+        pk_columns_sql = sql.SQL(", ").join(
+            sql.Identifier(column_name) for column_name in primary_key_columns
+        )
+        cur.execute(
+            sql.SQL(
+                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workflow_version TEXT"
+            ).format(
+                table=table_ident,
+            )
+        )
+        cur.execute(
+            sql.SQL(
+                "UPDATE {table} SET workflow_version = %s WHERE workflow_version IS NULL"
+            ).format(table=table_ident),
+            (_LEGACY_WORKFLOW_VERSION,),
+        )
+        cur.execute(
+            sql.SQL(
+                "ALTER TABLE {table} ALTER COLUMN workflow_version SET NOT NULL"
+            ).format(table=table_ident)
+        )
+        cur.execute(
+            sql.SQL(
+                "ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}"
+            ).format(
+                table=table_ident,
+                constraint=constraint_ident,
+            )
+        )
+        cur.execute(
+            sql.SQL("ALTER TABLE {table} ADD PRIMARY KEY ({columns})").format(
+                table=table_ident,
+                columns=pk_columns_sql,
+            )
+        )
+
+
+def upsert_monthly_transition_labels(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    commit: bool = True,
+) -> None:
+    """Insert or update monthly transition label rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_LABELS_SQL, rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d monthly_transition_labels row(s)", len(rows))
+
+
+def upsert_monthly_transition_extremes(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    commit: bool = True,
+) -> None:
+    """Insert or update monthly transition extreme rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL, rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d monthly_transition_extremes row(s)", len(rows))
+
+
+def upsert_monthly_transition_abrupt_transitions(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    commit: bool = True,
+) -> None:
+    """Insert or update monthly transition abrupt transition rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL, rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d monthly_transition_abrupt_transitions row(s)", len(rows))
+
+
+def upsert_monthly_transition_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    commit: bool = True,
+) -> None:
+    """Insert or update monthly transition run-status rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_UPSERT_MONTHLY_TRANSITION_STATUS_SQL, rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d monthly_transition_run_status row(s)", len(rows))
+
+
+def fetch_area_quality_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+) -> set[int]:
+    """Fetch quality-filtered source lake ids in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_FETCH_AREA_QUALITY_IDS_IN_RANGE_SQL, params)
+        rows = cur.fetchall()
+    return {int(row[0]) for row in rows}
+
+
+def count_area_quality_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+) -> int:
+    """Count `area_quality` lakes in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_COUNT_AREA_QUALITY_IN_RANGE_SQL, params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def count_monthly_transition_status_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+) -> int:
+    """Count monthly transition run-status rows in a hylak_id range."""
+    params = {
+        "chunk_start": chunk_start,
+        "chunk_end": chunk_end,
+        "workflow_version": workflow_version,
+    }
+    with conn.cursor() as cur:
+        cur.execute(_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL, params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def fetch_monthly_transition_status_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+) -> set[int]:
+    """Fetch processed monthly transition hylak_ids in a hylak_id range."""
+    params = {
+        "chunk_start": chunk_start,
+        "chunk_end": chunk_end,
+        "workflow_version": workflow_version,
+    }
+    with conn.cursor() as cur:
+        cur.execute(_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL, params)
+        rows = cur.fetchall()
+    return {int(row[0]) for row in rows}
+
+
+def fetch_max_area_quality_hylak_id(conn: psycopg.Connection) -> int | None:
+    """Return the maximum hylak_id present in area_quality."""
+    with conn.cursor() as cur:
+        cur.execute(_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else None
 
 
 _SAFE_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -1073,7 +1487,9 @@ def _lake_geometry_table_sql_ident() -> sql.Composed:
 
     If the env var is unset or empty, uses ``LakeATLAS_v10_pol`` on ALTAS_DB.
     """
-    ref = (os.environ.get("LAKE_GEOMETRY_TABLE") or "").strip() or _DEFAULT_LAKE_GEOMETRY_TABLE
+    ref = (
+        os.environ.get("LAKE_GEOMETRY_TABLE") or ""
+    ).strip() or _DEFAULT_LAKE_GEOMETRY_TABLE
     parts = [p.strip() for p in ref.split(".") if p.strip()]
     if not parts or len(parts) > 2:
         raise ValueError(
@@ -1158,7 +1574,8 @@ def fetch_lake_geometry_wkt_by_ids(
         params: dict = {"ids": list(hylak_ids), "simplify_m": float(tol)}
     else:
         query = sql.SQL(
-            "SELECT {id_c} AS hylak_id, ST_AsText({g_c}) AS wkt FROM {tbl} WHERE {id_c} = ANY(%(ids)s)"
+            "SELECT {id_c} AS hylak_id, ST_AsText({g_c}) AS wkt "
+            "FROM {tbl} WHERE {id_c} = ANY(%(ids)s)"
         ).format(
             id_c=sql.Identifier(id_col),
             g_c=sql.Identifier(geom_col),
