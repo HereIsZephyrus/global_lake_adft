@@ -1,7 +1,13 @@
-"""Database connection and extension checks for HydroALTAS (PostGIS + pghydro)."""
+"""Database connection and extension checks for HydroALTAS (PostGIS + pghydro).
+
+This module provides two data backend options:
+1. PostgreSQL backend: DBClient for connecting to PostgreSQL databases
+2. DuckDB backend: DuckDBClient for querying Parquet files (no database required)
+"""
 
 from .chunked import ChunkedLakeProcessor
 from .client import DBClient, atlas_db, series_db
+from .duckdb_client import DuckDBClient, create_client
 from .extensions import check_extensions
 from .hawkes_qc import (
     fetch_eot_hawkes_coverage,
@@ -52,10 +58,14 @@ from .lake import (
 )
 
 __all__ = [
+    # Clients
     "ChunkedLakeProcessor",
     "DBClient",
     "atlas_db",
     "series_db",
+    "DuckDBClient",
+    "create_client",
+    # Extensions
     "check_extensions",
     "count_area_quality_hylak_ids_in_range",
     "count_monthly_transition_status_in_range",
