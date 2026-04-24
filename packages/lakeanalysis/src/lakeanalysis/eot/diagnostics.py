@@ -60,7 +60,8 @@ class ReturnLevelEstimator:
         z_value: float,
         return_period_years: float,
     ) -> float:
-        return return_period_years * self._intensity_integral(theta, z_value) - 1.0
+        T_obs = self.fit_result.series.duration_years
+        return (return_period_years / T_obs) * self._intensity_integral(theta, z_value) - 1.0
 
     def _solve_return_level(self, theta: np.ndarray, return_period_years: float) -> float:
         sigma = float(theta[-2])
@@ -72,8 +73,9 @@ class ReturnLevelEstimator:
         threshold = self.fit_result.threshold
         step = max(sigma, 1.0)
 
-        # The root function f(z) = T * integral(z) - 1 is monotone decreasing in z.
-        # Therefore a valid Brent bracket must satisfy f(lower) > 0 and f(upper) < 0.
+        # The root function f(z) = (T/T_obs) * integral(z) - 1 is monotone decreasing in z.
+        # T_obs is the observation duration in years; the integral gives total intensity
+        # over [0, T_obs], so dividing by T_obs yields the annual rate.
         lower_bound = -np.inf
         upper_bound = np.inf
         if xi > 0.0:
