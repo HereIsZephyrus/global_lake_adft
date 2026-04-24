@@ -221,3 +221,13 @@ data/
 results/
 logs/
 sampled/
+
+# agent
+AGENTS.md
+CLAUDE.md
+tasks/
+specs/
+prompts/
+docs/ralph.md
+.claude/
+.opencode/

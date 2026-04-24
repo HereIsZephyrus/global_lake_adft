@@ -12,16 +12,24 @@ description = "Lake analysis, statistical modelling, and downstream data access 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "psycopg[binary]>=3.2",
-    "duckdb>=1.5.0",
-    "geoalchemy2>=0.14",
     "python-dotenv>=1.0",
-    "pandas>=3.0.1",
-    "numpy>=2.4.3",
+    "pandas>=2.0,<3",
+    "numpy>=1.24,<2.3",
+    "duckdb>=1.5.0",
+    "pyarrow>=14.0,<18",
     "pymannkendall>=1.4.3",
     "statsmodels>=0.14.0",
-    "matplotlib>=3.10.8",
-    "pyarrow>=23.0.1",
+]
+
+[project.optional-dependencies]
+postgres = [
+    "psycopg[binary]>=3.2",
+    "geoalchemy2>=0.14",
+]
+plot = [
+    "matplotlib>=3.5",
+]
+remote = [
     "paramiko>=3.5",
 ]
 
