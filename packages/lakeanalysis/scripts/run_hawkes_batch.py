@@ -784,7 +784,7 @@ def _process_sub_batch(
     hawkes_rows: list[dict] = []
     monthly_rows: list[dict] = []
     for hylak_id, series_df, frozen_year_months, threshold_quantile in sub_batch:
-        summary, lrt, manifest, eot_results, eot_extremes, hawkes_result_rows, monthly_transition_rows = _fit_one_task(
+        summary, lrt, manifest, eot_results, eot_extremes, hawkes_result_rows, quantile_rows = _fit_one_task(
             hylak_id=hylak_id,
             series_df=series_df,
             frozen_year_months=frozen_year_months,
@@ -808,7 +808,7 @@ def _process_sub_batch(
         eot_result_rows.extend(eot_results)
         eot_extreme_rows.extend(eot_extremes)
         hawkes_rows.extend(hawkes_result_rows)
-        monthly_rows.extend(monthly_transition_rows)
+        monthly_rows.extend(quantile_rows)
     return (
         summaries,
         lrt_rows,

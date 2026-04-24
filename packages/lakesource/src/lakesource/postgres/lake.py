@@ -385,7 +385,7 @@ CREATE TABLE IF NOT EXISTS {table} (
 """).format(table=sql.Identifier(tc.series_table("hawkes_transition_monthly")))
 
 
-def _ensure_monthly_transition_labels_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_quantile_labels_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
@@ -401,10 +401,10 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at         TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version, year, month)
 );
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_labels")))
+""").format(table=sql.Identifier(tc.series_table("quantile_labels")))
 
 
-def _ensure_monthly_transition_extremes_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_quantile_extremes_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
@@ -419,10 +419,10 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at         TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version, year, month, event_type)
 );
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_extremes")))
+""").format(table=sql.Identifier(tc.series_table("quantile_extremes")))
 
 
-def _ensure_monthly_transition_abrupt_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_quantile_abrupt_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
@@ -447,10 +447,10 @@ CREATE TABLE IF NOT EXISTS {table} (
         transition_type
     )
 );
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_abrupt_transitions")))
+""").format(table=sql.Identifier(tc.series_table("quantile_abrupt_transitions")))
 
 
-def _ensure_monthly_transition_status_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_quantile_status_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
@@ -462,17 +462,17 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at       TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version)
 );
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
+""").format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
-def _ensure_monthly_transition_status_workflow_column_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_quantile_status_workflow_column_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL(
         "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workflow_version TEXT"
-    ).format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
+    ).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
-def _drop_monthly_transition_status_pk_sql(tc: TableConfig) -> sql.Composed:
-    table_name = tc.series_table("monthly_transition_run_status")
+def _drop_quantile_status_pk_sql(tc: TableConfig) -> sql.Composed:
+    table_name = tc.series_table("quantile_run_status")
     return sql.SQL(
         "ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}"
     ).format(
@@ -481,19 +481,19 @@ def _drop_monthly_transition_status_pk_sql(tc: TableConfig) -> sql.Composed:
     )
 
 
-def _add_monthly_transition_status_pk_sql(tc: TableConfig) -> sql.Composed:
+def _add_quantile_status_pk_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL(
         "ALTER TABLE {table} ADD PRIMARY KEY ({columns})"
     ).format(
-        table=sql.Identifier(tc.series_table("monthly_transition_run_status")),
+        table=sql.Identifier(tc.series_table("quantile_run_status")),
         columns=sql.SQL(", ").join(
             sql.Identifier(c) for c in ("hylak_id", "workflow_version")
         ),
     )
 
 
-def _create_monthly_transition_status_version_index_sql(tc: TableConfig) -> sql.Composed:
-    table_name = tc.series_table("monthly_transition_run_status")
+def _create_quantile_status_version_index_sql(tc: TableConfig) -> sql.Composed:
+    table_name = tc.series_table("quantile_run_status")
     return sql.SQL(
         "CREATE INDEX IF NOT EXISTS {index} ON {table} (workflow_version, hylak_id)"
     ).format(
@@ -502,14 +502,14 @@ def _create_monthly_transition_status_version_index_sql(tc: TableConfig) -> sql.
     )
 
 
-def _monthly_transition_versioned_tables(
+def _quantile_versioned_tables(
     tc: TableConfig,
 ) -> tuple[tuple[str, tuple[str, ...]], ...]:
     return (
-        (tc.series_table("monthly_transition_labels"), ("hylak_id", "workflow_version", "year", "month")),
-        (tc.series_table("monthly_transition_extremes"), ("hylak_id", "workflow_version", "year", "month", "event_type")),
-        (tc.series_table("monthly_transition_abrupt_transitions"), ("hylak_id", "workflow_version", "from_year", "from_month", "to_year", "to_month", "transition_type")),
-        (tc.series_table("monthly_transition_run_status"), ("hylak_id", "workflow_version")),
+        (tc.series_table("quantile_labels"), ("hylak_id", "workflow_version", "year", "month")),
+        (tc.series_table("quantile_extremes"), ("hylak_id", "workflow_version", "year", "month", "event_type")),
+        (tc.series_table("quantile_abrupt_transitions"), ("hylak_id", "workflow_version", "from_year", "from_month", "to_year", "to_month", "transition_type")),
+        (tc.series_table("quantile_run_status"), ("hylak_id", "workflow_version")),
     )
 
 
@@ -627,7 +627,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 )
 
 
-def _upsert_monthly_transition_labels_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_quantile_labels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, workflow_version, year, month,
@@ -647,7 +647,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     extreme_label       = EXCLUDED.extreme_label,
     computed_at         = now();
 """).format(
-    table=sql.Identifier(tc.series_table("monthly_transition_labels")),
+    table=sql.Identifier(tc.series_table("quantile_labels")),
     conflict_cols=sql.SQL(", ").join(
         sql.Identifier(c)
         for c in ("hylak_id", "workflow_version", "year", "month")
@@ -655,7 +655,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 )
 
 
-def _upsert_monthly_transition_extremes_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_quantile_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, workflow_version, year, month, event_type,
@@ -671,7 +671,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     threshold           = EXCLUDED.threshold,
     computed_at         = now();
 """).format(
-    table=sql.Identifier(tc.series_table("monthly_transition_extremes")),
+    table=sql.Identifier(tc.series_table("quantile_extremes")),
     conflict_cols=sql.SQL(", ").join(
         sql.Identifier(c)
         for c in ("hylak_id", "workflow_version", "year", "month", "event_type")
@@ -679,7 +679,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 )
 
 
-def _upsert_monthly_transition_abrupt_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_quantile_abrupt_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, workflow_version, from_year, from_month, to_year, to_month, transition_type,
@@ -696,7 +696,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     to_label     = EXCLUDED.to_label,
     computed_at  = now();
 """).format(
-    table=sql.Identifier(tc.series_table("monthly_transition_abrupt_transitions")),
+    table=sql.Identifier(tc.series_table("quantile_abrupt_transitions")),
     conflict_cols=sql.SQL(", ").join(
         sql.Identifier(c)
         for c in (
@@ -712,7 +712,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 )
 
 
-def _upsert_monthly_transition_status_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_quantile_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
@@ -726,7 +726,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     error_message = EXCLUDED.error_message,
     computed_at   = now();
 """).format(
-    table=sql.Identifier(tc.series_table("monthly_transition_run_status")),
+    table=sql.Identifier(tc.series_table("quantile_run_status")),
     conflict_cols=sql.SQL(", ").join(
         sql.Identifier(c) for c in ("hylak_id", "workflow_version")
     ),
@@ -745,24 +745,24 @@ WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
 )
 
 
-def _count_monthly_transition_status_in_range_sql(tc: TableConfig) -> sql.Composed:
+def _count_quantile_status_in_range_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT COUNT(*)
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
   AND status = 'done'
   AND workflow_version = %(workflow_version)s
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
+""").format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
-def _fetch_monthly_transition_status_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
+def _fetch_quantile_status_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
   AND status = 'done'
   AND workflow_version = %(workflow_version)s
-""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
+""").format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
 def _fetch_area_quality_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
@@ -1568,28 +1568,28 @@ def upsert_hawkes_transition_monthly(
     log.info("Upserted %d hawkes_transition_monthly row(s)", len(rows))
 
 
-def ensure_monthly_transition_tables(
+def ensure_quantile_tables(
     conn: psycopg.Connection,
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
     """Create monthly transition result and status tables when missing."""
     with conn.cursor() as cur:
-        cur.execute(_ensure_monthly_transition_labels_table_sql(table_config))
-        cur.execute(_ensure_monthly_transition_extremes_table_sql(table_config))
-        cur.execute(_ensure_monthly_transition_abrupt_table_sql(table_config))
-        cur.execute(_ensure_monthly_transition_status_table_sql(table_config))
-        _ensure_monthly_transition_workflow_versioning(cur, table_config)
-        cur.execute(_create_monthly_transition_status_version_index_sql(table_config))
+        cur.execute(_ensure_quantile_labels_table_sql(table_config))
+        cur.execute(_ensure_quantile_extremes_table_sql(table_config))
+        cur.execute(_ensure_quantile_abrupt_table_sql(table_config))
+        cur.execute(_ensure_quantile_status_table_sql(table_config))
+        _ensure_quantile_workflow_versioning(cur, table_config)
+        cur.execute(_create_quantile_status_version_index_sql(table_config))
     conn.commit()
     log.debug("Ensured monthly transition tables exist")
 
 
-def _ensure_monthly_transition_workflow_versioning(
+def _ensure_quantile_workflow_versioning(
     cur: psycopg.Cursor,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    for table_name, primary_key_columns in _monthly_transition_versioned_tables(table_config):
+    for table_name, primary_key_columns in _quantile_versioned_tables(table_config):
         table_ident = sql.Identifier(table_name)
         constraint_ident = sql.Identifier(f"{table_name}_pkey")
         pk_columns_sql = sql.SQL(", ").join(
@@ -1629,7 +1629,7 @@ def _ensure_monthly_transition_workflow_versioning(
         )
 
 
-def upsert_monthly_transition_labels(
+def upsert_quantile_labels(
     conn: psycopg.Connection,
     rows: list[dict],
     *,
@@ -1640,13 +1640,13 @@ def upsert_monthly_transition_labels(
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_upsert_monthly_transition_labels_sql(table_config), rows)
+        cur.executemany(_upsert_quantile_labels_sql(table_config), rows)
     if commit:
         conn.commit()
-    log.info("Upserted %d monthly_transition_labels row(s)", len(rows))
+    log.info("Upserted %d quantile_labels row(s)", len(rows))
 
 
-def upsert_monthly_transition_extremes(
+def upsert_quantile_extremes(
     conn: psycopg.Connection,
     rows: list[dict],
     *,
@@ -1657,13 +1657,13 @@ def upsert_monthly_transition_extremes(
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_upsert_monthly_transition_extremes_sql(table_config), rows)
+        cur.executemany(_upsert_quantile_extremes_sql(table_config), rows)
     if commit:
         conn.commit()
-    log.info("Upserted %d monthly_transition_extremes row(s)", len(rows))
+    log.info("Upserted %d quantile_extremes row(s)", len(rows))
 
 
-def upsert_monthly_transition_abrupt_transitions(
+def upsert_quantile_abrupt_transitions(
     conn: psycopg.Connection,
     rows: list[dict],
     *,
@@ -1674,13 +1674,13 @@ def upsert_monthly_transition_abrupt_transitions(
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_upsert_monthly_transition_abrupt_sql(table_config), rows)
+        cur.executemany(_upsert_quantile_abrupt_sql(table_config), rows)
     if commit:
         conn.commit()
-    log.info("Upserted %d monthly_transition_abrupt_transitions row(s)", len(rows))
+    log.info("Upserted %d quantile_abrupt_transitions row(s)", len(rows))
 
 
-def upsert_monthly_transition_run_status(
+def upsert_quantile_run_status(
     conn: psycopg.Connection,
     rows: list[dict],
     *,
@@ -1691,10 +1691,10 @@ def upsert_monthly_transition_run_status(
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_upsert_monthly_transition_status_sql(table_config), rows)
+        cur.executemany(_upsert_quantile_status_sql(table_config), rows)
     if commit:
         conn.commit()
-    log.info("Upserted %d monthly_transition_run_status row(s)", len(rows))
+    log.info("Upserted %d quantile_run_status row(s)", len(rows))
 
 
 def fetch_area_quality_hylak_ids_in_range(
@@ -1727,7 +1727,7 @@ def count_area_quality_hylak_ids_in_range(
     return int(row[0]) if row and row[0] is not None else 0
 
 
-def count_monthly_transition_status_in_range(
+def count_quantile_status_in_range(
     conn: psycopg.Connection,
     chunk_start: int,
     chunk_end: int,
@@ -1742,12 +1742,12 @@ def count_monthly_transition_status_in_range(
         "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
-        cur.execute(_count_monthly_transition_status_in_range_sql(table_config), params)
+        cur.execute(_count_quantile_status_in_range_sql(table_config), params)
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
 
 
-def fetch_monthly_transition_status_ids_in_range(
+def fetch_quantile_status_ids_in_range(
     conn: psycopg.Connection,
     chunk_start: int,
     chunk_end: int,
@@ -1762,7 +1762,7 @@ def fetch_monthly_transition_status_ids_in_range(
         "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
-        cur.execute(_fetch_monthly_transition_status_ids_in_range_sql(table_config), params)
+        cur.execute(_fetch_quantile_status_ids_in_range_sql(table_config), params)
         rows = cur.fetchall()
     return {int(row[0]) for row in rows}
 
@@ -1910,3 +1910,209 @@ def fetch_lake_geometry_wkt_by_ids(
     if not rows:
         return pd.DataFrame(columns=["hylak_id", "wkt"])
     return pd.DataFrame(rows, columns=["hylak_id", "wkt"])
+
+
+# ---------------------------------------------------------------------------
+# PWM extreme quantile tables
+# ---------------------------------------------------------------------------
+
+def _ensure_pwm_extreme_thresholds_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id            INTEGER      NOT NULL,
+    month               INTEGER      NOT NULL,
+    workflow_version    TEXT         NOT NULL,
+    mean_area           DOUBLE PRECISION,
+    epsilon             DOUBLE PRECISION,
+    lambda_0            DOUBLE PRECISION,
+    lambda_1            DOUBLE PRECISION,
+    lambda_2            DOUBLE PRECISION,
+    lambda_3            DOUBLE PRECISION,
+    lambda_4            DOUBLE PRECISION,
+    b_0                 DOUBLE PRECISION,
+    b_1                 DOUBLE PRECISION,
+    b_2                 DOUBLE PRECISION,
+    b_3                 DOUBLE PRECISION,
+    b_4                 DOUBLE PRECISION,
+    threshold_high      DOUBLE PRECISION,
+    threshold_low       DOUBLE PRECISION,
+    converged           BOOLEAN,
+    objective_value     DOUBLE PRECISION,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version, month)
+);
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")))
+
+
+def _ensure_pwm_extreme_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id          INTEGER      NOT NULL,
+    workflow_version  TEXT         NOT NULL,
+    chunk_start       INTEGER,
+    chunk_end         INTEGER,
+    status            TEXT         NOT NULL,
+    error_message     TEXT,
+    computed_at       TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version)
+);
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
+
+
+def _upsert_pwm_extreme_thresholds_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, month, workflow_version,
+    mean_area, epsilon,
+    lambda_0, lambda_1, lambda_2, lambda_3, lambda_4,
+    b_0, b_1, b_2, b_3, b_4,
+    threshold_high, threshold_low, converged, objective_value, computed_at
+) VALUES (
+    %(hylak_id)s, %(month)s, %(workflow_version)s,
+    %(mean_area)s, %(epsilon)s,
+    %(lambda_0)s, %(lambda_1)s, %(lambda_2)s, %(lambda_3)s, %(lambda_4)s,
+    %(b_0)s, %(b_1)s, %(b_2)s, %(b_3)s, %(b_4)s,
+    %(threshold_high)s, %(threshold_low)s, %(converged)s, %(objective_value)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    mean_area       = EXCLUDED.mean_area,
+    epsilon         = EXCLUDED.epsilon,
+    lambda_0        = EXCLUDED.lambda_0,
+    lambda_1        = EXCLUDED.lambda_1,
+    lambda_2        = EXCLUDED.lambda_2,
+    lambda_3        = EXCLUDED.lambda_3,
+    lambda_4        = EXCLUDED.lambda_4,
+    b_0             = EXCLUDED.b_0,
+    b_1             = EXCLUDED.b_1,
+    b_2             = EXCLUDED.b_2,
+    b_3             = EXCLUDED.b_3,
+    b_4             = EXCLUDED.b_4,
+    threshold_high  = EXCLUDED.threshold_high,
+    threshold_low   = EXCLUDED.threshold_low,
+    converged       = EXCLUDED.converged,
+    objective_value = EXCLUDED.objective_value,
+    computed_at     = now();
+""").format(
+    table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "workflow_version", "month")
+    ),
+)
+
+
+def _upsert_pwm_extreme_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+""").format(
+    table=sql.Identifier(tc.series_table("pwm_extreme_run_status")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+    ),
+)
+
+
+def _count_pwm_extreme_status_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT COUNT(*)
+FROM {table}
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+  AND status = 'done'
+  AND workflow_version = %(workflow_version)s
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
+
+
+def _fetch_pwm_extreme_status_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT hylak_id
+FROM {table}
+WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
+  AND status = 'done'
+  AND workflow_version = %(workflow_version)s
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
+
+
+def ensure_pwm_extreme_tables(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    """Create PWM extreme quantile tables if they do not exist."""
+    with conn.cursor() as cur:
+        cur.execute(_ensure_pwm_extreme_thresholds_table_sql(table_config))
+        cur.execute(_ensure_pwm_extreme_status_table_sql(table_config))
+
+
+def upsert_pwm_extreme_thresholds(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    """Upsert PWM extreme threshold rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_pwm_extreme_thresholds_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d pwm_extreme_thresholds row(s)", len(rows))
+
+
+def upsert_pwm_extreme_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    """Upsert PWM extreme run status rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_pwm_extreme_status_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d pwm_extreme_run_status row(s)", len(rows))
+
+
+def count_pwm_extreme_status_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+    table_config: TableConfig = _default_table_config,
+) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            _count_pwm_extreme_status_in_range_sql(table_config),
+            {"chunk_start": chunk_start, "chunk_end": chunk_end, "workflow_version": workflow_version},
+        )
+        return int(cur.fetchone()[0])
+
+
+def fetch_pwm_extreme_status_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+    table_config: TableConfig = _default_table_config,
+) -> set[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            _fetch_pwm_extreme_status_ids_in_range_sql(table_config),
+            {"chunk_start": chunk_start, "chunk_end": chunk_end, "workflow_version": workflow_version},
+        )
+        return {int(row[0]) for row in cur.fetchall()}

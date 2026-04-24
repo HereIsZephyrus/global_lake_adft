@@ -8,6 +8,18 @@ from .compute import (
     compute_median_area,
     is_anomalous,
 )
+from .frozen import (
+    FrozenPlateauSchedule,
+    apply_frozen_plateau,
+    build_frozen_plateau_schedule,
+    defrozen_frame,
+    filter_frozen_rows,
+    first_frozen_months,
+    frozen_run_indices,
+    month_index_to_year_month_key,
+    year_month_key_to_index,
+    year_month_to_key,
+)
 
 __all__ = [
     "FlatnessFilterConfig",
@@ -16,4 +28,14 @@ __all__ = [
     "compute_mean_area",
     "compute_median_area",
     "is_anomalous",
+    "FrozenPlateauSchedule",
+    "apply_frozen_plateau",
+    "build_frozen_plateau_schedule",
+    "defrozen_frame",
+    "filter_frozen_rows",
+    "first_frozen_months",
+    "frozen_run_indices",
+    "month_index_to_year_month_key",
+    "year_month_key_to_index",
+    "year_month_to_key",
 ]
