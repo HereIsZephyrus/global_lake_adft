@@ -18,7 +18,7 @@ from .compute import (
 )
 from lakesource.monthly_transition.schema import MonthlyTransitionResult
 from .config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
-from .plot import (
+from lakeviz.monthly_transition import (
     plot_anomaly_timeline,
     plot_monthly_timeline,
     plot_transition_count_summary,

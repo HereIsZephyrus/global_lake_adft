@@ -23,7 +23,7 @@ from lakesource.postgres import (
     fetch_lake_area_by_ids,
     series_db,
 )
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.plot_config import setup_chinese_font
 from lakeanalysis.eot import (
     BasisSelector,
     EOTEstimator,

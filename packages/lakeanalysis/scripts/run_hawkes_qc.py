@@ -29,7 +29,7 @@ from lakesource.postgres import (
     fetch_hawkes_transition_monthly,
     series_db,
 )
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 

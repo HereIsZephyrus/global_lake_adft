@@ -1,4 +1,8 @@
-"""Plot helpers for Hawkes fit diagnostics."""
+"""Plot helpers for Hawkes fit diagnostics.
+
+Adapter layer: converts domain types to DataFrames, then delegates to
+lakeviz primitives for rendering.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from lakeviz.primitives import plot_bar
 from .types import HawkesFitResult, LRTResult, TYPE_LABELS
 
 
@@ -67,15 +72,10 @@ def plot_kernel_matrix(fit_result: HawkesFitResult) -> plt.Figure:
     alpha = fit_result.alpha
     beta = fit_result.beta
     labels = [f"{source}->{target}" for target in TYPE_LABELS for source in TYPE_LABELS]
-    ax_left.bar(labels, alpha.reshape(-1))
-    ax_left.set_title("Alpha Matrix")
-    ax_left.set_ylabel("alpha")
-    ax_left.tick_params(axis="x", rotation=45)
+
+    plot_bar(labels, alpha.reshape(-1), ax=ax_left, title="Alpha Matrix", ylabel="alpha", x_rotation=45)
+    plot_bar(labels, beta.reshape(-1), ax=ax_right, title="Beta Matrix", ylabel="beta", x_rotation=45)
     ax_left.grid(alpha=0.2, linestyle=":")
-    ax_right.bar(labels, beta.reshape(-1))
-    ax_right.set_title("Beta Matrix")
-    ax_right.set_ylabel("beta")
-    ax_right.tick_params(axis="x", rotation=45)
     ax_right.grid(alpha=0.2, linestyle=":")
     fig.tight_layout()
     return fig
@@ -99,22 +99,17 @@ def plot_lrt_summary(lrt_results: list[LRTResult] | pd.DataFrame) -> plt.Figure:
         frame = lrt_results.copy()
 
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(11, 4))
-    ax_left.bar(frame["test_name"], frame["lr_statistic"])
-    ax_left.set_title("LR Statistic")
-    ax_left.tick_params(axis="x", rotation=20)
+    plot_bar(frame["test_name"], frame["lr_statistic"], ax=ax_left, title="LR Statistic", x_rotation=20)
     ax_left.grid(alpha=0.2, linestyle=":")
 
-    ax_right.bar(frame["test_name"], frame["p_value"])
+    plot_bar(frame["test_name"], frame["p_value"], ax=ax_right, title="P-value", x_rotation=20)
     alpha = (
         float(frame["significance_level"].iloc[0])
         if "significance_level" in frame.columns and not frame.empty
         else 0.05
     )
     ax_right.axhline(alpha, linestyle="--", color="tomato", label=f"alpha={alpha:.2f}")
-    ax_right.set_title("P-value")
-    ax_right.tick_params(axis="x", rotation=20)
     ax_right.grid(alpha=0.2, linestyle=":")
     ax_right.legend(loc="upper right")
     fig.tight_layout()
     return fig
-

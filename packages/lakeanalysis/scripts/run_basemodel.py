@@ -28,7 +28,7 @@ from lakeanalysis.basemodel import (
 from lakesource.postgres import fetch_lake_area, fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot.preprocess import MonthlyTimeSeries
 from lakeanalysis.logger import Logger
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 

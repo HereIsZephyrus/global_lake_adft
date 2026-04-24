@@ -6,7 +6,7 @@ from .compute import (
     pearson_correlation,
 )
 from .fetch import load_pairs_and_areas
-from .plot import (
+from lakeviz.similarity import (
     plot_acf_cosine_distribution,
     plot_pearson_distribution,
     plot_pearson_vs_acf,

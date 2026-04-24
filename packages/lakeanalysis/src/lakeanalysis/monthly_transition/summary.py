@@ -12,11 +12,11 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.plot_config import setup_chinese_font
 
 from lakesource.monthly_transition.schema import MonthlyTransitionResult
 
-from .plot import (
+from lakeviz.monthly_transition import (
     plot_transition_count_summary_from_cache,
     plot_transition_seasonality_summary_from_cache,
 )

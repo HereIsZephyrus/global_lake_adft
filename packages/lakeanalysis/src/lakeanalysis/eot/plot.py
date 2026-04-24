@@ -1,4 +1,8 @@
-"""Plot helpers for EOT threshold diagnostics and NHPP model evaluation."""
+"""Plot helpers for EOT threshold diagnostics and NHPP model evaluation.
+
+Adapter layer: converts domain types to DataFrames, then delegates to
+lakeviz primitives for rendering.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.primitives import (
+    plot_line,
+    plot_scatter,
+    plot_scatter_with_diagonal,
+    plot_bar,
+    plot_fill_between,
+    plot_axhline,
+)
+from lakeviz.plot_config import setup_chinese_font
 from .diagnostics import ModelChecker, ReturnLevelEstimator
 from .estimation import FitResult
 from .preprocess import MonthlyTimeSeries
@@ -16,19 +28,16 @@ setup_chinese_font()
 
 def plot_mrl(mrl_df: pd.DataFrame) -> plt.Figure:
     """Plot mean residual life diagnostics."""
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(
+    return plot_line(
         mrl_df["threshold"],
         mrl_df["mean_excess"],
         marker="o",
-        linewidth=1.2,
         markersize=3,
+        linewidth=1.2,
+        xlabel="阈值",
+        ylabel="平均超额",
+        title="Mean residual life图",
     )
-    ax.set_xlabel("阈值")
-    ax.set_ylabel("平均超额")
-    ax.set_title("Mean residual life图")
-    fig.tight_layout()
-    return fig
 
 
 def plot_parameter_stability(stability_df: pd.DataFrame) -> plt.Figure:
@@ -67,20 +76,15 @@ def plot_extremes_timeline(
     threshold: float,
     fit_result: "FitResult | None" = None,
 ) -> plt.Figure:
-    """Plot the monthly series with declustered exceedance representatives.
-
-    When *fit_result* is supplied and carries a time-varying threshold model the
-    threshold curve u(t) is plotted instead of a horizontal line, giving a clear
-    visual of which observations were considered extreme relative to the local
-    seasonal + trend background.
-    """
-    fig, ax = plt.subplots(figsize=(12, 4))
+    """Plot the monthly series with declustered exceedance representatives."""
     displayed_series = (
         fit_result.full_series
         if fit_result is not None and fit_result.full_series is not None
         else series
     )
     times = displayed_series.data["time"].to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(
         times,
         displayed_series.data["original_value"],
@@ -102,13 +106,7 @@ def plot_extremes_timeline(
         )
     else:
         displayed_threshold = -threshold if displayed_series.direction == "low" else threshold
-        ax.axhline(
-            displayed_threshold,
-            color="tomato",
-            linestyle="--",
-            linewidth=1.0,
-            label="阈值",
-        )
+        plot_axhline(displayed_threshold, ax=ax, label="阈值")
 
     if not extremes.empty:
         ax.scatter(
@@ -130,45 +128,25 @@ def plot_extremes_timeline(
 def plot_pp(checker: ModelChecker) -> plt.Figure:
     """Plot the residual probability plot."""
     data = checker.probability_plot_data()
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(
+    return plot_scatter_with_diagonal(
         data["empirical_probability"],
         data["model_probability"],
-        s=16,
-        alpha=0.7,
+        xlabel="经验概率",
+        ylabel="模型概率",
+        title="概率图",
     )
-    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", color="grey")
-    ax.set_xlabel("经验概率")
-    ax.set_ylabel("模型概率")
-    ax.set_title("概率图")
-    fig.tight_layout()
-    return fig
 
 
 def plot_qq(checker: ModelChecker) -> plt.Figure:
     """Plot the residual quantile plot."""
     data = checker.quantile_plot_data()
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(
+    return plot_scatter_with_diagonal(
         data["theoretical_quantile"],
         data["empirical_quantile"],
-        s=16,
-        alpha=0.7,
+        xlabel="理论指数分位数",
+        ylabel="经验变换残差",
+        title="分位数图",
     )
-    lower = min(
-        float(data["theoretical_quantile"].min()),
-        float(data["empirical_quantile"].min()),
-    )
-    upper = max(
-        float(data["theoretical_quantile"].max()),
-        float(data["empirical_quantile"].max()),
-    )
-    ax.plot([lower, upper], [lower, upper], linestyle="--", color="grey")
-    ax.set_xlabel("理论指数分位数")
-    ax.set_ylabel("经验变换残差")
-    ax.set_title("分位数图")
-    fig.tight_layout()
-    return fig
 
 
 def plot_return_levels(
@@ -189,11 +167,11 @@ def plot_return_levels(
     )
     valid_ci = data[["ci_lower", "ci_upper"]].notna().all(axis=1)
     if bool(valid_ci.any()):
-        ax.fill_between(
+        plot_fill_between(
             data.loc[valid_ci, "return_period_years"],
             data.loc[valid_ci, "ci_lower"],
             data.loc[valid_ci, "ci_upper"],
-            alpha=0.2,
+            ax=ax,
         )
     ax.set_xscale("log")
     ax.set_xlabel("重返期(年)")
@@ -207,12 +185,7 @@ def plot_location_model(
     fit_result: FitResult,
     n_points: int = 400,
 ) -> plt.Figure:
-    """Plot the fitted seasonal location function mu(t) together with the threshold.
-
-    When a time-varying threshold model is stored in *fit_result* the threshold
-    curve u(t) is drawn instead of a horizontal line, making it easy to verify that
-    mu(t) and u(t) are both tracking the seasonal and trend variation.
-    """
+    """Plot the fitted seasonal location function mu(t) together with the threshold."""
     reference_series = fit_result.full_series if fit_result.full_series is not None else fit_result.series
     grid = np.linspace(0.0, reference_series.duration_years, n_points)
     mu_values = fit_result.mu(grid)
@@ -238,7 +211,7 @@ def plot_location_model(
             label="时间可变阈值 u(t)",
         )
     else:
-        ax.axhline(fit_result.threshold, linestyle="--", color="tomato", label="阈值")
+        plot_axhline(fit_result.threshold, ax=ax, label="阈值")
     ax.set_xlabel("时间(年)")
     ax.set_ylabel("变换值")
     ax.set_title("拟合位置模型")
@@ -253,16 +226,9 @@ def plot_eot_extremes_from_db(
     extremes_df: pd.DataFrame,
     annotate_top_n_each_tail: int = 8,
 ) -> plt.Figure:
-    """Plot one-lake monthly series and annotate high/low EOT anomalies.
+    """Plot one-lake monthly series and annotate high/low EOT anomalies."""
+    from lakeviz.primitives import annotate_point
 
-    Args:
-        hylak_id: Target lake id (for plot title).
-        series_df: Monthly time series with columns [year, month, water_area].
-        extremes_df: EOT event rows from DB with columns including
-            [tail, year, month, water_area, threshold_at_event].
-        annotate_top_n_each_tail: Number of strongest events to annotate for each
-            tail, ranked by exceedance severity.
-    """
     fig, ax = plt.subplots(figsize=(13, 4.8))
 
     line_df = series_df.loc[:, ["year", "month", "water_area"]].dropna().copy()
@@ -311,12 +277,10 @@ def plot_eot_extremes_from_db(
                 max(int(annotate_top_n_each_tail), 0)
             )
             for _, row in top_high.iterrows():
-                ax.annotate(
+                annotate_point(
                     f"{int(row['month']):02d}",
                     (row["date"], row["water_area"]),
-                    xytext=(4, 6),
-                    textcoords="offset points",
-                    fontsize=8,
+                    ax=ax,
                     color="tomato",
                 )
 
@@ -335,12 +299,11 @@ def plot_eot_extremes_from_db(
                 max(int(annotate_top_n_each_tail), 0)
             )
             for _, row in top_low.iterrows():
-                ax.annotate(
+                annotate_point(
                     f"{int(row['month']):02d}",
                     (row["date"], row["water_area"]),
+                    ax=ax,
                     xytext=(4, -10),
-                    textcoords="offset points",
-                    fontsize=8,
                     color="seagreen",
                 )
 

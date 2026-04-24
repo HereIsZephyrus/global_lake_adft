@@ -19,11 +19,12 @@ dependencies = [
     "pymannkendall>=1.4.3",
     "statsmodels>=0.14.0",
     "lakesource",
+    "lakeviz",
 ]
 
 [project.optional-dependencies]
-plot = [
-    "matplotlib>=3.5",
+remote = [
+    "paramiko>=3.5",
 ]
 
 [dependency-groups]

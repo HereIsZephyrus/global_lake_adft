@@ -12,22 +12,11 @@ from scipy.stats import pearsonr, spearmanr
 
 log = logging.getLogger(__name__)
 
-# IQR multiplier for amplitude outlier removal (1.5 = standard Tukey rule)
 AMPLITUDE_OUTLIER_IQR_MULT = 1.5
 
 
 def remove_amplitude_outliers(summary_df: pd.DataFrame) -> pd.DataFrame:
-    """Drop rows where |mean_seasonal_amplitude| is an IQR-based outlier.
-
-    Uses bounds [Q1 - k*IQR, Q3 + k*IQR] on abs(mean_seasonal_amplitude).
-    Rows with NaN in mean_seasonal_amplitude are already excluded by the mask.
-
-    Args:
-        summary_df: DataFrame with column 'mean_seasonal_amplitude'.
-
-    Returns:
-        New DataFrame with outlier rows removed.
-    """
+    """Drop rows where |mean_seasonal_amplitude| is an IQR-based outlier."""
     col = "mean_seasonal_amplitude"
     if col not in summary_df.columns:
         return summary_df
@@ -51,22 +40,14 @@ def remove_amplitude_outliers(summary_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_ae_distribution(summary_df: pd.DataFrame) -> plt.Figure:
-    """Histogram + KDE of overall AE values across all lakes.
-
-    Args:
-        summary_df: DataFrame with at least column 'ae_overall'.
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Histogram + KDE of overall AE values across all lakes."""
     values = summary_df["ae_overall"].dropna()
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(values, bins=40, density=True, alpha=0.6, label="直方图")
 
-    # KDE via numpy
     kde_x = np.linspace(values.min(), values.max(), 300)
-    from scipy.stats import gaussian_kde  # local import to keep top-level light
+    from scipy.stats import gaussian_kde
 
     kde = gaussian_kde(values)
     ax.plot(kde_x, kde(kde_x), linewidth=2, label="核密度估计")
@@ -82,14 +63,7 @@ def plot_ae_distribution(summary_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_amplitude_histogram(summary_df: pd.DataFrame) -> plt.Figure:
-    """Histogram of STL seasonal amplitude CV (annual_means_std/mean_area), linear x-axis.
-
-    Args:
-        summary_df: DataFrame with column 'mean_seasonal_amplitude' (stores CV).
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Histogram of STL seasonal amplitude CV."""
     values = summary_df["mean_seasonal_amplitude"].dropna()
     values = np.abs(values)
     if len(values) == 0:
@@ -116,16 +90,7 @@ def plot_annual_ae(
     annual_df: pd.DataFrame,
     trend: dict | None = None,
 ) -> plt.Figure:
-    """Line chart of annual AE for a single lake, with optional Sen's trend line.
-
-    Args:
-        hylak_id: Lake identifier (for the title).
-        annual_df: DataFrame with columns ['year', 'AE', 'AE_anomaly'].
-        trend: Dict returned by compute_trend (may be None or have None values).
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Line chart of annual AE for a single lake, with optional Sen's trend line."""
     fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
 
     _plot_ae_line(axes[0], annual_df, trend, title=f"湖泊 {hylak_id} 年度分配熵")
@@ -142,7 +107,6 @@ def _plot_ae_line(ax: Axes, annual_df: pd.DataFrame, trend: dict | None, title: 
     ax.plot(years, ae, marker="o", markersize=3, linewidth=1, label="年度 AE")
 
     if trend and trend.get("sens_slope") is not None:
-        # Draw Sen's trend line through the median
         slope = trend["sens_slope"]
         intercept = np.median(ae - slope * years)
         trend_line = slope * years + intercept
@@ -175,14 +139,7 @@ def _plot_anomaly_bar(ax: Axes, annual_df: pd.DataFrame) -> None:
 
 
 def plot_trend_summary(summary_df: pd.DataFrame) -> plt.Figure:
-    """Histograms of Sen's slope and change_per_decade_pct across all lakes.
-
-    Args:
-        summary_df: DataFrame with columns 'sens_slope' and 'change_per_decade_pct'.
-
-    Returns:
-        Matplotlib Figure with two subplots.
-    """
+    """Histograms of Sen's slope and change_per_decade_pct across all lakes."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     slopes = summary_df["sens_slope"].dropna()
@@ -210,14 +167,7 @@ def plot_trend_summary(summary_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_amplitude_vs_entropy(summary_df: pd.DataFrame) -> plt.Figure:
-    """Left: STL amplitude vs 1-AE (scatter). Right: STL amplitude vs 1-AE with OLS (linear scale).
-
-    Args:
-        summary_df: DataFrame with columns 'mean_seasonal_amplitude' and 'ae_overall'.
-
-    Returns:
-        Matplotlib Figure, or an empty Figure if insufficient data is available.
-    """
+    """Scatter: STL amplitude vs 1-AE with OLS regression."""
     df = summary_df[["mean_seasonal_amplitude", "ae_overall"]].dropna()
     if len(df) < 3:
         log.warning("plot_amplitude_vs_entropy: fewer than 3 valid rows, skipping")

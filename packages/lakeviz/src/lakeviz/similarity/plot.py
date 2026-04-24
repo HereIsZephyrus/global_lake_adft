@@ -12,14 +12,7 @@ log = logging.getLogger(__name__)
 
 
 def plot_pearson_distribution(summary_df: pd.DataFrame) -> plt.Figure:
-    """Histogram of Pearson correlation across lake pairs.
-
-    Args:
-        summary_df: DataFrame with column pearson_r.
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Histogram of Pearson correlation across lake pairs."""
     values = summary_df["pearson_r"].dropna()
     fig, ax = plt.subplots(figsize=(8, 5))
     if len(values) == 0:
@@ -40,14 +33,7 @@ def plot_pearson_distribution(summary_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_acf_cosine_distribution(summary_df: pd.DataFrame) -> plt.Figure:
-    """Histogram of ACF cosine similarity across lake pairs.
-
-    Args:
-        summary_df: DataFrame with column acf_cos_sim.
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Histogram of ACF cosine similarity across lake pairs."""
     values = summary_df["acf_cos_sim"].dropna()
     fig, ax = plt.subplots(figsize=(8, 5))
     if len(values) == 0:
@@ -68,14 +54,7 @@ def plot_acf_cosine_distribution(summary_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_pearson_vs_acf(summary_df: pd.DataFrame) -> plt.Figure:
-    """Scatter plot: Pearson r vs ACF cosine similarity.
-
-    Args:
-        summary_df: DataFrame with columns pearson_r and acf_cos_sim.
-
-    Returns:
-        Matplotlib Figure.
-    """
+    """Scatter plot: Pearson r vs ACF cosine similarity."""
     df = summary_df[["pearson_r", "acf_cos_sim"]].dropna()
     fig, ax = plt.subplots(figsize=(8, 6))
     if len(df) < 2:

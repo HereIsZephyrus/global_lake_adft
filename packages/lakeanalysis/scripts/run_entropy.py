@@ -224,14 +224,14 @@ def _load_summary(limit_id: int | None) -> pd.DataFrame:
 def _show_plots(limit_id: int | None) -> None:
     import matplotlib.pyplot as plt
 
-    from entropy.plot import (
+    from lakeviz.entropy import (
         plot_ae_distribution,
         plot_amplitude_histogram,
         plot_amplitude_vs_entropy,
         plot_trend_summary,
         remove_amplitude_outliers,
     )
-    from plot_config import setup_chinese_font
+    from lakeviz.plot_config import setup_chinese_font
 
     summary_df = _load_summary(limit_id)
     if summary_df.empty:

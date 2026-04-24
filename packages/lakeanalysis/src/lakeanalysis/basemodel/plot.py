@@ -1,4 +1,8 @@
-"""Plot helpers for baseline-model selection and fit diagnostics."""
+"""Plot helpers for baseline-model selection and fit diagnostics.
+
+Adapter layer: converts domain types to DataFrames, then delegates to
+lakeviz primitives for rendering.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from lakeviz.primitives import plot_bar
 from .basic import BasisFitRecord
 
 
@@ -27,17 +32,8 @@ def plot_candidate_scores(
     colors = ["tomato" if name == selected_basis_name else "steelblue" for name in names]
 
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(12, 4), constrained_layout=True)
-    ax_left.bar(names, scores, color=colors)
-    ax_left.set_title(f"候选模型{criterion.upper()}对比")
-    ax_left.set_xlabel("基准模型")
-    ax_left.set_ylabel(criterion.upper())
-    ax_left.tick_params(axis="x", rotation=20)
-
-    ax_right.bar(names, rmse, color=colors)
-    ax_right.set_title("候选模型RMSE对比")
-    ax_right.set_xlabel("基准模型")
-    ax_right.set_ylabel("RMSE")
-    ax_right.tick_params(axis="x", rotation=20)
+    plot_bar(names, scores, ax=ax_left, title=f"候选模型{criterion.upper()}对比", ylabel=criterion.upper(), colors=colors, x_rotation=20)
+    plot_bar(names, rmse, ax=ax_right, title="候选模型RMSE对比", ylabel="RMSE", colors=colors, x_rotation=20)
     return fig
 
 

@@ -6,10 +6,11 @@ from .compute import (
     compute_overall_ae,
     compute_trend,
 )
-from .plot import (
+from lakeviz.entropy import (
     plot_ae_distribution,
     plot_annual_ae,
     plot_trend_summary,
+    remove_amplitude_outliers,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "plot_ae_distribution",
     "plot_annual_ae",
     "plot_trend_summary",
+    "remove_amplitude_outliers",
 ]

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from lakesource.postgres import fetch_eot_extremes_by_id, fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot import plot_eot_extremes_from_db
 from lakeanalysis.logger import Logger
-from lakeanalysis.plot_config import setup_chinese_font
+from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 
