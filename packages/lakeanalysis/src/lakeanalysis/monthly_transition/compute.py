@@ -2,25 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 
+from lakesource.monthly_transition.schema import MonthlyTransitionResult
+
 REQUIRED_COLUMNS = ("year", "month", "water_area")
-
-
-@dataclass(frozen=True)
-class MonthlyTransitionResult:
-    """Workflow outputs for one lake."""
-
-    hylak_id: int | None
-    climatology_df: pd.DataFrame
-    labels_df: pd.DataFrame
-    extremes_df: pd.DataFrame
-    transitions_df: pd.DataFrame
-    q_low: float
-    q_high: float
 
 
 def validate_monthly_series(series_df: pd.DataFrame) -> pd.DataFrame:

@@ -1788,14 +1788,16 @@ def _validate_sql_identifier(name: str, label: str) -> str:
     return name
 
 
-def _lake_geometry_table_sql_ident() -> sql.Composed:
-    """Build ``schema.table`` SQL identifier from ``LAKE_GEOMETRY_TABLE``.
+def _lake_geometry_table_sql_ident(
+    table_config: TableConfig = _default_table_config,
+) -> sql.Composed:
+    """Build ``schema.table`` SQL identifier from TableConfig or LAKE_GEOMETRY_TABLE env.
 
-    If the env var is unset or empty, uses ``LakeATLAS_v10_pol`` on ALTAS_DB.
+    The env var ``LAKE_GEOMETRY_TABLE`` takes precedence if set; otherwise the
+    ``lake_geometry`` entry from ``table_config.atlas_db`` is used.
     """
-    ref = (
-        os.environ.get("LAKE_GEOMETRY_TABLE") or ""
-    ).strip() or _DEFAULT_LAKE_GEOMETRY_TABLE
+    env_ref = (os.environ.get("LAKE_GEOMETRY_TABLE") or "").strip()
+    ref = env_ref or table_config.atlas_table("lake_geometry")
     parts = [p.strip() for p in ref.split(".") if p.strip()]
     if not parts or len(parts) > 2:
         raise ValueError(
@@ -1816,25 +1818,29 @@ def fetch_lake_geometry_wkt_by_ids(
     id_column: str | None = None,
     geom_column: str | None = None,
     simplify_tolerance_meters: float | None = None,
+    table_config: TableConfig = _default_table_config,
 ) -> pd.DataFrame:
     """Load lake outlines as WKT for use with Earth Engine ``ee.Geometry`` helpers.
 
-    Expects a PostGIS geometry column. Table/schema come from ``LAKE_GEOMETRY_TABLE``,
-    or default ``LakeATLAS_v10_pol`` if unset; columns default to ``hylak_id`` and
-    ``geom`` and can be overridden with env ``LAKE_GEOMETRY_ID_COLUMN`` /
-    ``LAKE_GEOMETRY_GEOM_COLUMN`` or the keyword args.
+    Expects a PostGIS geometry column. Table/schema come from
+    ``table_config.atlas_table("lake_geometry")`` (or the ``LAKE_GEOMETRY_TABLE``
+    env var if set); columns default to ``table_config.lake_geometry_id_column``
+    and ``table_config.lake_geometry_geom_column`` and can be overridden with the
+    keyword args or the legacy env vars ``LAKE_GEOMETRY_ID_COLUMN`` /
+    ``LAKE_GEOMETRY_GEOM_COLUMN``.
 
-    When ``simplify_tolerance_meters`` is not set, the env variable
-    ``LAKE_GEOMETRY_SIMPLIFY_METERS`` is read if it is a positive float; otherwise
-    geometries are not simplified.
+    When ``simplify_tolerance_meters`` is not set, the value from
+    ``table_config.lake_geometry_simplify_meters`` is used (if > 0); the env
+    var ``LAKE_GEOMETRY_SIMPLIFY_METERS`` is also checked as a legacy override.
 
     Args:
         conn: Open connection (typically ``ALTAS_DB`` / HydroATLAS side).
         hylak_ids: Lake ids to fetch.
-        id_column: Primary key column name (default from env or ``hylak_id``).
-        geom_column: Geometry column name (default from env or ``geom``).
+        id_column: Primary key column name (default from TableConfig or ``hylak_id``).
+        geom_column: Geometry column name (default from TableConfig or ``geom``).
         simplify_tolerance_meters: If > 0, apply ``ST_SimplifyPreserveTopology`` in
             Web Mercator (meters), then emit WKT as EPSG:4326 for EE-friendly coords.
+        table_config: Table name mapping.
 
     Returns:
         DataFrame with columns ``hylak_id``, ``wkt`` (may be empty if no rows).
@@ -1842,25 +1848,35 @@ def fetch_lake_geometry_wkt_by_ids(
     if not hylak_ids:
         return pd.DataFrame(columns=["hylak_id", "wkt"])
 
-    id_col = id_column or os.environ.get("LAKE_GEOMETRY_ID_COLUMN") or "hylak_id"
-    geom_col = geom_column or os.environ.get("LAKE_GEOMETRY_GEOM_COLUMN") or "geom"
+    id_col = (
+        id_column
+        or os.environ.get("LAKE_GEOMETRY_ID_COLUMN")
+        or table_config.lake_geometry_id_column
+    )
+    geom_col = (
+        geom_column
+        or os.environ.get("LAKE_GEOMETRY_GEOM_COLUMN")
+        or table_config.lake_geometry_geom_column
+    )
     _validate_sql_identifier(id_col, "id_column")
     _validate_sql_identifier(geom_col, "geom_column")
 
     tol = simplify_tolerance_meters
     if tol is None:
-        raw = (os.environ.get("LAKE_GEOMETRY_SIMPLIFY_METERS") or "").strip()
-        if raw:
+        env_raw = (os.environ.get("LAKE_GEOMETRY_SIMPLIFY_METERS") or "").strip()
+        if env_raw:
             try:
-                tol = float(raw)
+                tol = float(env_raw)
             except ValueError:
                 raise ValueError(
-                    f"LAKE_GEOMETRY_SIMPLIFY_METERS must be a float, got {raw!r}"
+                    f"LAKE_GEOMETRY_SIMPLIFY_METERS must be a float, got {env_raw!r}"
                 ) from None
+        elif table_config.lake_geometry_simplify_meters > 0:
+            tol = table_config.lake_geometry_simplify_meters
     if tol is not None and tol <= 0:
         tol = None
 
-    table_ident = _lake_geometry_table_sql_ident()
+    table_ident = _lake_geometry_table_sql_ident(table_config)
     if tol is not None:
         log.info(
             "Lake geometry WKT: ST_SimplifyPreserveTopology(%s m in EPSG:3857) -> WKT EPSG:4326",

@@ -10,13 +10,14 @@ from typing import Callable
 import pandas as pd
 
 from lakesource.postgres import fetch_lake_area_chunk, series_db
-
-from .compute import MonthlyTransitionResult
-from .config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
-from .service import run_single_lake_service
-from .store import (
+from lakesource.monthly_transition.schema import (
+    MonthlyTransitionBatchConfig,
+    MonthlyTransitionResult,
+    MonthlyTransitionServiceConfig,
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
+)
+from lakesource.monthly_transition.store import (
     ensure_monthly_transition_tables,
     fetch_summary_cache_sources,
     fetch_max_hylak_id,
@@ -78,9 +79,19 @@ def process_chunk_lakes(
     workflow_version: str,
     service_config: MonthlyTransitionServiceConfig,
     processed_hylak_ids: set[int] | None = None,
-    run_single_fn: Callable[..., MonthlyTransitionResult] = run_single_lake_service,
+    run_single_fn: Callable[..., MonthlyTransitionResult] | None = None,
 ) -> ChunkProcessPayload:
-    """Process all lakes in a chunk and isolate per-lake failures."""
+    """Process all lakes in a chunk and isolate per-lake failures.
+
+    Args:
+        run_single_fn: Callable that runs one lake through the workflow.
+            If None, defaults to ``run_single_lake_service`` from this package
+            (lazy import to avoid hard-wiring the dependency).
+    """
+    if run_single_fn is None:
+        from .service import run_single_lake_service
+        run_single_fn = run_single_lake_service
+
     done_ids = processed_hylak_ids or set()
 
     label_rows: list[dict] = []

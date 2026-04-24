@@ -28,6 +28,12 @@ lake_geometry = "LakeATLAS_v10_pol"
 basin_atlas_lev05 = "BasinATLAS_v10_lev05"
 basin_atlas_lev11 = "BasinATLAS_v10_lev11"
 
+# Column and simplification settings for fetch_lake_geometry_wkt_by_ids.
+lake_geometry_id_column = "hylak_id"
+lake_geometry_geom_column = "geom"
+# Positive float: simplify outlines in Web Mercator (m) before WKT; 0 = no simplification.
+lake_geometry_simplify_meters = 0
+
 [tables.parquet]
 lake_area = "lake_area"
 lake_info = "lake_info"

@@ -7,7 +7,7 @@ import logging
 import pandas as pd
 import psycopg
 
-from lakesource.postgres.lake import fetch_af_nearest_high_topo, fetch_lake_area_by_ids
+from lakesource.postgres import fetch_af_nearest_high_topo, fetch_lake_area_by_ids
 
 log = logging.getLogger(__name__)
 

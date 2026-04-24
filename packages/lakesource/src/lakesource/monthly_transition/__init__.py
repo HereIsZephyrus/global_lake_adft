@@ -2,6 +2,31 @@
 
 from .reader import fetch_extremes_with_coords, fetch_transitions_with_coords, fetch_lake_coordinates
 from .writer import upsert_extremes, upsert_transitions, upsert_labels, upsert_run_status, ensure_tables
+from .schema import (
+    MonthlyTransitionResult,
+    MonthlyTransitionServiceConfig,
+    MonthlyTransitionBatchConfig,
+    RUN_STATUS_DONE,
+    RUN_STATUS_ERROR,
+    CURRENT_MONTHLY_TRANSITION_WORKFLOW_VERSION,
+)
+from .store import (
+    ensure_monthly_transition_tables,
+    upsert_monthly_transition_labels,
+    upsert_monthly_transition_extremes,
+    upsert_monthly_transition_abrupt_transitions,
+    upsert_monthly_transition_run_status,
+    count_source_lakes_in_chunk,
+    count_processed_lakes_in_chunk,
+    fetch_source_hylak_ids_in_chunk,
+    fetch_processed_hylak_ids_in_chunk,
+    fetch_max_hylak_id,
+    result_to_label_rows,
+    result_to_extreme_rows,
+    result_to_transition_rows,
+    make_run_status_row,
+    fetch_summary_cache_sources,
+)
 
 __all__ = [
     "fetch_extremes_with_coords",
@@ -12,4 +37,25 @@ __all__ = [
     "upsert_labels",
     "upsert_run_status",
     "ensure_tables",
+    "MonthlyTransitionResult",
+    "MonthlyTransitionServiceConfig",
+    "MonthlyTransitionBatchConfig",
+    "RUN_STATUS_DONE",
+    "RUN_STATUS_ERROR",
+    "CURRENT_MONTHLY_TRANSITION_WORKFLOW_VERSION",
+    "ensure_monthly_transition_tables",
+    "upsert_monthly_transition_labels",
+    "upsert_monthly_transition_extremes",
+    "upsert_monthly_transition_abrupt_transitions",
+    "upsert_monthly_transition_run_status",
+    "count_source_lakes_in_chunk",
+    "count_processed_lakes_in_chunk",
+    "fetch_processed_hylak_ids_in_chunk",
+    "fetch_source_hylak_ids_in_chunk",
+    "fetch_max_hylak_id",
+    "result_to_label_rows",
+    "result_to_extreme_rows",
+    "result_to_transition_rows",
+    "make_run_status_row",
+    "fetch_summary_cache_sources",
 ]

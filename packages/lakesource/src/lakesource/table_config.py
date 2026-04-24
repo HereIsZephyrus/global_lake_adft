@@ -22,11 +22,17 @@ class TableConfig:
         series_db: Logical → actual table name for SERIES_DB.
         atlas_db: Logical → actual table name for ALTAS_DB.
         parquet: Logical → Parquet file stem (no ``.parquet`` suffix).
+        lake_geometry_id_column: Primary key column in the lake geometry table.
+        lake_geometry_geom_column: Geometry column in the lake geometry table.
+        lake_geometry_simplify_meters: Simplification tolerance in meters (0 = none).
     """
 
     series_db: dict[str, str] = field(default_factory=dict)
     atlas_db: dict[str, str] = field(default_factory=dict)
     parquet: dict[str, str] = field(default_factory=dict)
+    lake_geometry_id_column: str = "hylak_id"
+    lake_geometry_geom_column: str = "geom"
+    lake_geometry_simplify_meters: float = 0.0
 
     def series_table(self, logical: str) -> str:
         """Resolve a logical name to the SERIES_DB actual table name."""
@@ -61,10 +67,17 @@ class TableConfig:
         tables = data.get("tables")
         if tables is None:
             raise ValueError(f"Missing [tables] section in {path}")
+        atlas = dict(tables.get("atlas_db", {}))
+        id_col = atlas.pop("lake_geometry_id_column", "hylak_id")
+        geom_col = atlas.pop("lake_geometry_geom_column", "geom")
+        simplify = float(atlas.pop("lake_geometry_simplify_meters", 0))
         return cls(
             series_db=dict(tables.get("series_db", {})),
-            atlas_db=dict(tables.get("atlas_db", {})),
+            atlas_db=atlas,
             parquet=dict(tables.get("parquet", {})),
+            lake_geometry_id_column=id_col,
+            lake_geometry_geom_column=geom_col,
+            lake_geometry_simplify_meters=simplify,
         )
 
     @classmethod

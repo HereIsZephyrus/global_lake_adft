@@ -417,11 +417,9 @@ def download_gleam_monthly_datasets(
     listed via SFTP and all NetCDF files within are downloaded, preserving the
     variable subdirectory in the local warehouse.
     """
-    # For monthly data we auto-discover files via SFTP, so remote_files is not required.
     if not (gleam_config.username and gleam_config.password and gleam_config.remote_dir):
         raise ValueError("GLEAM credentials are incomplete (need username, password, remote_dir)")
 
-    # Import paramiko lazily so the module still loads without it.
     try:
         import paramiko
     except ImportError as exc:
@@ -442,13 +440,11 @@ def download_gleam_monthly_datasets(
     downloaded_paths: dict[str, list[Path]] = {}
 
     try:
-        # List variable subdirectories (E, SMs, Ep, …)
         for var in sorted(sftp.listdir(monthly_root)):
             var_remote_dir = f"{monthly_root}/{var}"
             try:
                 files = sorted(sftp.listdir(var_remote_dir))
             except OSError:
-                # Not a directory – skip
                 continue
             nc_files = [f for f in files if f.endswith(".nc")]
             if not nc_files:

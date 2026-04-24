@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-from lakeanalysis.water_balance_data import (
+from lakesource.env import load_env
+from lakesource.water_balance import (
     auth_config_lines,
     build_storage_report,
     dataset_plan_lines,
@@ -52,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--env-file",
         type=Path,
-        default=Path("packages/lakeanalysis/.env"),
+        default=Path("packages/lakesource/.env"),
         help="Env file containing download credentials.",
     )
     return parser.parse_args()
@@ -61,7 +60,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Create dataset directories, report capacity, and optionally download public data."""
     args = parse_args()
-    load_dotenv(dotenv_path=args.env_file, override=False)
+    load_env(dotenv_path=args.env_file)
     warehouse_root = args.warehouse_root
     ensure_dataset_directories(warehouse_root)
     report = build_storage_report(warehouse_root)

@@ -7,7 +7,6 @@ from .batch import (
     run_monthly_transition_batch,
 )
 from .compute import (
-    MonthlyTransitionResult,
     assign_extreme_labels,
     compute_anomaly_thresholds,
     compute_monthly_anomalies,
@@ -17,6 +16,7 @@ from .compute import (
     run_monthly_anomaly_transition,
     validate_monthly_series,
 )
+from lakesource.monthly_transition.schema import MonthlyTransitionResult
 from .config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
 from .plot import (
     plot_anomaly_timeline,

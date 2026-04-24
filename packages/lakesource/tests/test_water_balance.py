@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lakeanalysis.water_balance_data import (
+from lakesource.water_balance import (
     build_storage_report,
     download_gleam_datasets,
     download_grace_dataset,

@@ -25,9 +25,6 @@ dependencies = [
 plot = [
     "matplotlib>=3.5",
 ]
-remote = [
-    "paramiko>=3.5",
-]
 
 [dependency-groups]
 dev = [

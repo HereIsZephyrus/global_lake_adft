@@ -711,9 +711,6 @@ dependencies = [
 plot = [
     { name = "matplotlib" },
 ]
-remote = [
-    { name = "paramiko" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -727,13 +724,12 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.5" },
     { name = "numpy", specifier = ">=1.24,<2.3" },
     { name = "pandas", specifier = ">=2.0,<3" },
-    { name = "paramiko", marker = "extra == 'remote'", specifier = ">=3.5" },
     { name = "pyarrow", specifier = ">=14.0,<18" },
     { name = "pymannkendall", specifier = ">=1.4.3" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "statsmodels", specifier = ">=0.14.0" },
 ]
-provides-extras = ["plot", "remote"]
+provides-extras = ["plot"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -747,7 +743,6 @@ version = "0.1.0"
 source = { editable = "packages/lakesource" }
 dependencies = [
     { name = "duckdb" },
-    { name = "lakeanalysis" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -758,6 +753,9 @@ dependencies = [
 postgres = [
     { name = "geoalchemy2" },
     { name = "psycopg", extra = ["binary"] },
+]
+remote = [
+    { name = "paramiko" },
 ]
 
 [package.dev-dependencies]
@@ -770,14 +768,14 @@ dev = [
 requires-dist = [
     { name = "duckdb", specifier = ">=1.5.0" },
     { name = "geoalchemy2", marker = "extra == 'postgres'", specifier = ">=0.14" },
-    { name = "lakeanalysis", editable = "packages/lakeanalysis" },
     { name = "numpy", specifier = ">=1.24,<2.3" },
     { name = "pandas", specifier = ">=2.0,<3" },
+    { name = "paramiko", marker = "extra == 'remote'", specifier = ">=3.5" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=14.0,<18" },
     { name = "python-dotenv", specifier = ">=1.0" },
 ]
-provides-extras = ["postgres"]
+provides-extras = ["postgres", "remote"]
 
 [package.metadata.requires-dev]
 dev = [

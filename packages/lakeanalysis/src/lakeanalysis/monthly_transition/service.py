@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .compute import MonthlyTransitionResult, run_monthly_anomaly_transition
-from .config import MonthlyTransitionServiceConfig
+from .compute import run_monthly_anomaly_transition
+from lakesource.monthly_transition.schema import MonthlyTransitionResult, MonthlyTransitionServiceConfig
 
 
 def run_single_lake_service(
