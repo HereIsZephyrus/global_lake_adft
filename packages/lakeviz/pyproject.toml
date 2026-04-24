@@ -3,30 +3,21 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lakeanalysis"]
+packages = ["src/lakeviz"]
 
 [project]
-name = "lakeanalysis"
+name = "lakeviz"
 version = "0.1.0"
-description = "Lake analysis, statistical modelling, and downstream data access tools"
+description = "Global spatial visualization for lake drought-flood abrupt transitions"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "python-dotenv>=1.0",
+    "lakesource",
     "pandas>=2.0,<3",
     "numpy>=1.24,<2.3",
-    "pyarrow>=14.0,<18",
-    "pymannkendall>=1.4.3",
-    "statsmodels>=0.14.0",
-    "lakesource",
-]
-
-[project.optional-dependencies]
-plot = [
+    "geopandas>=0.14",
+    "cartopy>=0.22",
     "matplotlib>=3.5",
-]
-remote = [
-    "paramiko>=3.5",
 ]
 
 [dependency-groups]

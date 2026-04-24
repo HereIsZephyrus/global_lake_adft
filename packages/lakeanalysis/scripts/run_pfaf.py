@@ -29,7 +29,7 @@ from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
-from lakeanalysis.dbconnect import ChunkedLakeProcessor, atlas_db, series_db
+from lakesource.postgres import ChunkedLakeProcessor, atlas_db, series_db
 from lakeanalysis.pfaf import (
     ensure_lake_pfaf_table,
     fetch_lake_centroids_chunk,

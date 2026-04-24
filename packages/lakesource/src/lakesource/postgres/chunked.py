@@ -15,18 +15,14 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 import psycopg
+from psycopg import sql as psql
 
-from .client import DBClient
+from lakesource.postgres.client import DBClient
+from lakesource.table_config import TableConfig
 
 log = logging.getLogger(__name__)
 
-_FETCH_MAX_HYLAK_ID_SQL = "SELECT MAX(hylak_id) FROM lake_info"
-
-_COUNT_SOURCE_IN_RANGE_SQL = """
-SELECT COUNT(*)
-FROM lake_info
-WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
-"""
+_default_table_config = TableConfig.default()
 
 
 class ChunkedLakeProcessor:
@@ -49,6 +45,7 @@ class ChunkedLakeProcessor:
         series_db: DBClient,
         chunk_size: int = 10_000,
         done_table: str = "lake_pfaf",
+        table_config: TableConfig = _default_table_config,
     ) -> None:
         """Initialize the processor.
 
@@ -57,15 +54,27 @@ class ChunkedLakeProcessor:
             chunk_size: Number of consecutive hylak_id values per chunk.
             done_table: Table name used to detect already-completed chunks.
                         Must have a ``hylak_id`` column.
+            table_config: TableConfig for resolving logical table names.
         """
         self._series_db = series_db
         self._chunk_size = chunk_size
         self._done_table = done_table
+        self._table_config = table_config
 
     @property
     def chunk_size(self) -> int:
         """Number of hylak_id values per chunk."""
         return self._chunk_size
+
+    def _fetch_max_hylak_id_sql(self) -> psql.Composed:
+        return psql.SQL("SELECT MAX(hylak_id) FROM {}").format(
+            psql.Identifier(self._table_config.series_table("lake_info"))
+        )
+
+    def _count_source_in_range_sql(self) -> psql.Composed:
+        return psql.SQL(
+            "SELECT COUNT(*) FROM {} WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s"
+        ).format(psql.Identifier(self._table_config.series_table("lake_info")))
 
     def _max_hylak_id(self, conn: psycopg.Connection) -> int | None:
         """Return the maximum hylak_id in lake_info, or None if the table is empty.
@@ -77,7 +86,7 @@ class ChunkedLakeProcessor:
             Maximum hylak_id or None.
         """
         with conn.cursor() as cur:
-            cur.execute(_FETCH_MAX_HYLAK_ID_SQL)
+            cur.execute(self._fetch_max_hylak_id_sql())
             row = cur.fetchone()
         max_id = int(row[0]) if row and row[0] is not None else None
         log.debug("Max hylak_id in lake_info: %s", max_id)
@@ -96,14 +105,12 @@ class ChunkedLakeProcessor:
         Returns:
             True when done_count >= source_count (including empty source ranges).
         """
-        count_done_sql = f"""
-SELECT COUNT(*)
-FROM {self._done_table}
-WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
-"""
+        count_done_sql = psql.SQL(
+            "SELECT COUNT(*) FROM {} WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s"
+        ).format(psql.Identifier(self._done_table))
         params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
         with conn.cursor() as cur:
-            cur.execute(_COUNT_SOURCE_IN_RANGE_SQL, params)
+            cur.execute(self._count_source_in_range_sql(), params)
             source_count: int = cur.fetchone()[0]
             if source_count == 0:
                 return True

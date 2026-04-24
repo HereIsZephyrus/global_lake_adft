@@ -10,10 +10,14 @@ package = false
 [tool.uv.workspace]
 members = [
     "packages/lakeanalysis",
+    "packages/lakesource",
+    "packages/lakeviz",
 ]
 
 [tool.uv.sources]
 lakeanalysis = { workspace = true }
+lakesource = { workspace = true }
+lakeviz = { workspace = true }
 
 [dependency-groups]
 dev = [

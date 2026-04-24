@@ -114,7 +114,7 @@ def _load_series(args: argparse.Namespace) -> tuple[int | None, pd.DataFrame, se
     if args.hylak_id is None:
         raise ValueError("Either --csv or --hylak-id must be provided")
 
-    from lakeanalysis.dbconnect import (  # local import keeps DB mode optional
+    from lakesource.postgres import (  # local import keeps DB mode optional
         fetch_frozen_year_months_by_ids,
         fetch_lake_area_by_ids,
         series_db,

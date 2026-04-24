@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from lakeanalysis.basemodel import BasisSelectionResult, HarmonicBasis
-from lakeanalysis.dbconnect import (
+from lakesource.postgres import (
     fetch_frozen_year_months_by_ids,
     fetch_lake_area_by_ids,
     series_db,

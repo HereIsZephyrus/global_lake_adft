@@ -23,7 +23,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from lakeanalysis.dbconnect import series_db
+from lakesource.postgres import series_db
 from lakeanalysis.logger import Logger
 from lakeanalysis.similarity.compute import compute_pair_similarity
 from lakeanalysis.similarity.fetch import load_pairs_and_areas

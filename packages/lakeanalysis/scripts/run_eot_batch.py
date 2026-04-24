@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from lakeanalysis.dbconnect import (
+from lakesource.postgres import (
     ensure_eot_results_table,
     fetch_frozen_year_months_chunk,
     fetch_lake_area_chunk,

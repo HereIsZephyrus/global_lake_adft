@@ -10,14 +10,15 @@ from typing import Callable
 import pandas as pd
 
 from lakesource.postgres import fetch_lake_area_chunk, series_db
+from lakesource.config import SourceConfig
 
-from .compute import MonthlyTransitionResult
-from .config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
-from .service import run_single_lake_service
-from .store import (
+from lakeanalysis.monthly_transition.compute import MonthlyTransitionResult
+from lakeanalysis.monthly_transition.config import MonthlyTransitionBatchConfig, MonthlyTransitionServiceConfig
+from lakeanalysis.monthly_transition.service import run_single_lake_service
+from lakesource.monthly_transition.writer import ensure_tables
+from lakeanalysis.monthly_transition.store import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
-    ensure_monthly_transition_tables,
     fetch_summary_cache_sources,
     fetch_max_hylak_id,
     fetch_processed_hylak_ids_in_chunk,
@@ -26,12 +27,8 @@ from .store import (
     result_to_extreme_rows,
     result_to_label_rows,
     result_to_transition_rows,
-    upsert_monthly_transition_abrupt_transitions,
-    upsert_monthly_transition_extremes,
-    upsert_monthly_transition_labels,
-    upsert_monthly_transition_run_status,
 )
-from .summary import (
+from lakeanalysis.monthly_transition.summary import (
     SummaryAccumulator,
     cache_root_for,
     save_summary_plots_from_cache,
@@ -170,7 +167,14 @@ def _iter_chunk_ranges(
     return ranges
 
 
-def _persist_chunk_payload(payload: ChunkProcessPayload) -> None:
+def _persist_chunk_payload(payload: ChunkProcessPayload, config: SourceConfig) -> None:
+    from lakesource.postgres.lake import (
+        upsert_monthly_transition_labels,
+        upsert_monthly_transition_extremes,
+        upsert_monthly_transition_abrupt_transitions,
+        upsert_monthly_transition_run_status,
+    )
+
     with series_db.connection_context() as conn:
         try:
             upsert_monthly_transition_labels(conn, payload.label_rows, commit=False)
@@ -197,8 +201,9 @@ def run_monthly_transition_batch(
         min_valid_observations=config.min_valid_observations,
     )
 
+    source_config = SourceConfig(workflow_version=config.workflow_version)
+    ensure_tables(source_config)
     with series_db.connection_context() as conn:
-        ensure_monthly_transition_tables(conn)
         max_hylak_id = fetch_max_hylak_id(conn)
     chunk_ranges = _iter_chunk_ranges(max_hylak_id, config.chunk_size, config.limit_id)
 
@@ -237,7 +242,7 @@ def run_monthly_transition_batch(
             service_config=service_config,
             processed_hylak_ids=processed_ids,
         )
-        _persist_chunk_payload(payload)
+        _persist_chunk_payload(payload, source_config)
         processed_chunks += 1
         skipped_lakes += payload.skipped_lakes
         success_lakes += payload.success_lakes

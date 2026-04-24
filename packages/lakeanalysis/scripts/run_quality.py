@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from lakeanalysis.dbconnect import (
+from lakesource.postgres import (
     ChunkedLakeProcessor,
     ensure_area_anomalies_table,
     ensure_area_quality_table,

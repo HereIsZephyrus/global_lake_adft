@@ -4,7 +4,7 @@ import logging
 
 from lakeanalysis.logger import Logger
 
-from lakeanalysis.dbconnect import atlas_db, check_extensions, series_db
+from lakesource.postgres import atlas_db, check_extensions, series_db
 
 log = logging.getLogger(__name__)
 

@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.dbconnect import fetch_lake_area_by_ids, series_db
+from lakesource.postgres import fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot import plot_eot_extremes_from_db
 from lakeanalysis.logger import Logger
 

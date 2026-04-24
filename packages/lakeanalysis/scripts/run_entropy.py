@@ -41,7 +41,7 @@ import numpy as np
 import pandas as pd
 
 from lakeanalysis.logger import Logger
-from lakeanalysis.dbconnect import ChunkedLakeProcessor, ensure_entropy_table, fetch_lake_area_chunk, fetch_seasonal_amplitude_chunk, series_db, upsert_entropy
+from lakesource.postgres import ChunkedLakeProcessor, ensure_entropy_table, fetch_lake_area_chunk, fetch_seasonal_amplitude_chunk, series_db, upsert_entropy
 from lakeanalysis.entropy.compute import compute_annual_ae, compute_overall_ae, compute_trend
 
 log = logging.getLogger(__name__)

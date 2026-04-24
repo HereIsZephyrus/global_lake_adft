@@ -11,44 +11,58 @@ import pandas as pd
 import psycopg
 from psycopg import sql
 
+from lakesource.table_config import TableConfig
+
 log = logging.getLogger(__name__)
 
-# Default PostGIS relation on ALTAS_DB when LAKE_GEOMETRY_TABLE is unset.
 _DEFAULT_LAKE_GEOMETRY_TABLE = "LakeATLAS_v10_pol"
 _LEGACY_WORKFLOW_VERSION = "legacy"
 
-_FETCH_LAKE_AREA_SQL = """
-SELECT hylak_id,
-       EXTRACT(YEAR  FROM year_month)::int AS year,
-       EXTRACT(MONTH FROM year_month)::int AS month,
-       water_area
-FROM lake_area
-ORDER BY hylak_id, year_month
-"""
+_default_table_config = TableConfig.default()
 
-_FETCH_LAKE_AREA_LIMITED_SQL = """
+
+def _fetch_lake_area_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        EXTRACT(YEAR  FROM year_month)::int AS year,
        EXTRACT(MONTH FROM year_month)::int AS month,
        water_area
-FROM lake_area
+FROM {table}
+ORDER BY hylak_id, year_month
+""").format(table=sql.Identifier(tc.series_table("lake_area")))
+
+
+def _fetch_lake_area_limited_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT hylak_id,
+       EXTRACT(YEAR  FROM year_month)::int AS year,
+       EXTRACT(MONTH FROM year_month)::int AS month,
+       water_area
+FROM {table}
 WHERE hylak_id < %(limit_id)s
 ORDER BY hylak_id, year_month
-"""
+""").format(table=sql.Identifier(tc.series_table("lake_area")))
 
-_FETCH_LAKE_AREA_CHUNK_SQL = """
+
+def _fetch_lake_area_chunk_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT la.hylak_id,
        EXTRACT(YEAR  FROM la.year_month)::int AS year,
        EXTRACT(MONTH FROM la.year_month)::int AS month,
        la.water_area
-FROM lake_area la
-JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+FROM {lake_area} la
+JOIN {area_quality} aq ON aq.hylak_id = la.hylak_id
 WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
 ORDER BY la.hylak_id, la.year_month
-"""
+""").format(
+    lake_area=sql.Identifier(tc.series_table("lake_area")),
+    area_quality=sql.Identifier(tc.series_table("area_quality")),
+)
 
-_ENSURE_ENTROPY_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS entropy (
+
+def _ensure_entropy_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id                  INTEGER PRIMARY KEY,
     ae_overall                DOUBLE PRECISION,
     sens_slope                DOUBLE PRECISION,
@@ -60,11 +74,12 @@ CREATE TABLE IF NOT EXISTS entropy (
     mean_seasonal_amplitude   DOUBLE PRECISION,
     computed_at               TIMESTAMPTZ DEFAULT now()
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("entropy")))
 
 
-_UPSERT_ENTROPY_SQL = """
-INSERT INTO entropy (
+def _upsert_entropy_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, ae_overall,
     sens_slope, change_per_decade_pct,
     mk_trend, mk_p, mk_z, mk_significant,
@@ -77,7 +92,7 @@ INSERT INTO entropy (
     %(mean_seasonal_amplitude)s,
     now()
 )
-ON CONFLICT (hylak_id) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     ae_overall                = EXCLUDED.ae_overall,
     sens_slope                = EXCLUDED.sens_slope,
     change_per_decade_pct     = EXCLUDED.change_per_decade_pct,
@@ -87,33 +102,44 @@ ON CONFLICT (hylak_id) DO UPDATE SET
     mk_significant            = EXCLUDED.mk_significant,
     mean_seasonal_amplitude   = EXCLUDED.mean_seasonal_amplitude,
     computed_at               = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("entropy")),
+    conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+)
 
-_FETCH_SEASONAL_AMPLITUDE_CHUNK_SQL = """
+
+def _fetch_seasonal_amplitude_chunk_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id, annual_means_std, mean_area
-FROM lake_info
+FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
 ORDER BY hylak_id
-"""
+""").format(table=sql.Identifier(tc.series_table("lake_info")))
 
-_FETCH_AF_NEAREST_HIGH_TOPO_SQL = """
+
+def _fetch_af_nearest_high_topo_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id, nearest_id, topo_level
-FROM af_nearest
+FROM {table}
 WHERE topo_level > 8 AND nearest_id IS NOT NULL
 ORDER BY hylak_id
-"""
+""").format(table=sql.Identifier(tc.series_table("af_nearest")))
 
-_FETCH_LAKE_AREA_BY_IDS_SQL = """
+
+def _fetch_lake_area_by_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        EXTRACT(YEAR  FROM year_month)::int AS year,
        EXTRACT(MONTH FROM year_month)::int AS month,
        water_area
-FROM lake_area
+FROM {table}
 WHERE hylak_id = ANY(%(id_list)s)
 ORDER BY hylak_id, year_month
-"""
+""").format(table=sql.Identifier(tc.series_table("lake_area")))
 
-_FETCH_EOT_EXTREMES_BY_ID_SQL = """
+
+def _fetch_eot_extremes_by_id_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        tail,
        threshold_quantile,
@@ -123,12 +149,14 @@ SELECT hylak_id,
        month,
        water_area,
        threshold_at_event
-FROM eot_extremes
+FROM {table}
 WHERE hylak_id = %(hylak_id)s
 ORDER BY year, month, tail, cluster_id
-"""
+""").format(table=sql.Identifier(tc.series_table("eot_extremes")))
 
-_FETCH_EOT_EXTREMES_BY_ID_AND_Q_SQL = """
+
+def _fetch_eot_extremes_by_id_and_q_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        tail,
        threshold_quantile,
@@ -138,41 +166,49 @@ SELECT hylak_id,
        month,
        water_area,
        threshold_at_event
-FROM eot_extremes
+FROM {table}
 WHERE hylak_id = %(hylak_id)s
   AND threshold_quantile = %(threshold_quantile)s
 ORDER BY year, month, tail, cluster_id
-"""
+""").format(table=sql.Identifier(tc.series_table("eot_extremes")))
 
-_FETCH_LINEAR_TREND_BY_IDS_SQL = """
+
+def _fetch_linear_trend_by_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id, linear_trend_of_stl_trend_per_period
-FROM lake_info
+FROM {table}
 WHERE hylak_id = ANY(%(id_list)s)
 ORDER BY hylak_id
-"""
+""").format(table=sql.Identifier(tc.series_table("lake_info")))
 
-_FETCH_FROZEN_YEAR_MONTHS_BY_IDS_SQL = """
+
+def _fetch_frozen_year_months_by_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        (EXTRACT(YEAR FROM year_month)::int * 100
         + EXTRACT(MONTH FROM year_month)::int) AS year_month_key
-FROM anomaly
+FROM {table}
 WHERE hylak_id = ANY(%(id_list)s)
   AND anomaly_type = 'frozen'
 ORDER BY hylak_id, year_month
-"""
+""").format(table=sql.Identifier(tc.series_table("anomaly")))
 
-_FETCH_FROZEN_YEAR_MONTHS_CHUNK_SQL = """
+
+def _fetch_frozen_year_months_chunk_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id,
        (EXTRACT(YEAR FROM year_month)::int * 100
         + EXTRACT(MONTH FROM year_month)::int) AS year_month_key
-FROM anomaly
+FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
   AND anomaly_type = 'frozen'
 ORDER BY hylak_id, year_month
-"""
+""").format(table=sql.Identifier(tc.series_table("anomaly")))
 
-_ENSURE_EOT_RESULTS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS eot_results (
+
+def _ensure_eot_results_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id           INTEGER      NOT NULL,
     tail               TEXT         NOT NULL,
     threshold_quantile NUMERIC(5,4) NOT NULL,
@@ -192,10 +228,12 @@ CREATE TABLE IF NOT EXISTS eot_results (
     computed_at        TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, tail, threshold_quantile)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("eot_results")))
 
-_ENSURE_EOT_EXTREMES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS eot_extremes (
+
+def _ensure_eot_extremes_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id           INTEGER      NOT NULL,
     tail               TEXT         NOT NULL,
     threshold_quantile NUMERIC(5,4) NOT NULL,
@@ -208,10 +246,12 @@ CREATE TABLE IF NOT EXISTS eot_extremes (
     computed_at        TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, tail, threshold_quantile, cluster_id)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("eot_extremes")))
 
-_UPSERT_EOT_RESULTS_SQL = """
-INSERT INTO eot_results (
+
+def _upsert_eot_results_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, tail, threshold_quantile,
     converged, log_likelihood, threshold,
     n_extremes, n_observations, n_frozen_months,
@@ -224,7 +264,7 @@ INSERT INTO eot_results (
     %(beta0)s, %(beta1)s, %(sin_1)s, %(cos_1)s, %(sigma)s, %(xi)s,
     %(error_message)s, now()
 )
-ON CONFLICT (hylak_id, tail, threshold_quantile) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     converged          = EXCLUDED.converged,
     log_likelihood     = EXCLUDED.log_likelihood,
     threshold          = EXCLUDED.threshold,
@@ -239,27 +279,42 @@ ON CONFLICT (hylak_id, tail, threshold_quantile) DO UPDATE SET
     xi                 = EXCLUDED.xi,
     error_message      = EXCLUDED.error_message,
     computed_at        = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("eot_results")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "tail", "threshold_quantile")
+    ),
+)
 
-_UPSERT_EOT_EXTREMES_SQL = """
-INSERT INTO eot_extremes (
+
+def _upsert_eot_extremes_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, tail, threshold_quantile, cluster_id,
     cluster_size, year, month, water_area, threshold_at_event, computed_at
 ) VALUES (
     %(hylak_id)s, %(tail)s, %(threshold_quantile)s, %(cluster_id)s,
     %(cluster_size)s, %(year)s, %(month)s, %(water_area)s, %(threshold_at_event)s, now()
 )
-ON CONFLICT (hylak_id, tail, threshold_quantile, cluster_id) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     cluster_size       = EXCLUDED.cluster_size,
     year               = EXCLUDED.year,
     month              = EXCLUDED.month,
     water_area         = EXCLUDED.water_area,
     threshold_at_event = EXCLUDED.threshold_at_event,
     computed_at        = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("eot_extremes")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c)
+        for c in ("hylak_id", "tail", "threshold_quantile", "cluster_id")
+    ),
+)
 
-_ENSURE_HAWKES_RESULTS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS hawkes_results (
+
+def _ensure_hawkes_results_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id              INTEGER      NOT NULL,
     threshold_quantile    NUMERIC(5,4) NOT NULL,
     converged             BOOLEAN,
@@ -289,10 +344,12 @@ CREATE TABLE IF NOT EXISTS hawkes_results (
     computed_at           TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("hawkes_results")))
 
-_ENSURE_HAWKES_LRT_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS hawkes_lrt (
+
+def _ensure_hawkes_lrt_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id                   INTEGER      NOT NULL,
     threshold_quantile         NUMERIC(5,4) NOT NULL,
     test_name                  TEXT         NOT NULL,
@@ -306,10 +363,12 @@ CREATE TABLE IF NOT EXISTS hawkes_lrt (
     computed_at                TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile, test_name)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("hawkes_lrt")))
 
-_ENSURE_HAWKES_TRANSITION_MONTHLY_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS hawkes_transition_monthly (
+
+def _ensure_hawkes_transition_monthly_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id              INTEGER      NOT NULL,
     threshold_quantile    NUMERIC(5,4) NOT NULL,
     year                  INTEGER      NOT NULL,
@@ -323,10 +382,12 @@ CREATE TABLE IF NOT EXISTS hawkes_transition_monthly (
     computed_at           TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile, year, month, direction)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("hawkes_transition_monthly")))
 
-_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS monthly_transition_labels (
+
+def _ensure_monthly_transition_labels_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
     workflow_version    TEXT         NOT NULL,
     year                INTEGER      NOT NULL,
@@ -340,10 +401,12 @@ CREATE TABLE IF NOT EXISTS monthly_transition_labels (
     computed_at         TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version, year, month)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_labels")))
 
-_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS monthly_transition_extremes (
+
+def _ensure_monthly_transition_extremes_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
     workflow_version    TEXT         NOT NULL,
     year                INTEGER      NOT NULL,
@@ -356,10 +419,12 @@ CREATE TABLE IF NOT EXISTS monthly_transition_extremes (
     computed_at         TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version, year, month, event_type)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_extremes")))
 
-_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS monthly_transition_abrupt_transitions (
+
+def _ensure_monthly_transition_abrupt_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
     workflow_version  TEXT         NOT NULL,
     from_year         INTEGER      NOT NULL,
@@ -382,10 +447,12 @@ CREATE TABLE IF NOT EXISTS monthly_transition_abrupt_transitions (
         transition_type
     )
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_abrupt_transitions")))
 
-_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS monthly_transition_run_status (
+
+def _ensure_monthly_transition_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
     workflow_version  TEXT         NOT NULL,
     chunk_start       INTEGER,
@@ -395,51 +462,60 @@ CREATE TABLE IF NOT EXISTS monthly_transition_run_status (
     computed_at       TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, workflow_version)
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
 
-_ENSURE_MONTHLY_TRANSITION_STATUS_WORKFLOW_COLUMN_SQL = """
-ALTER TABLE monthly_transition_run_status
-ADD COLUMN IF NOT EXISTS workflow_version TEXT
-"""
 
-_DROP_MONTHLY_TRANSITION_STATUS_PK_SQL = """
-ALTER TABLE monthly_transition_run_status
-DROP CONSTRAINT IF EXISTS monthly_transition_run_status_pkey
-"""
+def _ensure_monthly_transition_status_workflow_column_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL(
+        "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workflow_version TEXT"
+    ).format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
 
-_ADD_MONTHLY_TRANSITION_STATUS_PK_SQL = """
-ALTER TABLE monthly_transition_run_status
-ADD PRIMARY KEY (hylak_id, workflow_version)
-"""
 
-_CREATE_MONTHLY_TRANSITION_STATUS_VERSION_INDEX_SQL = """
-CREATE INDEX IF NOT EXISTS monthly_transition_run_status_version_hylak_idx
-ON monthly_transition_run_status (workflow_version, hylak_id)
-"""
+def _drop_monthly_transition_status_pk_sql(tc: TableConfig) -> sql.Composed:
+    table_name = tc.series_table("monthly_transition_run_status")
+    return sql.SQL(
+        "ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}"
+    ).format(
+        table=sql.Identifier(table_name),
+        constraint=sql.Identifier(f"{table_name}_pkey"),
+    )
 
-_MONTHLY_TRANSITION_VERSIONED_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("monthly_transition_labels", ("hylak_id", "workflow_version", "year", "month")),
-    (
-        "monthly_transition_extremes",
-        ("hylak_id", "workflow_version", "year", "month", "event_type"),
-    ),
-    (
-        "monthly_transition_abrupt_transitions",
-        (
-            "hylak_id",
-            "workflow_version",
-            "from_year",
-            "from_month",
-            "to_year",
-            "to_month",
-            "transition_type",
+
+def _add_monthly_transition_status_pk_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL(
+        "ALTER TABLE {table} ADD PRIMARY KEY ({columns})"
+    ).format(
+        table=sql.Identifier(tc.series_table("monthly_transition_run_status")),
+        columns=sql.SQL(", ").join(
+            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
         ),
-    ),
-    ("monthly_transition_run_status", ("hylak_id", "workflow_version")),
-)
+    )
 
-_UPSERT_HAWKES_RESULTS_SQL = """
-INSERT INTO hawkes_results (
+
+def _create_monthly_transition_status_version_index_sql(tc: TableConfig) -> sql.Composed:
+    table_name = tc.series_table("monthly_transition_run_status")
+    return sql.SQL(
+        "CREATE INDEX IF NOT EXISTS {index} ON {table} (workflow_version, hylak_id)"
+    ).format(
+        index=sql.Identifier(f"{table_name}_version_hylak_idx"),
+        table=sql.Identifier(table_name),
+    )
+
+
+def _monthly_transition_versioned_tables(
+    tc: TableConfig,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    return (
+        (tc.series_table("monthly_transition_labels"), ("hylak_id", "workflow_version", "year", "month")),
+        (tc.series_table("monthly_transition_extremes"), ("hylak_id", "workflow_version", "year", "month", "event_type")),
+        (tc.series_table("monthly_transition_abrupt_transitions"), ("hylak_id", "workflow_version", "from_year", "from_month", "to_year", "to_month", "transition_type")),
+        (tc.series_table("monthly_transition_run_status"), ("hylak_id", "workflow_version")),
+    )
+
+
+def _upsert_hawkes_results_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, threshold_quantile,
     converged, log_likelihood, objective_value,
     n_events, n_dry_events, n_wet_events,
@@ -462,7 +538,7 @@ INSERT INTO hawkes_results (
     %(qc_pass)s, %(qc_exceedance_rate)s, %(qc_relative_amplitude)s, %(qc_median_excess)s,
     %(error_message)s, now()
 )
-ON CONFLICT (hylak_id, threshold_quantile) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     converged             = EXCLUDED.converged,
     log_likelihood        = EXCLUDED.log_likelihood,
     objective_value       = EXCLUDED.objective_value,
@@ -488,10 +564,17 @@ ON CONFLICT (hylak_id, threshold_quantile) DO UPDATE SET
     qc_median_excess      = EXCLUDED.qc_median_excess,
     error_message         = EXCLUDED.error_message,
     computed_at           = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("hawkes_results")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "threshold_quantile")
+    ),
+)
 
-_UPSERT_HAWKES_LRT_SQL = """
-INSERT INTO hawkes_lrt (
+
+def _upsert_hawkes_lrt_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, threshold_quantile, test_name,
     lr_statistic, df, p_value, significance_level, reject_null,
     restricted_log_likelihood, full_log_likelihood, computed_at
@@ -500,7 +583,7 @@ INSERT INTO hawkes_lrt (
     %(lr_statistic)s, %(df)s, %(p_value)s, %(significance_level)s, %(reject_null)s,
     %(restricted_log_likelihood)s, %(full_log_likelihood)s, now()
 )
-ON CONFLICT (hylak_id, threshold_quantile, test_name) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     lr_statistic              = EXCLUDED.lr_statistic,
     df                        = EXCLUDED.df,
     p_value                   = EXCLUDED.p_value,
@@ -509,10 +592,17 @@ ON CONFLICT (hylak_id, threshold_quantile, test_name) DO UPDATE SET
     restricted_log_likelihood = EXCLUDED.restricted_log_likelihood,
     full_log_likelihood       = EXCLUDED.full_log_likelihood,
     computed_at               = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("hawkes_lrt")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "test_name")
+    ),
+)
 
-_UPSERT_HAWKES_TRANSITION_MONTHLY_SQL = """
-INSERT INTO hawkes_transition_monthly (
+
+def _upsert_hawkes_transition_monthly_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, threshold_quantile, year, month, direction,
     score_raw, score_norm, significance_quantile, significance_threshold,
     significant, computed_at
@@ -521,17 +611,25 @@ INSERT INTO hawkes_transition_monthly (
     %(score_raw)s, %(score_norm)s, %(significance_quantile)s, %(significance_threshold)s,
     %(significant)s, now()
 )
-ON CONFLICT (hylak_id, threshold_quantile, year, month, direction) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     score_raw               = EXCLUDED.score_raw,
     score_norm              = EXCLUDED.score_norm,
     significance_quantile   = EXCLUDED.significance_quantile,
     significance_threshold  = EXCLUDED.significance_threshold,
     significant             = EXCLUDED.significant,
     computed_at             = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("hawkes_transition_monthly")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c)
+        for c in ("hylak_id", "threshold_quantile", "year", "month", "direction")
+    ),
+)
 
-_UPSERT_MONTHLY_TRANSITION_LABELS_SQL = """
-INSERT INTO monthly_transition_labels (
+
+def _upsert_monthly_transition_labels_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, workflow_version, year, month,
     water_area, monthly_climatology, anomaly,
     q_low, q_high, extreme_label, computed_at
@@ -540,7 +638,7 @@ INSERT INTO monthly_transition_labels (
     %(water_area)s, %(monthly_climatology)s, %(anomaly)s,
     %(q_low)s, %(q_high)s, %(extreme_label)s, now()
 )
-ON CONFLICT (hylak_id, workflow_version, year, month) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     water_area          = EXCLUDED.water_area,
     monthly_climatology = EXCLUDED.monthly_climatology,
     anomaly             = EXCLUDED.anomaly,
@@ -548,26 +646,42 @@ ON CONFLICT (hylak_id, workflow_version, year, month) DO UPDATE SET
     q_high              = EXCLUDED.q_high,
     extreme_label       = EXCLUDED.extreme_label,
     computed_at         = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("monthly_transition_labels")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c)
+        for c in ("hylak_id", "workflow_version", "year", "month")
+    ),
+)
 
-_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL = """
-INSERT INTO monthly_transition_extremes (
+
+def _upsert_monthly_transition_extremes_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, workflow_version, year, month, event_type,
     water_area, monthly_climatology, anomaly, threshold, computed_at
 ) VALUES (
     %(hylak_id)s, %(workflow_version)s, %(year)s, %(month)s, %(event_type)s,
     %(water_area)s, %(monthly_climatology)s, %(anomaly)s, %(threshold)s, now()
 )
-ON CONFLICT (hylak_id, workflow_version, year, month, event_type) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     water_area          = EXCLUDED.water_area,
     monthly_climatology = EXCLUDED.monthly_climatology,
     anomaly             = EXCLUDED.anomaly,
     threshold           = EXCLUDED.threshold,
     computed_at         = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("monthly_transition_extremes")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c)
+        for c in ("hylak_id", "workflow_version", "year", "month", "event_type")
+    ),
+)
 
-_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL = """
-INSERT INTO monthly_transition_abrupt_transitions (
+
+def _upsert_monthly_transition_abrupt_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, workflow_version, from_year, from_month, to_year, to_month, transition_type,
     from_anomaly, to_anomaly, from_label, to_label, computed_at
 ) VALUES (
@@ -575,89 +689,127 @@ INSERT INTO monthly_transition_abrupt_transitions (
     %(to_year)s, %(to_month)s, %(transition_type)s, %(from_anomaly)s, %(to_anomaly)s,
     %(from_label)s, %(to_label)s, now()
 )
-ON CONFLICT (
-    hylak_id, workflow_version, from_year, from_month, to_year, to_month,
-    transition_type
-) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     from_anomaly = EXCLUDED.from_anomaly,
     to_anomaly   = EXCLUDED.to_anomaly,
     from_label   = EXCLUDED.from_label,
     to_label     = EXCLUDED.to_label,
     computed_at  = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("monthly_transition_abrupt_transitions")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c)
+        for c in (
+            "hylak_id",
+            "workflow_version",
+            "from_year",
+            "from_month",
+            "to_year",
+            "to_month",
+            "transition_type",
+        )
+    ),
+)
 
-_UPSERT_MONTHLY_TRANSITION_STATUS_SQL = """
-INSERT INTO monthly_transition_run_status (
+
+def _upsert_monthly_transition_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
     hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
 ) VALUES (
     %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 )
-ON CONFLICT (hylak_id, workflow_version) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
     chunk_end     = EXCLUDED.chunk_end,
     status        = EXCLUDED.status,
     error_message = EXCLUDED.error_message,
     computed_at   = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("monthly_transition_run_status")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+    ),
+)
 
-_COUNT_AREA_QUALITY_IN_RANGE_SQL = """
+
+def _count_area_quality_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT COUNT(DISTINCT la.hylak_id)
-FROM lake_area la
-JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+FROM {lake_area} la
+JOIN {area_quality} aq ON aq.hylak_id = la.hylak_id
 WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
-"""
+""").format(
+    lake_area=sql.Identifier(tc.series_table("lake_area")),
+    area_quality=sql.Identifier(tc.series_table("area_quality")),
+)
 
-_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL = """
+
+def _count_monthly_transition_status_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT COUNT(*)
-FROM monthly_transition_run_status
+FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
   AND status = 'done'
   AND workflow_version = %(workflow_version)s
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
 
-_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL = """
+
+def _fetch_monthly_transition_status_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id
-FROM monthly_transition_run_status
+FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
   AND status = 'done'
   AND workflow_version = %(workflow_version)s
-"""
+""").format(table=sql.Identifier(tc.series_table("monthly_transition_run_status")))
 
-_FETCH_AREA_QUALITY_IDS_IN_RANGE_SQL = """
+
+def _fetch_area_quality_ids_in_range_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT DISTINCT la.hylak_id
-FROM lake_area la
-JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+FROM {lake_area} la
+JOIN {area_quality} aq ON aq.hylak_id = la.hylak_id
 WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
 ORDER BY la.hylak_id
-"""
+""").format(
+    lake_area=sql.Identifier(tc.series_table("lake_area")),
+    area_quality=sql.Identifier(tc.series_table("area_quality")),
+)
 
-_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL = """
+
+def _fetch_max_area_quality_hylak_id_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT MAX(hylak_id)
-FROM area_quality
-"""
+FROM {table}
+""").format(table=sql.Identifier(tc.series_table("area_quality")))
 
 
 def fetch_lake_area(
-    conn: psycopg.Connection, limit_id: int | None = None
+    conn: psycopg.Connection,
+    limit_id: int | None = None,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, pd.DataFrame]:
     """Fetch all lake_area rows and split by hylak_id.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
         limit_id: If given, only rows with id < limit_id are returned (for testing).
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to a DataFrame with columns [year, month, water_area].
     """
     if limit_id is None:
-        sql = _FETCH_LAKE_AREA_SQL
+        query = _fetch_lake_area_sql(table_config)
         params = None
     else:
-        sql = _FETCH_LAKE_AREA_LIMITED_SQL
+        query = _fetch_lake_area_limited_sql(table_config)
         params = {"limit_id": limit_id}
 
     with conn.cursor() as cur:
-        cur.execute(sql, params)
+        cur.execute(query, params)
         rows = cur.fetchall()
         colnames = [d.name for d in cur.description]
 
@@ -675,7 +827,11 @@ def fetch_lake_area(
 
 
 def fetch_lake_area_chunk(
-    conn: psycopg.Connection, chunk_start: int, chunk_end: int
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, pd.DataFrame]:
     """Fetch lake_area rows for a hylak_id range [chunk_start, chunk_end) and split by hylak_id.
 
@@ -683,13 +839,14 @@ def fetch_lake_area_chunk(
         conn: An open psycopg connection to SERIES_DB.
         chunk_start: Inclusive lower bound of the hylak_id range.
         chunk_end: Exclusive upper bound of the hylak_id range.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to a DataFrame with columns [year, month, water_area].
     """
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_LAKE_AREA_CHUNK_SQL, params)
+        cur.execute(_fetch_lake_area_chunk_sql(table_config), params)
         rows = cur.fetchall()
         colnames = [d.name for d in cur.description]
 
@@ -716,17 +873,20 @@ def fetch_lake_area_chunk(
 
 def fetch_af_nearest_high_topo(
     conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> list[dict]:
     """Fetch af_nearest rows with topo_level > 8 and non-null nearest_id.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
+        table_config: Table name configuration.
 
     Returns:
         List of dicts with keys hylak_id, nearest_id, topo_level.
     """
     with conn.cursor() as cur:
-        cur.execute(_FETCH_AF_NEAREST_HIGH_TOPO_SQL)
+        cur.execute(_fetch_af_nearest_high_topo_sql(table_config))
         rows = cur.fetchall()
     result = [
         {"hylak_id": int(r[0]), "nearest_id": int(r[1]), "topo_level": int(r[2])}
@@ -739,12 +899,15 @@ def fetch_af_nearest_high_topo(
 def fetch_lake_area_by_ids(
     conn: psycopg.Connection,
     id_list: list[int],
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, pd.DataFrame]:
     """Fetch lake_area rows for the given hylak_id set and split by hylak_id.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
         id_list: List of hylak_id values to fetch.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to a DataFrame with columns [year, month, water_area].
@@ -753,7 +916,7 @@ def fetch_lake_area_by_ids(
         return {}
     params = {"id_list": id_list}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_LAKE_AREA_BY_IDS_SQL, params)
+        cur.execute(_fetch_lake_area_by_ids_sql(table_config), params)
         rows = cur.fetchall()
         colnames = [d.name for d in cur.description]
 
@@ -780,6 +943,8 @@ def fetch_eot_extremes_by_id(
     conn: psycopg.Connection,
     hylak_id: int,
     threshold_quantile: float | None = None,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> pd.DataFrame:
     """Fetch EOT extreme rows for one lake, optionally filtered by threshold quantile.
 
@@ -788,6 +953,7 @@ def fetch_eot_extremes_by_id(
         hylak_id: Target lake id.
         threshold_quantile: Optional quantile filter (e.g., 0.95). If None, returns
             all quantiles available for the lake.
+        table_config: Table name configuration.
 
     Returns:
         DataFrame with columns:
@@ -796,7 +962,7 @@ def fetch_eot_extremes_by_id(
         Returns an empty DataFrame when no rows are found.
     """
     params: dict[str, int | Decimal] = {"hylak_id": int(hylak_id)}
-    sql = _FETCH_EOT_EXTREMES_BY_ID_SQL
+    query = _fetch_eot_extremes_by_id_sql(table_config)
     if threshold_quantile is not None:
         try:
             params["threshold_quantile"] = Decimal(str(threshold_quantile))
@@ -804,9 +970,9 @@ def fetch_eot_extremes_by_id(
             raise ValueError(
                 f"threshold_quantile must be numeric, got: {threshold_quantile!r}"
             ) from err
-        sql = _FETCH_EOT_EXTREMES_BY_ID_AND_Q_SQL
+        query = _fetch_eot_extremes_by_id_and_q_sql(table_config)
     with conn.cursor() as cur:
-        cur.execute(sql, params)
+        cur.execute(query, params)
         rows = cur.fetchall()
         colnames = [d.name for d in cur.description]
 
@@ -829,6 +995,8 @@ def fetch_eot_extremes_by_id(
 def fetch_linear_trend_by_ids(
     conn: psycopg.Connection,
     id_list: list[int],
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, float | None]:
     """Fetch linear trend (km²/year) from lake_info for the given hylak_ids.
 
@@ -838,6 +1006,7 @@ def fetch_linear_trend_by_ids(
     Args:
         conn: An open psycopg connection to SERIES_DB.
         id_list: List of hylak_id values to fetch.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to trend in km²/year (float) or None.
@@ -846,7 +1015,7 @@ def fetch_linear_trend_by_ids(
         return {}
     params = {"id_list": id_list}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_LINEAR_TREND_BY_IDS_SQL, params)
+        cur.execute(_fetch_linear_trend_by_ids_sql(table_config), params)
         rows = cur.fetchall()
     result: dict[int, float | None] = {}
     for r in rows:
@@ -863,13 +1032,15 @@ def fetch_linear_trend_by_ids(
 def fetch_frozen_year_months_by_ids(
     conn: psycopg.Connection,
     id_list: list[int],
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, set[int]]:
     """Fetch YYYYMM keys flagged as frozen for the given hylak_ids."""
     if not id_list:
         return {}
     params = {"id_list": id_list}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_FROZEN_YEAR_MONTHS_BY_IDS_SQL, params)
+        cur.execute(_fetch_frozen_year_months_by_ids_sql(table_config), params)
         rows = cur.fetchall()
     result: dict[int, set[int]] = {int(hid): set() for hid in id_list}
     for hylak_id, year_month_key in rows:
@@ -878,20 +1049,29 @@ def fetch_frozen_year_months_by_ids(
     return result
 
 
-def ensure_entropy_table(conn: psycopg.Connection) -> None:
+def ensure_entropy_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create the entropy table in SERIES_DB if it does not already exist.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_ENTROPY_TABLE_SQL)
+        cur.execute(_ensure_entropy_table_sql(table_config))
     conn.commit()
     log.debug("Ensured entropy table exists")
 
 
 def fetch_seasonal_amplitude_chunk(
-    conn: psycopg.Connection, chunk_start: int, chunk_end: int
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, float | None]:
     """Fetch CV (coefficient of variation) from lake_info: annual_means_std / mean_area.
 
@@ -899,13 +1079,14 @@ def fetch_seasonal_amplitude_chunk(
         conn: An open psycopg connection to SERIES_DB.
         chunk_start: Inclusive lower bound of the hylak_id range.
         chunk_end: Exclusive upper bound of the hylak_id range.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to CV (float or None). None if mean_area missing or <= 0.
     """
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_SEASONAL_AMPLITUDE_CHUNK_SQL, params)
+        cur.execute(_fetch_seasonal_amplitude_chunk_sql(table_config), params)
         rows = cur.fetchall()
     result: dict[int, float | None] = {}
     for r in rows:
@@ -919,7 +1100,12 @@ def fetch_seasonal_amplitude_chunk(
     return result
 
 
-def upsert_entropy(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_entropy(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update entropy summary rows.
 
     Each dict in rows must contain the keys matching the entropy table columns
@@ -929,9 +1115,10 @@ def upsert_entropy(conn: psycopg.Connection, rows: list[dict]) -> None:
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per hylak_id.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_ENTROPY_SQL, rows)
+        cur.executemany(_upsert_entropy_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d entropy row(s)", len(rows))
 
@@ -940,82 +1127,112 @@ def upsert_entropy(conn: psycopg.Connection, rows: list[dict]) -> None:
 # area_quality table operations
 # ---------------------------------------------------------------------------
 
-_FETCH_ATLAS_AREA_CHUNK_SQL = """
+def _fetch_atlas_area_chunk_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id, lake_area AS atlas_area
-FROM lake_info
+FROM {table}
 WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s
 ORDER BY hylak_id
-"""
+""").format(table=sql.Identifier(tc.series_table("lake_info")))
 
 
-_ENSURE_AREA_QUALITY_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS area_quality (
+def _ensure_area_quality_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id       INTEGER PRIMARY KEY,
     rs_area_mean   DOUBLE PRECISION,
     rs_area_median DOUBLE PRECISION,
     atlas_area     DOUBLE PRECISION,
     computed_at    TIMESTAMPTZ DEFAULT now()
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("area_quality")))
 
 
-_UPSERT_AREA_QUALITY_SQL = """
-INSERT INTO area_quality (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
+def _upsert_area_quality_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
 VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, now())
-ON CONFLICT (hylak_id) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
     atlas_area     = EXCLUDED.atlas_area,
     computed_at    = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("area_quality")),
+    conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+)
 
-_ENSURE_AREA_ANOMALIES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS area_anomalies (
+
+def _ensure_area_anomalies_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
     hylak_id       INTEGER PRIMARY KEY,
     rs_area_mean   DOUBLE PRECISION,
     rs_area_median DOUBLE PRECISION,
     atlas_area     DOUBLE PRECISION,
     computed_at    TIMESTAMPTZ DEFAULT now()
 );
-"""
+""").format(table=sql.Identifier(tc.series_table("area_anomalies")))
 
-_ENSURE_AREA_PROCESSED_VIEW_SQL = """
+
+def _ensure_area_processed_view_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 CREATE OR REPLACE VIEW area_processed AS
-    SELECT hylak_id FROM area_quality
+    SELECT hylak_id FROM {area_quality}
     UNION ALL
-    SELECT hylak_id FROM area_anomalies;
-"""
+    SELECT hylak_id FROM {area_anomalies};
+""").format(
+    area_quality=sql.Identifier(tc.series_table("area_quality")),
+    area_anomalies=sql.Identifier(tc.series_table("area_anomalies")),
+)
 
-_UPSERT_AREA_ANOMALIES_SQL = """
-INSERT INTO area_anomalies (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
+
+def _upsert_area_anomalies_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
 VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, now())
-ON CONFLICT (hylak_id) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
     atlas_area     = EXCLUDED.atlas_area,
     computed_at    = now();
-"""
+""").format(
+    table=sql.Identifier(tc.series_table("area_anomalies")),
+    conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+)
 
-_MOVE_AREA_QUALITY_TO_ANOMALIES_SQL = """
-INSERT INTO area_anomalies (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
+
+def _move_area_quality_to_anomalies_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {area_anomalies} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
 SELECT q.hylak_id, q.rs_area_mean, q.rs_area_median, q.atlas_area, now()
-FROM area_quality q
+FROM {area_quality} q
 WHERE q.hylak_id = ANY(%(id_list)s)
-ON CONFLICT (hylak_id) DO UPDATE SET
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
     atlas_area     = EXCLUDED.atlas_area,
     computed_at    = now();
-"""
+""").format(
+    area_anomalies=sql.Identifier(tc.series_table("area_anomalies")),
+    area_quality=sql.Identifier(tc.series_table("area_quality")),
+    conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+)
 
-_DELETE_AREA_QUALITY_BY_IDS_SQL = """
-DELETE FROM area_quality
+
+def _delete_area_quality_by_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+DELETE FROM {table}
 WHERE hylak_id = ANY(%(id_list)s)
-"""
+""").format(table=sql.Identifier(tc.series_table("area_quality")))
 
 
 def fetch_atlas_area_chunk(
-    conn: psycopg.Connection, chunk_start: int, chunk_end: int
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, float]:
     """Fetch atlas_area (lake_info.lake_area) for a hylak_id range.
 
@@ -1023,23 +1240,25 @@ def fetch_atlas_area_chunk(
         conn: An open psycopg connection to SERIES_DB.
         chunk_start: Inclusive lower bound of the hylak_id range.
         chunk_end: Exclusive upper bound of the hylak_id range.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to atlas_area (float).
     """
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_ATLAS_AREA_CHUNK_SQL, params)
+        cur.execute(_fetch_atlas_area_chunk_sql(table_config), params)
         rows = cur.fetchall()
     return {int(r[0]): float(r[1]) if r[1] is not None else 0.0 for r in rows}
 
 
-_FETCH_AREA_QUALITY_HYLAK_IDS_SQL = """
+def _fetch_area_quality_hylak_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
 SELECT hylak_id
-FROM area_quality
+FROM {table}
 ORDER BY hylak_id
 LIMIT %(lim)s OFFSET %(off)s
-"""
+""").format(table=sql.Identifier(tc.series_table("area_quality")))
 
 
 def fetch_area_quality_hylak_ids(
@@ -1047,6 +1266,7 @@ def fetch_area_quality_hylak_ids(
     *,
     limit: int,
     offset: int = 0,
+    table_config: TableConfig = _default_table_config,
 ) -> list[int]:
     """Return ``hylak_id`` values from ``area_quality`` (stable order, paginated).
 
@@ -1056,6 +1276,7 @@ def fetch_area_quality_hylak_ids(
         conn: Open connection to SERIES_DB.
         limit: Maximum number of ids (e.g. 100).
         offset: SQL ``OFFSET`` for repeatable slices.
+        table_config: Table name configuration.
 
     Returns:
         ``hylak_id`` integers ascending.
@@ -1069,24 +1290,34 @@ def fetch_area_quality_hylak_ids(
         raise ValueError("offset must be >= 0")
     params = {"lim": limit, "off": offset}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_AREA_QUALITY_HYLAK_IDS_SQL, params)
+        cur.execute(_fetch_area_quality_hylak_ids_sql(table_config), params)
         rows = cur.fetchall()
     return [int(r[0]) for r in rows]
 
 
-def ensure_area_quality_table(conn: psycopg.Connection) -> None:
+def ensure_area_quality_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create the area_quality table in SERIES_DB if it does not already exist.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_AREA_QUALITY_TABLE_SQL)
+        cur.execute(_ensure_area_quality_table_sql(table_config))
     conn.commit()
     log.debug("Ensured area_quality table exists")
 
 
-def upsert_area_quality(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_area_quality(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update area_quality rows.
 
     Each dict in rows must contain: hylak_id, rs_area, atlas_area.
@@ -1094,14 +1325,19 @@ def upsert_area_quality(conn: psycopg.Connection, rows: list[dict]) -> None:
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per hylak_id.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_AREA_QUALITY_SQL, rows)
+        cur.executemany(_upsert_area_quality_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d area_quality row(s)", len(rows))
 
 
-def ensure_area_anomalies_table(conn: psycopg.Connection) -> None:
+def ensure_area_anomalies_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create the area_anomalies table and area_processed view in SERIES_DB.
 
     ``area_anomalies`` stores lakes whose rs_area_median is 0.
@@ -1112,15 +1348,21 @@ def ensure_area_anomalies_table(conn: psycopg.Connection) -> None:
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_AREA_ANOMALIES_TABLE_SQL)
-        cur.execute(_ENSURE_AREA_PROCESSED_VIEW_SQL)
+        cur.execute(_ensure_area_anomalies_table_sql(table_config))
+        cur.execute(_ensure_area_processed_view_sql(table_config))
     conn.commit()
     log.debug("Ensured area_anomalies table and area_processed view exist")
 
 
-def upsert_area_anomalies(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_area_anomalies(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update area_anomalies rows.
 
     Each dict in rows must contain: hylak_id, rs_area_mean, rs_area_median, atlas_area.
@@ -1128,9 +1370,10 @@ def upsert_area_anomalies(conn: psycopg.Connection, rows: list[dict]) -> None:
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per anomalous hylak_id.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_AREA_ANOMALIES_SQL, rows)
+        cur.executemany(_upsert_area_anomalies_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d area_anomalies row(s)", len(rows))
 
@@ -1138,6 +1381,8 @@ def upsert_area_anomalies(conn: psycopg.Connection, rows: list[dict]) -> None:
 def move_area_quality_to_anomalies(
     conn: psycopg.Connection,
     id_list: list[int],
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> int:
     """Move selected hylak_ids from area_quality to area_anomalies.
 
@@ -1147,6 +1392,7 @@ def move_area_quality_to_anomalies(
     Args:
         conn: An open psycopg connection to SERIES_DB.
         id_list: Target hylak_id values to move.
+        table_config: Table name configuration.
 
     Returns:
         Number of rows deleted from ``area_quality``.
@@ -1155,8 +1401,8 @@ def move_area_quality_to_anomalies(
         return 0
     params = {"id_list": [int(hylak_id) for hylak_id in id_list]}
     with conn.cursor() as cur:
-        cur.execute(_MOVE_AREA_QUALITY_TO_ANOMALIES_SQL, params)
-        cur.execute(_DELETE_AREA_QUALITY_BY_IDS_SQL, params)
+        cur.execute(_move_area_quality_to_anomalies_sql(table_config), params)
+        cur.execute(_delete_area_quality_by_ids_sql(table_config), params)
         moved = int(cur.rowcount or 0)
     conn.commit()
     log.info("Moved %d hylak_id(s) from area_quality to area_anomalies", moved)
@@ -1164,7 +1410,11 @@ def move_area_quality_to_anomalies(
 
 
 def fetch_frozen_year_months_chunk(
-    conn: psycopg.Connection, chunk_start: int, chunk_end: int
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> dict[int, set[int]]:
     """Fetch frozen YYYYMM keys for all hylak_ids in [chunk_start, chunk_end).
 
@@ -1172,6 +1422,7 @@ def fetch_frozen_year_months_chunk(
         conn: An open psycopg connection to SERIES_DB.
         chunk_start: Inclusive lower bound of the hylak_id range.
         chunk_end: Exclusive upper bound of the hylak_id range.
+        table_config: Table name configuration.
 
     Returns:
         Dict mapping hylak_id to a set of YYYYMM integer keys.
@@ -1179,7 +1430,7 @@ def fetch_frozen_year_months_chunk(
     """
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_FROZEN_YEAR_MONTHS_CHUNK_SQL, params)
+        cur.execute(_fetch_frozen_year_months_chunk_sql(table_config), params)
         rows = cur.fetchall()
     result: dict[int, set[int]] = {}
     for hylak_id, year_month_key in rows:
@@ -1196,20 +1447,30 @@ def fetch_frozen_year_months_chunk(
     return result
 
 
-def ensure_eot_results_table(conn: psycopg.Connection) -> None:
+def ensure_eot_results_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create the eot_results and eot_extremes tables in SERIES_DB if they do not exist.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_EOT_RESULTS_TABLE_SQL)
-        cur.execute(_ENSURE_EOT_EXTREMES_TABLE_SQL)
+        cur.execute(_ensure_eot_results_table_sql(table_config))
+        cur.execute(_ensure_eot_extremes_table_sql(table_config))
     conn.commit()
     log.debug("Ensured eot_results and eot_extremes tables exist")
 
 
-def upsert_eot_results(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_eot_results(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update EOT fit result rows.
 
     Each dict in rows must contain the keys:
@@ -1221,14 +1482,20 @@ def upsert_eot_results(conn: psycopg.Connection, rows: list[dict]) -> None:
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per (hylak_id, tail, threshold_quantile) triple.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_EOT_RESULTS_SQL, rows)
+        cur.executemany(_upsert_eot_results_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d eot_results row(s)", len(rows))
 
 
-def upsert_eot_extremes(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_eot_extremes(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update EOT extreme-event rows.
 
     Each dict in rows must contain the keys:
@@ -1238,66 +1505,91 @@ def upsert_eot_extremes(conn: psycopg.Connection, rows: list[dict]) -> None:
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per declustered extreme event.
+        table_config: Table name configuration.
     """
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_EOT_EXTREMES_SQL, rows)
+        cur.executemany(_upsert_eot_extremes_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d eot_extremes row(s)", len(rows))
 
 
-def ensure_hawkes_results_table(conn: psycopg.Connection) -> None:
+def ensure_hawkes_results_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create hawkes_results, hawkes_lrt, and monthly transition tables when missing."""
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_HAWKES_RESULTS_TABLE_SQL)
-        cur.execute(_ENSURE_HAWKES_LRT_TABLE_SQL)
-        cur.execute(_ENSURE_HAWKES_TRANSITION_MONTHLY_TABLE_SQL)
+        cur.execute(_ensure_hawkes_results_table_sql(table_config))
+        cur.execute(_ensure_hawkes_lrt_table_sql(table_config))
+        cur.execute(_ensure_hawkes_transition_monthly_table_sql(table_config))
     conn.commit()
     log.debug(
         "Ensured hawkes_results, hawkes_lrt, and hawkes_transition_monthly tables exist"
     )
 
 
-def upsert_hawkes_results(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_hawkes_results(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update Hawkes fit result rows."""
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_HAWKES_RESULTS_SQL, rows)
+        cur.executemany(_upsert_hawkes_results_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d hawkes_results row(s)", len(rows))
 
 
-def upsert_hawkes_lrt(conn: psycopg.Connection, rows: list[dict]) -> None:
+def upsert_hawkes_lrt(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Insert or update Hawkes LRT rows."""
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_HAWKES_LRT_SQL, rows)
+        cur.executemany(_upsert_hawkes_lrt_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d hawkes_lrt row(s)", len(rows))
 
 
 def upsert_hawkes_transition_monthly(
-    conn: psycopg.Connection, rows: list[dict]
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     """Insert or update Hawkes monthly transition-significance rows."""
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_HAWKES_TRANSITION_MONTHLY_SQL, rows)
+        cur.executemany(_upsert_hawkes_transition_monthly_sql(table_config), rows)
     conn.commit()
     log.info("Upserted %d hawkes_transition_monthly row(s)", len(rows))
 
 
-def ensure_monthly_transition_tables(conn: psycopg.Connection) -> None:
+def ensure_monthly_transition_tables(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
     """Create monthly transition result and status tables when missing."""
     with conn.cursor() as cur:
-        cur.execute(_ENSURE_MONTHLY_TRANSITION_LABELS_TABLE_SQL)
-        cur.execute(_ENSURE_MONTHLY_TRANSITION_EXTREMES_TABLE_SQL)
-        cur.execute(_ENSURE_MONTHLY_TRANSITION_ABRUPT_TABLE_SQL)
-        cur.execute(_ENSURE_MONTHLY_TRANSITION_STATUS_TABLE_SQL)
-        _ensure_monthly_transition_workflow_versioning(cur)
-        cur.execute(_CREATE_MONTHLY_TRANSITION_STATUS_VERSION_INDEX_SQL)
+        cur.execute(_ensure_monthly_transition_labels_table_sql(table_config))
+        cur.execute(_ensure_monthly_transition_extremes_table_sql(table_config))
+        cur.execute(_ensure_monthly_transition_abrupt_table_sql(table_config))
+        cur.execute(_ensure_monthly_transition_status_table_sql(table_config))
+        _ensure_monthly_transition_workflow_versioning(cur, table_config)
+        cur.execute(_create_monthly_transition_status_version_index_sql(table_config))
     conn.commit()
     log.debug("Ensured monthly transition tables exist")
 
 
-def _ensure_monthly_transition_workflow_versioning(cur: psycopg.Cursor) -> None:
-    for table_name, primary_key_columns in _MONTHLY_TRANSITION_VERSIONED_TABLES:
+def _ensure_monthly_transition_workflow_versioning(
+    cur: psycopg.Cursor,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    for table_name, primary_key_columns in _monthly_transition_versioned_tables(table_config):
         table_ident = sql.Identifier(table_name)
         constraint_ident = sql.Identifier(f"{table_name}_pkey")
         pk_columns_sql = sql.SQL(", ").join(
@@ -1342,12 +1634,13 @@ def upsert_monthly_transition_labels(
     rows: list[dict],
     *,
     commit: bool = True,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     """Insert or update monthly transition label rows."""
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_MONTHLY_TRANSITION_LABELS_SQL, rows)
+        cur.executemany(_upsert_monthly_transition_labels_sql(table_config), rows)
     if commit:
         conn.commit()
     log.info("Upserted %d monthly_transition_labels row(s)", len(rows))
@@ -1358,12 +1651,13 @@ def upsert_monthly_transition_extremes(
     rows: list[dict],
     *,
     commit: bool = True,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     """Insert or update monthly transition extreme rows."""
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_MONTHLY_TRANSITION_EXTREMES_SQL, rows)
+        cur.executemany(_upsert_monthly_transition_extremes_sql(table_config), rows)
     if commit:
         conn.commit()
     log.info("Upserted %d monthly_transition_extremes row(s)", len(rows))
@@ -1374,12 +1668,13 @@ def upsert_monthly_transition_abrupt_transitions(
     rows: list[dict],
     *,
     commit: bool = True,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     """Insert or update monthly transition abrupt transition rows."""
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_MONTHLY_TRANSITION_ABRUPT_SQL, rows)
+        cur.executemany(_upsert_monthly_transition_abrupt_sql(table_config), rows)
     if commit:
         conn.commit()
     log.info("Upserted %d monthly_transition_abrupt_transitions row(s)", len(rows))
@@ -1390,12 +1685,13 @@ def upsert_monthly_transition_run_status(
     rows: list[dict],
     *,
     commit: bool = True,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     """Insert or update monthly transition run-status rows."""
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_UPSERT_MONTHLY_TRANSITION_STATUS_SQL, rows)
+        cur.executemany(_upsert_monthly_transition_status_sql(table_config), rows)
     if commit:
         conn.commit()
     log.info("Upserted %d monthly_transition_run_status row(s)", len(rows))
@@ -1405,11 +1701,13 @@ def fetch_area_quality_hylak_ids_in_range(
     conn: psycopg.Connection,
     chunk_start: int,
     chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> set[int]:
     """Fetch quality-filtered source lake ids in a hylak_id range."""
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_FETCH_AREA_QUALITY_IDS_IN_RANGE_SQL, params)
+        cur.execute(_fetch_area_quality_ids_in_range_sql(table_config), params)
         rows = cur.fetchall()
     return {int(row[0]) for row in rows}
 
@@ -1418,11 +1716,13 @@ def count_area_quality_hylak_ids_in_range(
     conn: psycopg.Connection,
     chunk_start: int,
     chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> int:
     """Count `area_quality` lakes in a hylak_id range."""
     params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
     with conn.cursor() as cur:
-        cur.execute(_COUNT_AREA_QUALITY_IN_RANGE_SQL, params)
+        cur.execute(_count_area_quality_in_range_sql(table_config), params)
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
 
@@ -1433,6 +1733,7 @@ def count_monthly_transition_status_in_range(
     chunk_end: int,
     *,
     workflow_version: str,
+    table_config: TableConfig = _default_table_config,
 ) -> int:
     """Count monthly transition run-status rows in a hylak_id range."""
     params = {
@@ -1441,7 +1742,7 @@ def count_monthly_transition_status_in_range(
         "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
-        cur.execute(_COUNT_MONTHLY_TRANSITION_STATUS_IN_RANGE_SQL, params)
+        cur.execute(_count_monthly_transition_status_in_range_sql(table_config), params)
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
 
@@ -1452,6 +1753,7 @@ def fetch_monthly_transition_status_ids_in_range(
     chunk_end: int,
     *,
     workflow_version: str,
+    table_config: TableConfig = _default_table_config,
 ) -> set[int]:
     """Fetch processed monthly transition hylak_ids in a hylak_id range."""
     params = {
@@ -1460,15 +1762,19 @@ def fetch_monthly_transition_status_ids_in_range(
         "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
-        cur.execute(_FETCH_MONTHLY_TRANSITION_STATUS_IDS_IN_RANGE_SQL, params)
+        cur.execute(_fetch_monthly_transition_status_ids_in_range_sql(table_config), params)
         rows = cur.fetchall()
     return {int(row[0]) for row in rows}
 
 
-def fetch_max_area_quality_hylak_id(conn: psycopg.Connection) -> int | None:
+def fetch_max_area_quality_hylak_id(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> int | None:
     """Return the maximum hylak_id present in area_quality."""
     with conn.cursor() as cur:
-        cur.execute(_FETCH_MAX_AREA_QUALITY_HYLAK_ID_SQL)
+        cur.execute(_fetch_max_area_quality_hylak_id_sql(table_config))
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else None
 

@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.dbconnect import (
+from lakesource.postgres import (
     ensure_eot_results_table,
     ensure_hawkes_results_table,
     fetch_frozen_year_months_chunk,

@@ -25,7 +25,7 @@ from lakeanalysis.basemodel import (
     plot_candidate_scores,
     plot_residuals,
 )
-from lakeanalysis.dbconnect import fetch_lake_area, fetch_lake_area_by_ids, series_db
+from lakesource.postgres import fetch_lake_area, fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot.preprocess import MonthlyTimeSeries
 from lakeanalysis.logger import Logger
 from lakeanalysis.plot_config import setup_chinese_font

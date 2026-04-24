@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import psycopg.errors
 
-from lakeanalysis.dbconnect import (
+from lakesource.postgres import (
     fetch_eot_hawkes_coverage,
     fetch_hawkes_error_message_counts,
     fetch_hawkes_lrt_summary_by_test,

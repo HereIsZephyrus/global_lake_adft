@@ -7,18 +7,18 @@ from typing import Any
 import pandas as pd
 import psycopg
 
-import lakeanalysis.dbconnect as dbconnect
-from lakeanalysis.dbconnect import (
+from lakesource.postgres.lake import (
     count_area_quality_hylak_ids_in_range,
     count_monthly_transition_status_in_range,
-    ensure_monthly_transition_tables as ensure_monthly_transition_tables_in_db,
     fetch_area_quality_hylak_ids_in_range,
     fetch_max_area_quality_hylak_id,
     fetch_monthly_transition_status_ids_in_range,
+    upsert_monthly_transition_abrupt_transitions as upsert_monthly_transition_abrupt_transitions_in_db,
     upsert_monthly_transition_extremes as upsert_monthly_transition_extremes_in_db,
     upsert_monthly_transition_labels as upsert_monthly_transition_labels_in_db,
     upsert_monthly_transition_run_status as upsert_monthly_transition_run_status_in_db,
 )
+from lakesource.postgres.lake import ensure_monthly_transition_tables as ensure_monthly_transition_tables_in_db
 
 from .compute import MonthlyTransitionResult
 
@@ -79,7 +79,6 @@ WHERE workflow_version = %(workflow_version)s
 
 
 def ensure_monthly_transition_tables(conn: psycopg.Connection) -> None:
-    """Ensure monthly transition DB tables exist."""
     ensure_monthly_transition_tables_in_db(conn)
 
 
@@ -89,7 +88,6 @@ def upsert_monthly_transition_labels(
     *,
     commit: bool = True,
 ) -> None:
-    """Persist month-level label rows."""
     upsert_monthly_transition_labels_in_db(conn, rows, commit=commit)
 
 
@@ -99,7 +97,6 @@ def upsert_monthly_transition_extremes(
     *,
     commit: bool = True,
 ) -> None:
-    """Persist extreme-event rows."""
     upsert_monthly_transition_extremes_in_db(conn, rows, commit=commit)
 
 
@@ -109,8 +106,7 @@ def upsert_monthly_transition_abrupt_transitions(
     *,
     commit: bool = True,
 ) -> None:
-    """Persist abrupt-transition rows."""
-    dbconnect.upsert_monthly_transition_abrupt_transitions(
+    upsert_monthly_transition_abrupt_transitions_in_db(
         conn,
         rows,
         commit=commit,
@@ -123,7 +119,6 @@ def upsert_monthly_transition_run_status(
     *,
     commit: bool = True,
 ) -> None:
-    """Persist run-status rows."""
     upsert_monthly_transition_run_status_in_db(conn, rows, commit=commit)
 
 
@@ -132,7 +127,6 @@ def count_source_lakes_in_chunk(
     chunk_start: int,
     chunk_end: int,
 ) -> int:
-    """Count quality-filtered source lakes in a chunk."""
     return count_area_quality_hylak_ids_in_range(conn, chunk_start, chunk_end)
 
 
@@ -143,7 +137,6 @@ def count_processed_lakes_in_chunk(
     *,
     workflow_version: str,
 ) -> int:
-    """Count run-status rows already written for a chunk."""
     return count_monthly_transition_status_in_range(
         conn,
         chunk_start,
@@ -157,7 +150,6 @@ def fetch_source_hylak_ids_in_chunk(
     chunk_start: int,
     chunk_end: int,
 ) -> set[int]:
-    """Fetch quality-filtered source lake ids for a chunk."""
     return fetch_area_quality_hylak_ids_in_range(conn, chunk_start, chunk_end)
 
 
@@ -168,7 +160,6 @@ def fetch_processed_hylak_ids_in_chunk(
     *,
     workflow_version: str,
 ) -> set[int]:
-    """Fetch processed lake ids already present in the run-status table."""
     return fetch_monthly_transition_status_ids_in_range(
         conn,
         chunk_start,
@@ -178,7 +169,6 @@ def fetch_processed_hylak_ids_in_chunk(
 
 
 def fetch_max_hylak_id(conn: psycopg.Connection) -> int:
-    """Return the maximum hylak_id present in area_quality."""
     max_hylak_id = fetch_max_area_quality_hylak_id(conn)
     return 0 if max_hylak_id is None else int(max_hylak_id)
 
@@ -188,7 +178,6 @@ def result_to_label_rows(
     *,
     workflow_version: str,
 ) -> list[dict]:
-    """Convert one-lake label output to DB row dicts."""
     columns = [
         "hylak_id",
         "year",
@@ -211,7 +200,6 @@ def result_to_extreme_rows(
     *,
     workflow_version: str,
 ) -> list[dict]:
-    """Convert one-lake extreme output to DB row dicts."""
     if result.extremes_df.empty:
         return []
     return _attach_workflow_version(
@@ -225,7 +213,6 @@ def result_to_transition_rows(
     *,
     workflow_version: str,
 ) -> list[dict]:
-    """Convert one-lake abrupt-transition output to DB row dicts."""
     if result.transitions_df.empty:
         return []
     return _attach_workflow_version(
@@ -253,7 +240,6 @@ def make_run_status_row(
     status: str,
     error_message: str | None = None,
 ) -> dict:
-    """Create a validated run-status row."""
     if status not in _VALID_RUN_STATUS:
         raise ValueError(f"Invalid run status: {status!r}")
     if not workflow_version.strip():
@@ -273,7 +259,6 @@ def fetch_summary_cache_sources(
     *,
     workflow_version: str,
 ) -> dict[str, Any]:
-    """Fetch aggregate frames for local summary cache refresh."""
     query_params = {"workflow_version": workflow_version}
 
     def _query_frame(sql_text: str, columns: list[str]) -> pd.DataFrame:

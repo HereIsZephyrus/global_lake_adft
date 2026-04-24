@@ -1,0 +1,41 @@
+# Table name mapping: logical name → actual PostgreSQL table name / Parquet file name.
+#
+# Logical names are used uniformly in code; actual names are resolved via this config.
+# When a logical name is not found in the mapping, it falls back to the logical name itself.
+
+[tables.series_db]
+lake_area = "lake_area"
+lake_info = "lake_info"
+anomaly = "anomaly"
+area_quality = "area_quality"
+area_anomalies = "area_anomalies"
+area_processed = "area_processed"
+af_nearest = "af_nearest"
+lake_pfaf = "lake_pfaf"
+entropy = "entropy"
+eot_results = "eot_results"
+eot_extremes = "eot_extremes"
+hawkes_results = "hawkes_results"
+hawkes_lrt = "hawkes_lrt"
+hawkes_transition_monthly = "hawkes_transition_monthly"
+monthly_transition_labels = "monthly_transition_labels"
+monthly_transition_extremes = "monthly_transition_extremes"
+monthly_transition_abrupt_transitions = "monthly_transition_abrupt_transitions"
+monthly_transition_run_status = "monthly_transition_run_status"
+
+[tables.atlas_db]
+lake_geometry = "LakeATLAS_v10_pol"
+basin_atlas_lev05 = "BasinATLAS_v10_lev05"
+basin_atlas_lev11 = "BasinATLAS_v10_lev11"
+
+[tables.parquet]
+lake_area = "lake_area"
+lake_info = "lake_info"
+anomaly = "anomaly"
+area_quality = "area_quality"
+af_nearest = "af_nearest"
+eot_extremes = "eot_extremes"
+hawkes_results = "hawkes_results"
+monthly_transition_extremes = "monthly_transition_extremes"
+monthly_transition_abrupt_transitions = "monthly_transition_abrupt_transitions"
+monthly_transition_run_status = "monthly_transition_run_status"

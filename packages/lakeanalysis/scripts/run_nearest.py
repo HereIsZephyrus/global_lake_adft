@@ -26,7 +26,7 @@ from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
-from lakeanalysis.dbconnect import series_db
+from lakesource.postgres import series_db
 from lakeanalysis.pfaf import compute_nearest_naturals, ensure_af_nearest_table, upsert_af_nearest
 
 

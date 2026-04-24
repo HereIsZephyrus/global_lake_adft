@@ -3,30 +3,27 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lakeanalysis"]
+packages = ["src/lakesource"]
 
 [project]
-name = "lakeanalysis"
+name = "lakesource"
 version = "0.1.0"
-description = "Lake analysis, statistical modelling, and downstream data access tools"
+description = "Unified data access layer for lake analysis (PostgreSQL + Parquet backends)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "lakeanalysis",
     "python-dotenv>=1.0",
     "pandas>=2.0,<3",
     "numpy>=1.24,<2.3",
+    "duckdb>=1.5.0",
     "pyarrow>=14.0,<18",
-    "pymannkendall>=1.4.3",
-    "statsmodels>=0.14.0",
-    "lakesource",
 ]
 
 [project.optional-dependencies]
-plot = [
-    "matplotlib>=3.5",
-]
-remote = [
-    "paramiko>=3.5",
+postgres = [
+    "psycopg[binary]>=3.2",
+    "geoalchemy2>=0.14",
 ]
 
 [dependency-groups]
