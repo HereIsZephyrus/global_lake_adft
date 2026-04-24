@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from lakesource.eot.reader import fetch_eot_results_with_coords
-from lakesource.monthly_transition.reader import (
+from lakesource.quantile.reader import (
     fetch_extremes_with_coords,
     fetch_transitions_with_coords,
 )
