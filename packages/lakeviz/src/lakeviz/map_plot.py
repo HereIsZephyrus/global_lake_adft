@@ -44,17 +44,19 @@ def plot_global_grid(
         subplot_kw={"projection": ccrs.Robinson()},
     )
 
+    ax.add_feature(cfeature.OCEAN, facecolor="#e8f4f8", edgecolor="none")
     ax.add_feature(cfeature.LAND, facecolor="#f0f0f0", edgecolor="none")
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
     ax.add_feature(cfeature.LAKES, facecolor="#d4e6f1", edgecolor="#666666", linewidth=0.2)
     ax.set_global()
 
     if grid_gdf.empty or value_col not in grid_gdf.columns:
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
         ax.set_title(title, fontsize=14)
         return fig
 
     plot_gdf = grid_gdf.dropna(subset=[value_col])
     if plot_gdf.empty:
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
         ax.set_title(title, fontsize=14)
         return fig
 
@@ -67,7 +69,7 @@ def plot_global_grid(
     else:
         norm = mcolors.Normalize(vmin=_vmin, vmax=_vmax)
 
-    plot_gdf.to_crs(ccrs.Robinson().proj4_init).plot(
+    plot_gdf.plot(
         column=value_col,
         ax=ax,
         norm=norm,
@@ -76,6 +78,8 @@ def plot_global_grid(
         linewidth=0,
         transform=ccrs.PlateCarree(),
     )
+
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
 
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
