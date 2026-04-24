@@ -205,3 +205,86 @@ def save_summary_plots(transitions_df: pd.DataFrame, output_root: Path) -> dict[
         "transition_count_summary": count_path,
         "transition_seasonality": seasonality_path,
     }
+
+
+def plot_adft_fallback(
+    hylak_id: int,
+    series_df: pd.DataFrame,
+    adft_df: pd.DataFrame,
+) -> plt.Figure:
+    """Plot monthly series with ADFT (Abrupt Drought-Flood Transition) event segments.
+
+    This is the fallback chart for lakes in the area_anomalies table that
+    lack Hawkes results.  It draws thick coloured line segments for each
+    drought-to-flood or flood-to-drought transition.
+
+    Parameters
+    ----------
+    hylak_id: Lake identifier (title only).
+    series_df: columns [year, month, water_area]
+    adft_df: columns [year, month, is_drought_to_flood]
+        Each row represents a transition event.  *is_drought_to_flood* is
+        True for drought→flood and False for flood→drought.
+    """
+    line_df = series_df.loc[:, ["year", "month", "water_area"]].dropna().copy()
+    line_df["year"] = line_df["year"].astype(int)
+    line_df["month"] = line_df["month"].astype(int)
+    line_df["date"] = pd.to_datetime(dict(year=line_df["year"], month=line_df["month"], day=1))
+    line_df = line_df.sort_values("date")
+
+    date_to_area: dict[tuple[int, int], float] = {}
+    for _, row in line_df.iterrows():
+        date_to_area[(int(row["year"]), int(row["month"]))] = float(row["water_area"])
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.plot(line_df["date"], line_df["water_area"], linewidth=2, color="steelblue", marker="o", markersize=3, label="水域面积", zorder=1, alpha=0.8)
+
+    drought_to_flood_segments: list[dict] = []
+    flood_to_drought_segments: list[dict] = []
+
+    if adft_df is not None and not adft_df.empty:
+        for _, row in adft_df.iterrows():
+            y, m = int(row["year"]), int(row["month"])
+            prev_date = pd.Timestamp(year=y, month=m, day=1)
+            next_date = prev_date + pd.DateOffset(months=1)
+            prev_key = (y, m)
+            next_key = (next_date.year, next_date.month)
+            if prev_key in date_to_area and next_key in date_to_area:
+                segment = {
+                    "dates": [prev_date, next_date],
+                    "areas": [date_to_area[prev_key], date_to_area[next_key]],
+                }
+                if bool(row["is_drought_to_flood"]):
+                    drought_to_flood_segments.append(segment)
+                else:
+                    flood_to_drought_segments.append(segment)
+
+    for segment in flood_to_drought_segments:
+        ax.plot(segment["dates"], segment["areas"], color="#D2691E", linewidth=4, zorder=3, alpha=1.0)
+        mid_date = segment["dates"][0]
+        mid_area = segment["areas"][0]
+        date_label = mid_date.strftime("%Y-%m")
+        ax.text(mid_date, mid_area, f"  {date_label}\n  涝→旱", fontsize=8, color="#D2691E", fontweight="bold", ha="center", va="bottom", zorder=5, bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#D2691E", alpha=0.8))
+
+    for segment in drought_to_flood_segments:
+        ax.plot(segment["dates"], segment["areas"], color="#8B008B", linewidth=4, zorder=3, alpha=1.0)
+        mid_date = segment["dates"][0]
+        mid_area = segment["areas"][0]
+        date_label = mid_date.strftime("%Y-%m")
+        ax.text(mid_date, mid_area, f"  {date_label}\n  旱→涝", fontsize=8, color="#8B008B", fontweight="bold", ha="center", va="bottom", zorder=5, bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#8B008B", alpha=0.8))
+
+    if flood_to_drought_segments:
+        ax.plot([], [], color="#D2691E", linewidth=4, label="涝转旱事件", alpha=1.0)
+    if drought_to_flood_segments:
+        ax.plot([], [], color="#8B008B", linewidth=4, label="旱转涝事件", alpha=1.0)
+
+    ax.set_xlabel("时间 (Year-Month)", fontsize=12)
+    ax.set_ylabel("水域面积 (km²)", fontsize=12)
+    ax.set_title(f"湖泊 {hylak_id} 面积变化时序图（含ADFT事件）", fontsize=14, fontweight="bold")
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.legend(loc="best", fontsize=11, framealpha=0.9)
+    ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter("%Y-%m"))
+    ax.xaxis.set_major_locator(plt.matplotlib.dates.YearLocator())
+    plt.xticks(rotation=45)
+    fig.tight_layout()
+    return fig

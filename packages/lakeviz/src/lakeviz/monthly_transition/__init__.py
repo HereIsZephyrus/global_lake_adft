@@ -9,6 +9,7 @@ from .plot import (
     plot_transition_seasonality_summary_from_cache,
     save_lake_plots,
     save_summary_plots,
+    plot_adft_fallback,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "plot_transition_seasonality_summary_from_cache",
     "save_lake_plots",
     "save_summary_plots",
+    "plot_adft_fallback",
 ]

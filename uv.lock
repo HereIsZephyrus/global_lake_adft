@@ -747,6 +747,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "python-dotenv" },
 ]
@@ -773,6 +774,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24,<2.3" },
     { name = "pandas", specifier = ">=2.0,<3" },
     { name = "paramiko", marker = "extra == 'remote'", specifier = ">=3.5" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=14.0,<18" },
     { name = "python-dotenv", specifier = ">=1.0" },

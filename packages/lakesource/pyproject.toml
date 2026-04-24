@@ -17,6 +17,7 @@ dependencies = [
     "numpy>=1.24,<2.3",
     "duckdb>=1.5.0",
     "pyarrow>=14.0,<18",
+    "psycopg[binary]>=3.3.3",
 ]
 
 [project.optional-dependencies]
