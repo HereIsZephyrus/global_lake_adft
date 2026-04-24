@@ -1,12 +1,19 @@
-"""Unified read interface for monthly transition data with backend dispatch."""
+"""Unified read interface for monthly transition data with backend dispatch and parquet cache."""
 
 from __future__ import annotations
+
+import logging
+from pathlib import Path
 
 import pandas as pd
 from psycopg import sql as psql
 
 from lakesource.config import Backend, SourceConfig
 from lakesource.table_config import TableConfig
+
+log = logging.getLogger(__name__)
+
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "monthly_transition"
 
 
 def _extremes_sql(tc: TableConfig) -> psql.Composed:
@@ -15,7 +22,7 @@ SELECT e.hylak_id, e.event_type, e.year, e.month,
        ST_Y(l.centroid) AS lat, ST_X(l.centroid) AS lon
 FROM   {extremes} e
 JOIN   {lake_info} l USING (hylak_id)
-WHERE  e.workflow_version = %(workflow_version)s
+WHERE  1=1
 """).format(
         extremes=psql.Identifier(tc.series_table("monthly_transition_extremes")),
         lake_info=psql.Identifier(tc.series_table("lake_info")),
@@ -28,7 +35,7 @@ SELECT t.hylak_id, t.transition_type, t.from_year, t.from_month,
        ST_Y(l.centroid) AS lat, ST_X(l.centroid) AS lon
 FROM   {transitions} t
 JOIN   {lake_info} l USING (hylak_id)
-WHERE  t.workflow_version = %(workflow_version)s
+WHERE  1=1
 """).format(
         transitions=psql.Identifier(
             tc.series_table("monthly_transition_abrupt_transitions")
@@ -46,7 +53,7 @@ FROM   {lake_info}
 
 def _build_time_filters(config: SourceConfig) -> tuple[psql.Composed, dict]:
     clauses: list[psql.Composed] = []
-    params: dict = {"workflow_version": config.workflow_version}
+    params: dict = {}
     if config.year_start is not None:
         clauses.append(psql.SQL("AND year >= %(year_start)s"))
         params["year_start"] = config.year_start
@@ -105,19 +112,58 @@ def _fetch_lake_coordinates_parquet(config: SourceConfig) -> pd.DataFrame:
     raise NotImplementedError("Parquet backend for lake coordinates is not yet implemented")
 
 
-def fetch_extremes_with_coords(config: SourceConfig) -> pd.DataFrame:
+def fetch_extremes_with_coords(
+    config: SourceConfig,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
     if config.backend == Backend.POSTGRES:
-        return _fetch_extremes_postgres(config)
+        cache = (data_dir or _DATA_DIR) / "extremes_with_coords.parquet"
+        if not refresh and cache.exists():
+            log.info("Loading extremes from cache: %s", cache)
+            return pd.read_parquet(cache)
+        df = _fetch_extremes_postgres(config)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(cache, index=False)
+        log.info("Cached extremes (%d rows) to %s", len(df), cache)
+        return df
     return _fetch_extremes_parquet(config)
 
 
-def fetch_transitions_with_coords(config: SourceConfig) -> pd.DataFrame:
+def fetch_transitions_with_coords(
+    config: SourceConfig,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
     if config.backend == Backend.POSTGRES:
-        return _fetch_transitions_postgres(config)
+        cache = (data_dir or _DATA_DIR) / "transitions_with_coords.parquet"
+        if not refresh and cache.exists():
+            log.info("Loading transitions from cache: %s", cache)
+            return pd.read_parquet(cache)
+        df = _fetch_transitions_postgres(config)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(cache, index=False)
+        log.info("Cached transitions (%d rows) to %s", len(df), cache)
+        return df
     return _fetch_transitions_parquet(config)
 
 
-def fetch_lake_coordinates(config: SourceConfig) -> pd.DataFrame:
+def fetch_lake_coordinates(
+    config: SourceConfig,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
     if config.backend == Backend.POSTGRES:
-        return _fetch_lake_coordinates_postgres(config)
+        cache = (data_dir or _DATA_DIR) / "lake_coordinates.parquet"
+        if not refresh and cache.exists():
+            log.info("Loading lake coordinates from cache: %s", cache)
+            return pd.read_parquet(cache)
+        df = _fetch_lake_coordinates_postgres(config)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(cache, index=False)
+        log.info("Cached lake coordinates (%d rows) to %s", len(df), cache)
+        return df
     return _fetch_lake_coordinates_parquet(config)

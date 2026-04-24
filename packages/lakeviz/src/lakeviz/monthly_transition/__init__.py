@@ -1,5 +1,11 @@
 """Monthly transition visualization helpers."""
 
+from .global_map import (
+    plot_extremes_by_type_map,
+    plot_extremes_density_map,
+    plot_transition_by_type_map,
+    plot_transition_density_map,
+)
 from .plot import (
     plot_monthly_timeline,
     plot_anomaly_timeline,
@@ -13,6 +19,10 @@ from .plot import (
 )
 
 __all__ = [
+    "plot_extremes_by_type_map",
+    "plot_extremes_density_map",
+    "plot_transition_by_type_map",
+    "plot_transition_density_map",
     "plot_monthly_timeline",
     "plot_anomaly_timeline",
     "plot_transition_count_summary",
