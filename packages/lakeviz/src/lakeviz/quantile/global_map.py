@@ -1,10 +1,6 @@
-"""Global distribution maps for monthly transition (quantile-based) results.
+"""Global distribution maps for quantile-based identification results.
 
-Maps:
-  - extremes density: number of extreme events per lake per grid cell
-  - extremes by type: dry/wet event density
-  - transition density: number of abrupt transitions per lake per grid cell
-  - transition by type: dry-to-wet / wet-to-dry density
+Uses SQL-side aggregation + pcolormesh for memory-efficient rendering.
 """
 
 from __future__ import annotations
@@ -12,16 +8,18 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import pandas as pd
+import numpy as np
 
 from lakesource.config import SourceConfig
 from lakesource.quantile.reader import (
-    fetch_extremes_with_coords,
-    fetch_transitions_with_coords,
+    fetch_extremes_grid_agg,
+    fetch_extremes_by_type_grid_agg,
+    fetch_transitions_grid_agg,
+    fetch_transitions_by_type_grid_agg,
 )
 
 from ..config import GlobalGridConfig
-from ..grid import build_grid_counts, build_grid_stats
+from ..grid import agg_to_grid_matrix
 from ..map_plot import plot_global_grid
 
 log = logging.getLogger(__name__)
@@ -33,6 +31,28 @@ def _output_dir(base: Path, sub: str) -> Path:
     return d
 
 
+def _plot_density(
+    agg_df,
+    value_col: str,
+    title: str,
+    cbar_label: str,
+    output_path: Path,
+    config: GlobalGridConfig,
+) -> Path:
+    if agg_df.empty:
+        log.warning("No data for %s", title)
+        return Path()
+    agg_df = agg_df.copy()
+    agg_df["mean_per_lake"] = agg_df["event_count"].astype(float) / agg_df["lake_count"].astype(float)
+    lons, lats, values = agg_to_grid_matrix(agg_df, value_col, config.resolution)
+    plot_global_grid(
+        lons, lats, values,
+        title=title, cmap="YlOrRd", log_scale=True,
+        cbar_label=cbar_label, output_path=output_path,
+    )
+    return output_path
+
+
 def plot_extremes_density_map(
     config: GlobalGridConfig,
     *,
@@ -40,38 +60,15 @@ def plot_extremes_density_map(
     data_dir: Path | None = None,
     min_lakes: int = 1,
 ) -> Path:
-    """Global map of extreme events per lake per grid cell.
-
-    Args:
-        config: Grid visualization config.
-        refresh: Re-fetch from database.
-        data_dir: Override cache directory.
-        min_lakes: Minimum lake count per cell.
-
-    Returns:
-        Path to saved figure.
-    """
-    df = fetch_extremes_with_coords(config.source, refresh=refresh, data_dir=data_dir)
-    if df.empty:
-        log.warning("No monthly transition extremes data")
-        return Path()
-
-    grid = build_grid_counts(df, resolution=config.resolution)
+    agg = fetch_extremes_grid_agg(config.source, config.resolution, refresh=refresh, data_dir=data_dir)
     if min_lakes > 1:
-        grid = grid[grid["lake_count"] >= min_lakes]
-
-    title = "分位数识别极端事件密度 (每湖事件数)"
-    out = _output_dir(config.output_dir, "extremes") / "density.png"
-
-    plot_global_grid(
-        grid,
-        value_col="mean_per_lake",
-        title=title,
-        cmap="YlOrRd",
-        log_scale=True,
-        output_path=out,
+        agg = agg[agg["lake_count"] >= min_lakes]
+    return _plot_density(
+        agg, "mean_per_lake",
+        "分位数识别极端事件密度 (每湖事件数)", "每湖事件数",
+        _output_dir(config.output_dir, "extremes") / "density.png",
+        config,
     )
-    return out
 
 
 def plot_extremes_by_type_map(
@@ -82,45 +79,18 @@ def plot_extremes_by_type_map(
     data_dir: Path | None = None,
     min_lakes: int = 1,
 ) -> Path:
-    """Global map of extreme events per lake for a specific event type.
-
-    Args:
-        config: Grid visualization config.
-        event_type: "dry" or "wet".
-        refresh: Re-fetch from database.
-        data_dir: Override cache directory.
-        min_lakes: Minimum lake count per cell.
-
-    Returns:
-        Path to saved figure.
-    """
-    df = fetch_extremes_with_coords(config.source, refresh=refresh, data_dir=data_dir)
-    if df.empty:
-        log.warning("No monthly transition extremes data")
-        return Path()
-
-    df = df[df["event_type"] == event_type].reset_index(drop=True)
-    if df.empty:
-        log.warning("No extremes with event_type=%s", event_type)
-        return Path()
-
-    grid = build_grid_counts(df, resolution=config.resolution)
+    agg = fetch_extremes_by_type_grid_agg(config.source, config.resolution, refresh=refresh, data_dir=data_dir)
     if min_lakes > 1:
-        grid = grid[grid["lake_count"] >= min_lakes]
-
-    label = "干旱" if event_type == "dry" else "湿润"
-    title = f"分位数识别{label}极端事件密度 (每湖事件数)"
-    out = _output_dir(config.output_dir, "extremes") / f"density_{event_type}.png"
-
-    plot_global_grid(
-        grid,
-        value_col="mean_per_lake",
-        title=title,
-        cmap="YlOrRd",
-        log_scale=True,
-        output_path=out,
+        agg = agg[agg["lake_count"] >= min_lakes]
+    agg = agg[agg["event_type"] == event_type].reset_index(drop=True)
+    labels = {"high": "高值", "low": "低值", "dry": "干旱", "wet": "湿润"}
+    label = labels.get(event_type, event_type)
+    return _plot_density(
+        agg, "mean_per_lake",
+        f"分位数识别{label}极端事件密度 (每湖事件数)", "每湖事件数",
+        _output_dir(config.output_dir, "extremes") / f"density_{event_type}.png",
+        config,
     )
-    return out
 
 
 def plot_transition_density_map(
@@ -130,38 +100,15 @@ def plot_transition_density_map(
     data_dir: Path | None = None,
     min_lakes: int = 1,
 ) -> Path:
-    """Global map of abrupt transitions per lake per grid cell.
-
-    Args:
-        config: Grid visualization config.
-        refresh: Re-fetch from database.
-        data_dir: Override cache directory.
-        min_lakes: Minimum lake count per cell.
-
-    Returns:
-        Path to saved figure.
-    """
-    df = fetch_transitions_with_coords(config.source, refresh=refresh, data_dir=data_dir)
-    if df.empty:
-        log.warning("No monthly transition data")
-        return Path()
-
-    grid = build_grid_counts(df, resolution=config.resolution)
+    agg = fetch_transitions_grid_agg(config.source, config.resolution, refresh=refresh, data_dir=data_dir)
     if min_lakes > 1:
-        grid = grid[grid["lake_count"] >= min_lakes]
-
-    title = "分位数识别旱涝突变密度 (每湖事件数)"
-    out = _output_dir(config.output_dir, "transitions") / "density.png"
-
-    plot_global_grid(
-        grid,
-        value_col="mean_per_lake",
-        title=title,
-        cmap="YlOrRd",
-        log_scale=True,
-        output_path=out,
+        agg = agg[agg["lake_count"] >= min_lakes]
+    return _plot_density(
+        agg, "mean_per_lake",
+        "分位数识别旱涝突变密度 (每湖事件数)", "每湖事件数",
+        _output_dir(config.output_dir, "transitions") / "density.png",
+        config,
     )
-    return out
 
 
 def plot_transition_by_type_map(
@@ -172,43 +119,15 @@ def plot_transition_by_type_map(
     data_dir: Path | None = None,
     min_lakes: int = 1,
 ) -> Path:
-    """Global map of abrupt transitions per lake for a specific transition type.
-
-    Args:
-        config: Grid visualization config.
-        transition_type: e.g. "dry_to_wet" or "wet_to_dry".
-        refresh: Re-fetch from database.
-        data_dir: Override cache directory.
-        min_lakes: Minimum lake count per cell.
-
-    Returns:
-        Path to saved figure.
-    """
-    df = fetch_transitions_with_coords(config.source, refresh=refresh, data_dir=data_dir)
-    if df.empty:
-        log.warning("No monthly transition data")
-        return Path()
-
-    df = df[df["transition_type"] == transition_type].reset_index(drop=True)
-    if df.empty:
-        log.warning("No transitions with transition_type=%s", transition_type)
-        return Path()
-
-    grid = build_grid_counts(df, resolution=config.resolution)
+    agg = fetch_transitions_by_type_grid_agg(config.source, config.resolution, refresh=refresh, data_dir=data_dir)
     if min_lakes > 1:
-        grid = grid[grid["lake_count"] >= min_lakes]
-
-    labels = {"dry_to_wet": "旱转涝", "wet_to_dry": "涝转旱"}
+        agg = agg[agg["lake_count"] >= min_lakes]
+    agg = agg[agg["transition_type"] == transition_type].reset_index(drop=True)
+    labels = {"low_to_high": "低转高", "high_to_low": "高转低", "dry_to_wet": "旱转涝", "wet_to_dry": "涝转旱"}
     label = labels.get(transition_type, transition_type)
-    title = f"分位数识别{label}突变密度 (每湖事件数)"
-    out = _output_dir(config.output_dir, "transitions") / f"density_{transition_type}.png"
-
-    plot_global_grid(
-        grid,
-        value_col="mean_per_lake",
-        title=title,
-        cmap="YlOrRd",
-        log_scale=True,
-        output_path=out,
+    return _plot_density(
+        agg, "mean_per_lake",
+        f"分位数识别{label}突变密度 (每湖事件数)", "每湖事件数",
+        _output_dir(config.output_dir, "transitions") / f"density_{transition_type}.png",
+        config,
     )
-    return out

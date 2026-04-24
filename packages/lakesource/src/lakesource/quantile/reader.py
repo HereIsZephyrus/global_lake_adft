@@ -1,10 +1,16 @@
-"""Unified read interface for monthly transition data with backend dispatch and parquet cache."""
+"""Unified read interface for quantile-based identification data with SQL-side aggregation.
+
+All global-map queries perform aggregation in PostgreSQL, returning only
+~37k grid cells instead of millions of raw rows.  Results are cached as
+parquet in ``data/quantile/``.
+"""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from psycopg import sql as psql
 
@@ -16,154 +22,164 @@ log = logging.getLogger(__name__)
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "quantile"
 
 
-def _extremes_sql(tc: TableConfig) -> psql.Composed:
+def _extremes_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
     return psql.SQL("""
-SELECT e.hylak_id, e.event_type, e.year, e.month,
-       ST_Y(l.centroid) AS lat, ST_X(l.centroid) AS lon
+SELECT FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT e.hylak_id)                    AS lake_count,
+       COUNT(*)                                       AS event_count
 FROM   {extremes} e
-JOIN   {lake_info} l USING (hylak_id)
-WHERE  1=1
+JOIN   {lake_info} l ON l.hylak_id = e.hylak_id
+GROUP BY 1, 2
+ORDER BY 1, 2
 """).format(
         extremes=psql.Identifier(tc.series_table("quantile_extremes")),
         lake_info=psql.Identifier(tc.series_table("lake_info")),
     )
 
 
-def _transitions_sql(tc: TableConfig) -> psql.Composed:
+def _extremes_by_type_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
     return psql.SQL("""
-SELECT t.hylak_id, t.transition_type, t.from_year, t.from_month,
-       ST_Y(l.centroid) AS lat, ST_X(l.centroid) AS lon
-FROM   {transitions} t
-JOIN   {lake_info} l USING (hylak_id)
-WHERE  1=1
+SELECT e.event_type,
+       FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT e.hylak_id)                    AS lake_count,
+       COUNT(*)                                       AS event_count
+FROM   {extremes} e
+JOIN   {lake_info} l ON l.hylak_id = e.hylak_id
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3
 """).format(
-        transitions=psql.Identifier(
-            tc.series_table("quantile_abrupt_transitions")
-        ),
+        extremes=psql.Identifier(tc.series_table("quantile_extremes")),
         lake_info=psql.Identifier(tc.series_table("lake_info")),
     )
 
 
-def _lake_coords_sql(tc: TableConfig) -> psql.Composed:
+def _transitions_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
     return psql.SQL("""
-SELECT hylak_id, ST_Y(centroid) AS lat, ST_X(centroid) AS lon
-FROM   {lake_info}
-""").format(lake_info=psql.Identifier(tc.series_table("lake_info")))
+SELECT FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+       COUNT(*)                                       AS event_count
+FROM   {transitions} t
+JOIN   {lake_info} l ON l.hylak_id = t.hylak_id
+GROUP BY 1, 2
+ORDER BY 1, 2
+""").format(
+        transitions=psql.Identifier(tc.series_table("quantile_abrupt_transitions")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
 
 
-def _build_time_filters(config: SourceConfig) -> tuple[psql.Composed, dict]:
-    clauses: list[psql.Composed] = []
-    params: dict = {}
-    if config.year_start is not None:
-        clauses.append(psql.SQL("AND year >= %(year_start)s"))
-        params["year_start"] = config.year_start
-    if config.year_end is not None:
-        clauses.append(psql.SQL("AND year <= %(year_end)s"))
-        params["year_end"] = config.year_end
-    return psql.SQL(" ").join(clauses), params
+def _transitions_by_type_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
+    return psql.SQL("""
+SELECT t.transition_type,
+       FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+       COUNT(*)                                       AS event_count
+FROM   {transitions} t
+JOIN   {lake_info} l ON l.hylak_id = t.hylak_id
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3
+""").format(
+        transitions=psql.Identifier(tc.series_table("quantile_abrupt_transitions")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
 
 
-def _fetch_extremes_postgres(config: SourceConfig) -> pd.DataFrame:
+def _fetch_and_cache(
+    sql: psql.Composed,
+    params: dict,
+    cache_path: Path,
+    *,
+    refresh: bool = False,
+) -> pd.DataFrame:
+    if not refresh and cache_path.exists():
+        log.info("Loading from cache: %s", cache_path)
+        return pd.read_parquet(cache_path)
+
     from lakesource.postgres import series_db
 
-    time_clause, params = _build_time_filters(config)
-    sql = _extremes_sql(config.t) + time_clause
     with series_db.connection_context() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
             colnames = [d.name for d in cur.description]
-    return pd.DataFrame(rows, columns=colnames)
+
+    df = pd.DataFrame(rows, columns=colnames)
+    for col in ("cell_lat", "cell_lon"):
+        if col in df.columns:
+            df[col] = df[col].astype(float)
+    for col in ("lake_count", "event_count"):
+        if col in df.columns:
+            df[col] = df[col].astype(int)
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(cache_path, index=False)
+    log.info("Cached %d rows to %s", len(df), cache_path)
+    return df
 
 
-def _fetch_transitions_postgres(config: SourceConfig) -> pd.DataFrame:
-    from lakesource.postgres import series_db
-
-    time_clause, params = _build_time_filters(config)
-    sql = _transitions_sql(config.t) + time_clause
-    with series_db.connection_context() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-            colnames = [d.name for d in cur.description]
-    return pd.DataFrame(rows, columns=colnames)
-
-
-def _fetch_lake_coordinates_postgres(config: SourceConfig) -> pd.DataFrame:
-    from lakesource.postgres import series_db
-
-    with series_db.connection_context() as conn:
-        with conn.cursor() as cur:
-            cur.execute(_lake_coords_sql(config.t))
-            rows = cur.fetchall()
-            colnames = [d.name for d in cur.description]
-    return pd.DataFrame(rows, columns=colnames)
-
-
-def _fetch_extremes_parquet(config: SourceConfig) -> pd.DataFrame:
-    raise NotImplementedError("Parquet backend for extremes is not yet implemented")
-
-
-def _fetch_transitions_parquet(config: SourceConfig) -> pd.DataFrame:
-    raise NotImplementedError("Parquet backend for transitions is not yet implemented")
-
-
-def _fetch_lake_coordinates_parquet(config: SourceConfig) -> pd.DataFrame:
-    raise NotImplementedError("Parquet backend for lake coordinates is not yet implemented")
-
-
-def fetch_extremes_with_coords(
+def fetch_extremes_grid_agg(
     config: SourceConfig,
+    resolution: float = 0.5,
     *,
     refresh: bool = False,
     data_dir: Path | None = None,
 ) -> pd.DataFrame:
-    if config.backend == Backend.POSTGRES:
-        cache = (data_dir or _DATA_DIR) / "extremes_with_coords.parquet"
-        if not refresh and cache.exists():
-            log.info("Loading extremes from cache: %s", cache)
-            return pd.read_parquet(cache)
-        df = _fetch_extremes_postgres(config)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(cache, index=False)
-        log.info("Cached extremes (%d rows) to %s", len(df), cache)
-        return df
-    return _fetch_extremes_parquet(config)
+    cache = (data_dir or _DATA_DIR) / f"extremes_grid_agg_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _extremes_grid_agg_sql(config.t, resolution),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
 
 
-def fetch_transitions_with_coords(
+def fetch_extremes_by_type_grid_agg(
     config: SourceConfig,
+    resolution: float = 0.5,
     *,
     refresh: bool = False,
     data_dir: Path | None = None,
 ) -> pd.DataFrame:
-    if config.backend == Backend.POSTGRES:
-        cache = (data_dir or _DATA_DIR) / "transitions_with_coords.parquet"
-        if not refresh and cache.exists():
-            log.info("Loading transitions from cache: %s", cache)
-            return pd.read_parquet(cache)
-        df = _fetch_transitions_postgres(config)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(cache, index=False)
-        log.info("Cached transitions (%d rows) to %s", len(df), cache)
-        return df
-    return _fetch_transitions_parquet(config)
+    cache = (data_dir or _DATA_DIR) / f"extremes_by_type_grid_agg_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _extremes_by_type_grid_agg_sql(config.t, resolution),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
 
 
-def fetch_lake_coordinates(
+def fetch_transitions_grid_agg(
     config: SourceConfig,
+    resolution: float = 0.5,
     *,
     refresh: bool = False,
     data_dir: Path | None = None,
 ) -> pd.DataFrame:
-    if config.backend == Backend.POSTGRES:
-        cache = (data_dir or _DATA_DIR) / "lake_coordinates.parquet"
-        if not refresh and cache.exists():
-            log.info("Loading lake coordinates from cache: %s", cache)
-            return pd.read_parquet(cache)
-        df = _fetch_lake_coordinates_postgres(config)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(cache, index=False)
-        log.info("Cached lake coordinates (%d rows) to %s", len(df), cache)
-        return df
-    return _fetch_lake_coordinates_parquet(config)
+    cache = (data_dir or _DATA_DIR) / f"transitions_grid_agg_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _transitions_grid_agg_sql(config.t, resolution),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
+
+
+def fetch_transitions_by_type_grid_agg(
+    config: SourceConfig,
+    resolution: float = 0.5,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    cache = (data_dir or _DATA_DIR) / f"transitions_by_type_grid_agg_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _transitions_by_type_grid_agg_sql(config.t, resolution),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )

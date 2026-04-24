@@ -1,11 +1,5 @@
 """Generate global distribution maps for EOT results.
 
-Steps:
-  1. Query available (tail, threshold_quantile) combinations from eot_results.
-  2. For each combination, generate 5 global maps:
-     - convergence_rate, median_xi, median_sigma, extremes_frequency, median_threshold.
-  3. Save figures to figures/eot/{tail}/q{quantile}/.
-
 Usage:
     uv run python scripts/plot_eot_global.py
     uv run python scripts/plot_eot_global.py --tail high --quantile 0.95
@@ -35,40 +29,16 @@ from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate global EOT distribution maps.",
-    )
-    parser.add_argument(
-        "--tail",
-        choices=["high", "low"],
-        default=None,
-        help="Filter to a single tail direction (default: all).",
-    )
-    parser.add_argument(
-        "--quantile",
-        type=float,
-        default=None,
-        help="Filter to a single threshold_quantile (default: all).",
-    )
-    parser.add_argument(
-        "--refresh",
-        action="store_true",
-        help="Re-fetch from database, overwriting parquet cache.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("figures"),
-        help="Output directory for figures (default: figures/).",
-    )
-    parser.add_argument(
-        "--resolution",
-        type=float,
-        default=0.5,
-        help="Grid cell size in degrees (default: 0.5).",
-    )
+    parser = argparse.ArgumentParser(description="Generate global EOT distribution maps.")
+    parser.add_argument("--tail", choices=["high", "low"], default=None)
+    parser.add_argument("--quantile", type=float, default=None)
+    parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--output-dir", type=Path, default=DATA_DIR / "figures")
+    parser.add_argument("--resolution", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -76,15 +46,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args()
     load_env()
-
     setup_chinese_font()
 
     source = SourceConfig()
-    grid_config = GlobalGridConfig(
-        source=source,
-        resolution=args.resolution,
-        output_dir=args.output_dir,
-    )
+    grid_config = GlobalGridConfig(source=source, resolution=args.resolution, output_dir=args.output_dir)
 
     combos = fetch_available_quantiles(source)
     if combos.empty:
@@ -108,7 +73,6 @@ def main() -> None:
         tail = row["tail"]
         q = float(row["threshold_quantile"])
         log.info("=== EOT global maps: tail=%s, q=%.4f ===", tail, q)
-
         for name, fn in plot_fns:
             try:
                 out = fn(grid_config, tail, q, refresh=args.refresh)

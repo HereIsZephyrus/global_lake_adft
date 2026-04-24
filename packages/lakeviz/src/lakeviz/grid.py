@@ -1,4 +1,11 @@
-"""0.5-degree grid binning and aggregation for global lake event maps."""
+"""Grid aggregation utilities for global lake maps.
+
+Provides two approaches:
+  - ``build_grid_counts`` / ``build_grid_stats``: Python-side aggregation
+    from raw event DataFrames (kept for backward compatibility).
+  - ``agg_to_grid_matrix``: Convert SQL-side aggregated results into a
+    2D numpy matrix suitable for ``pcolormesh`` rendering.
+"""
 
 from __future__ import annotations
 
@@ -12,23 +19,6 @@ def build_grid_counts(
     df: pd.DataFrame,
     resolution: float = 0.5,
 ) -> gpd.GeoDataFrame:
-    """Bin lake events into a regular lat/lon grid and compute per-cell statistics.
-
-    Each grid cell contains:
-    - lake_count: number of unique lakes in the cell
-    - event_count: total number of events in the cell
-    - mean_per_lake: event_count / lake_count (average events per lake)
-
-    Args:
-        df: DataFrame with columns [hylak_id, lat, lon].
-            Additional columns (e.g. event_type, transition_type) are preserved
-            but not used in aggregation.
-        resolution: Grid cell size in degrees (default 0.5).
-
-    Returns:
-        GeoDataFrame with columns [geometry, lake_count, event_count, mean_per_lake].
-        Only cells with at least one lake are included.
-    """
     if df.empty:
         return gpd.GeoDataFrame(
             columns=["geometry", "lake_count", "event_count", "mean_per_lake"],
@@ -58,7 +48,7 @@ def build_grid_counts(
 
         lon_min = lon_bins[lo]
         lon_max = lon_bins[lo + 1]
-        lat_min = lat_bins[li]
+        lat_min = lon_bins[li]
         lat_max = lat_bins[li + 1]
 
         polygon = Polygon([
@@ -101,19 +91,6 @@ def build_grid_stats(
     agg_specs: dict[str, tuple[str, str]],
     resolution: float = 0.5,
 ) -> gpd.GeoDataFrame:
-    """Bin lake data into a regular lat/lon grid with custom aggregation.
-
-    Args:
-        df: DataFrame with columns [hylak_id, lat, lon] plus value columns.
-        agg_specs: Mapping of output column name to (source_column, agg_method).
-            agg_method is one of "median", "mean", "sum", "std".
-            Example: {"median_xi": ("xi", "median"), "conv_rate": ("converged", "mean")}
-        resolution: Grid cell size in degrees (default 0.5).
-
-    Returns:
-        GeoDataFrame with columns [geometry, lake_count] + agg_specs keys.
-        Only cells with at least one lake are included.
-    """
     output_cols = list(agg_specs.keys())
 
     if df.empty:
@@ -180,3 +157,47 @@ def build_grid_stats(
         )
 
     return gpd.GeoDataFrame(rows, crs="EPSG:4326")
+
+
+def agg_to_grid_matrix(
+    agg_df: pd.DataFrame,
+    value_col: str,
+    resolution: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Convert SQL-side aggregated results to a 2D grid matrix for pcolormesh.
+
+    Args:
+        agg_df: DataFrame with columns [cell_lat, cell_lon, value_col].
+            Produced by ``fetch_*_grid_agg`` functions in lakesource readers.
+        value_col: Column to map into the grid matrix.
+        resolution: Grid cell size in degrees.
+
+    Returns:
+        Tuple of (lons, lats, values) where:
+        - lons: 1D array of cell-center longitudes (n_lon,)
+        - lats: 1D array of cell-center latitudes (n_lat,)
+        - values: 2D array of shape (n_lat, n_lon), NaN where no data.
+    """
+    n_lon = int(360 / resolution)
+    n_lat = int(180 / resolution)
+
+    lons = np.linspace(-180 + resolution / 2, 180 - resolution / 2, n_lon)
+    lats = np.linspace(-90 + resolution / 2, 90 - resolution / 2, n_lat)
+
+    values = np.full((n_lat, n_lon), np.nan, dtype=float)
+
+    if agg_df.empty or value_col not in agg_df.columns:
+        return lons, lats, values
+
+    for _, row in agg_df.iterrows():
+        lat_val = float(row["cell_lat"])
+        lon_val = float(row["cell_lon"])
+        val = float(row[value_col])
+
+        lat_idx = int(round((lat_val + 90) / resolution))
+        lon_idx = int(round((lon_val + 180) / resolution))
+
+        if 0 <= lat_idx < n_lat and 0 <= lon_idx < n_lon:
+            values[lat_idx, lon_idx] = val
+
+    return lons, lats, values

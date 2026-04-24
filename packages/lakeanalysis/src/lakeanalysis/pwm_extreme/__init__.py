@@ -46,10 +46,19 @@ from lakesource.pwm_extreme.schema import (
     PWMExtremeMonthResult,
     PWMExtremeResult,
 )
-from lakeviz.pwm_extreme import (
-    plot_pwm_extreme_quantile_functions,
-    plot_pwm_extreme_threshold_summary,
-)
+
+
+def __getattr__(name: str):
+    if name in ("plot_pwm_extreme_quantile_functions", "plot_pwm_extreme_threshold_summary"):
+        from lakeviz.pwm_extreme import (
+            plot_pwm_extreme_quantile_functions,
+            plot_pwm_extreme_threshold_summary,
+        )
+        return {
+            "plot_pwm_extreme_quantile_functions": plot_pwm_extreme_quantile_functions,
+            "plot_pwm_extreme_threshold_summary": plot_pwm_extreme_threshold_summary,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "CURRENT_PWM_EXTREME_WORKFLOW_VERSION",

@@ -1,8 +1,8 @@
-"""Generate global distribution maps for quantile-based identification results.
+"""Generate global distribution maps for PWM extreme quantile results.
 
 Usage:
-    uv run python scripts/plot_quantile_global.py
-    uv run python scripts/plot_quantile_global.py --refresh
+    uv run python scripts/plot_pwm_extreme_global.py
+    uv run python scripts/plot_pwm_extreme_global.py --refresh
 """
 
 from __future__ import annotations
@@ -17,11 +17,10 @@ from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakeviz.config import GlobalGridConfig
 from lakeviz.plot_config import setup_chinese_font
-from lakeviz.quantile import (
-    plot_extremes_by_type_map,
-    plot_extremes_density_map,
-    plot_transition_by_type_map,
-    plot_transition_density_map,
+from lakeviz.pwm_extreme import (
+    plot_pwm_convergence_map,
+    plot_pwm_threshold_high_map,
+    plot_pwm_threshold_low_map,
 )
 
 log = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate global quantile distribution maps.")
+    parser = argparse.ArgumentParser(description="Generate global PWM extreme distribution maps.")
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=DATA_DIR / "figures")
     parser.add_argument("--resolution", type=float, default=0.5)
@@ -47,12 +46,9 @@ def main() -> None:
     grid_config = GlobalGridConfig(source=source, resolution=args.resolution, output_dir=args.output_dir)
 
     plot_fns = [
-        ("extremes_density", lambda: plot_extremes_density_map(grid_config, refresh=args.refresh)),
-        ("extremes_high", lambda: plot_extremes_by_type_map(grid_config, "high", refresh=args.refresh)),
-        ("extremes_low", lambda: plot_extremes_by_type_map(grid_config, "low", refresh=args.refresh)),
-        ("transition_density", lambda: plot_transition_density_map(grid_config, refresh=args.refresh)),
-        ("transition_low_to_high", lambda: plot_transition_by_type_map(grid_config, "low_to_high", refresh=args.refresh)),
-        ("transition_high_to_low", lambda: plot_transition_by_type_map(grid_config, "high_to_low", refresh=args.refresh)),
+        ("convergence_rate", lambda: plot_pwm_convergence_map(grid_config, refresh=args.refresh)),
+        ("threshold_high", lambda: plot_pwm_threshold_high_map(grid_config, refresh=args.refresh)),
+        ("threshold_low", lambda: plot_pwm_threshold_low_map(grid_config, refresh=args.refresh)),
     ]
 
     for name, fn in plot_fns:

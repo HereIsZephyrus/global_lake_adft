@@ -1,11 +1,11 @@
-"""Cartopy-based global distribution maps for lake events."""
+"""Cartopy-based global distribution maps using pcolormesh."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
-import geopandas as gpd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
@@ -15,25 +15,29 @@ log = logging.getLogger(__name__)
 
 
 def plot_global_grid(
-    grid_gdf: gpd.GeoDataFrame,
-    value_col: str = "mean_per_lake",
+    lons: np.ndarray,
+    lats: np.ndarray,
+    values: np.ndarray,
     title: str = "",
     cmap: str = "YlOrRd",
     log_scale: bool = True,
     vmin: float | None = None,
     vmax: float | None = None,
+    cbar_label: str = "",
     output_path: Path | None = None,
 ) -> plt.Figure:
-    """Plot a global grid map using Robinson projection.
+    """Plot a global grid map using pcolormesh with Robinson projection.
 
     Args:
-        grid_gdf: GeoDataFrame from build_grid_counts with geometry and value columns.
-        value_col: Column name to visualize (default 'mean_per_lake').
+        lons: 1D array of cell-center longitudes (n_lon,).
+        lats: 1D array of cell-center latitudes (n_lat,).
+        values: 2D array of shape (n_lat, n_lon), NaN where no data.
         title: Figure title.
         cmap: Matplotlib colormap name.
         log_scale: Whether to use logarithmic color scale.
         vmin: Minimum value for color scale (auto if None).
         vmax: Maximum value for color scale (auto if None).
+        cbar_label: Colorbar label text.
         output_path: If provided, save figure to this path.
 
     Returns:
@@ -49,42 +53,34 @@ def plot_global_grid(
     ax.add_feature(cfeature.LAKES, facecolor="#d4e6f1", edgecolor="#666666", linewidth=0.2)
     ax.set_global()
 
-    if grid_gdf.empty or value_col not in grid_gdf.columns:
+    valid = values[~np.isnan(values)]
+    if len(valid) == 0:
         ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
         ax.set_title(title, fontsize=14)
         return fig
 
-    plot_gdf = grid_gdf.dropna(subset=[value_col])
-    if plot_gdf.empty:
-        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
-        ax.set_title(title, fontsize=14)
-        return fig
-
-    data = plot_gdf[value_col].to_numpy()
-    _vmin = vmin if vmin is not None else data[data > 0].min() if (data > 0).any() else 0.1
-    _vmax = vmax if vmax is not None else data.max()
+    _vmin = vmin if vmin is not None else valid[valid > 0].min() if (valid > 0).any() else 0.1
+    _vmax = vmax if vmax is not None else valid.max()
 
     if log_scale and _vmin > 0:
         norm = mcolors.LogNorm(vmin=_vmin, vmax=_vmax)
     else:
         norm = mcolors.Normalize(vmin=_vmin, vmax=_vmax)
 
-    plot_gdf.plot(
-        column=value_col,
-        ax=ax,
+    mesh = ax.pcolormesh(
+        lons,
+        lats,
+        values,
+        transform=ccrs.PlateCarree(),
         norm=norm,
         cmap=cmap,
-        edgecolor="none",
-        linewidth=0,
-        transform=ccrs.PlateCarree(),
+        shading="auto",
     )
 
     ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
 
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, orientation="horizontal", pad=0.05, shrink=0.6, aspect=30)
-    cbar.set_label("Events per lake" if value_col == "mean_per_lake" else value_col, fontsize=10)
+    cbar = fig.colorbar(mesh, ax=ax, orientation="horizontal", pad=0.05, shrink=0.6, aspect=30)
+    cbar.set_label(cbar_label, fontsize=10)
 
     ax.set_title(title, fontsize=14)
 
