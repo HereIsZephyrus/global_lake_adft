@@ -1,11 +1,9 @@
-"""Project-level matplotlib configuration (fonts, etc.)."""
+"""Backward-compatible re-export — use ``lakeviz.style.presets.Theme.apply`` instead."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from .style.presets import Theme
 
 
 def setup_chinese_font() -> None:
-    """Use Unifont for CJK labels and fix minus sign rendering."""
-    plt.rcParams["font.sans-serif"] = ["Unifont", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
+    Theme.apply()

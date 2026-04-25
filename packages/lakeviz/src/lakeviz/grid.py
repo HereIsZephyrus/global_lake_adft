@@ -48,7 +48,7 @@ def build_grid_counts(
 
         lon_min = lon_bins[lo]
         lon_max = lon_bins[lo + 1]
-        lat_min = lon_bins[li]
+        lat_min = lat_bins[li]
         lat_max = lat_bins[li + 1]
 
         polygon = Polygon([

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import matplotlib
 
+from lakeviz.style.presets import Theme
+
 
 def setup_web_backend() -> None:
     """Configure matplotlib for web/API use: Agg backend + CJK font support.
@@ -12,7 +14,4 @@ def setup_web_backend() -> None:
     figure is created.  Idempotent — repeated calls are safe.
     """
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    plt.rcParams["font.sans-serif"] = ["Unifont", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
+    Theme.apply()

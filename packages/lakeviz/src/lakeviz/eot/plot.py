@@ -13,9 +13,7 @@ import numpy as np
 import pandas as pd
 
 from lakeviz.plot_config import setup_chinese_font
-from lakeviz.primitives import annotate_point
-
-setup_chinese_font()
+from lakeviz.draw.annotate import draw_annotate_point
 
 
 def plot_mrl(mrl_df: pd.DataFrame) -> plt.Figure:
@@ -228,14 +226,14 @@ def plot_eot_extremes_from_db(
             high["severity"] = high["water_area"] - high["threshold_at_event"]
             top_high = high.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_high.iterrows():
-                annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color="tomato")
+                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color="tomato")
 
         if not low.empty:
             ax.scatter(low["date"], low["water_area"], color="seagreen", marker="v", s=42, zorder=4, label="低值异常(EOT)")
             low["severity"] = low["threshold_at_event"] - low["water_area"]
             top_low = low.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_low.iterrows():
-                annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color="seagreen")
+                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color="seagreen")
 
     ax.set_xlabel("时间")
     ax.set_ylabel("湖泊水面积(m²)")
@@ -310,14 +308,14 @@ def plot_extremes_with_hawkes(
             high["severity"] = high["water_area"] - high["threshold_at_event"]
             top_high = high.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_high.iterrows():
-                annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color="#E74C3C")
+                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color="#E74C3C")
 
         if not low.empty:
             ax.scatter(low["date"], low["water_area"], color="#27AE60", marker="v", s=55, zorder=4, label="EOT低值极端", edgecolors="#1E8449", linewidths=0.8)
             low["severity"] = low["threshold_at_event"] - low["water_area"]
             top_low = low.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_low.iterrows():
-                annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color="#27AE60")
+                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color="#27AE60")
 
     extra_handles: list[mpatches.Patch] = []
     if hawkes_df is not None and not hawkes_df.empty:
