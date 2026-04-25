@@ -2,7 +2,7 @@
 
 from .basic import BaseBasis, BasisFitRecord
 from .harmonic import HarmonicBasis
-from .plot import (
+from .plot_adapter import (
     plot_basis_fit,
     plot_candidate_scores,
     plot_residuals,

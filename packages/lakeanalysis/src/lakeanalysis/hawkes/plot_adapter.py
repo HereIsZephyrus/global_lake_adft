@@ -14,7 +14,7 @@ from lakeviz.hawkes import (
     plot_kernel_matrix as _plot_kernel_matrix,
     plot_lrt_summary as _plot_lrt_summary,
 )
-from .types import HawkesFitResult, LRTResult
+from .types import HawkesFitResult
 
 
 def plot_event_timeline(events_table):

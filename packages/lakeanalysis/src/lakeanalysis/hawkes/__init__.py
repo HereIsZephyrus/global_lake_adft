@@ -9,7 +9,7 @@ from .fit import (
     run_model_comparison,
 )
 from .model import evaluate_intensity_decomposition
-from .plot import (
+from .plot_adapter import (
     plot_event_timeline,
     plot_intensity_decomposition,
     plot_kernel_matrix,

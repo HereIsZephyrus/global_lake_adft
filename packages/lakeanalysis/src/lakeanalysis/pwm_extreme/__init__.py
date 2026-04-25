@@ -30,7 +30,7 @@ from .diagnostics import (
     pwm_constraint_residuals,
     quantile_function_curve,
 )
-from .plot import (
+from .plot_adapter import (
     plot_quantile_functions,
     plot_threshold_summary,
 )

@@ -8,7 +8,7 @@ from lakeanalysis.basemodel import (
 )
 from .diagnostics import ModelChecker, ReturnLevelEstimator
 from .estimation import EOTEstimator, FitResult, LocationModel, NHPPFitter, NHPPLogLikelihood
-from .plot import (
+from .plot_adapter import (
     plot_eot_extremes_from_db,
     plot_extremes_timeline,
     plot_location_model,
