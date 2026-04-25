@@ -1,258 +1,192 @@
-from pathlib import Path
+"""Tests for the unified batch framework (quantile calculator + engine)."""
+
+from __future__ import annotations
 
 import pandas as pd
 
-import lakeanalysis.quantile.batch as batch_module
-from lakeanalysis.quantile import (
-    QuantileBatchConfig,
+from lakesource.quantile.schema import (
+    CURRENT_QUANTILE_WORKFLOW_VERSION,
     QuantileResult,
     QuantileServiceConfig,
-    process_chunk_lakes,
-    run_quantile_batch,
+    RUN_STATUS_DONE,
+    RUN_STATUS_ERROR,
 )
+from lakesource.quantile.store import make_run_status_row
+from lakeanalysis.batch import Engine, LakeTask, RangeFilter, RunReport
+from lakeanalysis.batch.calculator.quantile import QuantileCalculator
 
 
-def build_lake_map() -> dict[int, pd.DataFrame]:
-    base_rows = []
+def _make_series_df() -> pd.DataFrame:
+    rows = []
     for year, offset in ((2000, -10.0), (2001, 0.0), (2002, 10.0)):
         for month in range(1, 13):
-            base_rows.append(
-                {
-                    "year": year,
-                    "month": month,
-                    "water_area": 100.0 + month + offset,
-                }
-            )
-    return {
-        101: pd.DataFrame(base_rows),
-        202: pd.DataFrame(base_rows),
-    }
+            rows.append({"year": year, "month": month, "water_area": 100.0 + month + offset})
+    return pd.DataFrame(rows)
 
 
-def test_batch_config_exposes_service_config() -> None:
-    config = QuantileBatchConfig(
-        output_root=Path("tmp"),
-        workflow_version=" test-v1 ",
+def test_quantile_calculator_run() -> None:
+    calc = QuantileCalculator(
         min_valid_per_month=3,
         min_valid_observations=36,
     )
-    assert config.workflow_version == "test-v1"
-    assert config.service_config == QuantileServiceConfig(
+    task = LakeTask(hylak_id=42, series_df=_make_series_df(), frozen_year_months=frozenset())
+    result = calc.run(task)
+    assert isinstance(result, QuantileResult)
+    assert result.hylak_id == 42
+
+
+def test_quantile_calculator_result_to_rows() -> None:
+    calc = QuantileCalculator(
         min_valid_per_month=3,
         min_valid_observations=36,
     )
+    task = LakeTask(hylak_id=42, series_df=_make_series_df(), frozen_year_months=frozenset())
+    result = calc.run(task)
+    rows = calc.result_to_rows(result)
+
+    assert "quantile_labels" in rows
+    assert "quantile_extremes" in rows
+    assert "quantile_abrupt_transitions" in rows
+    assert "quantile_run_status" in rows
+    assert len(rows["quantile_run_status"]) == 1
+    assert rows["quantile_run_status"][0]["status"] == RUN_STATUS_DONE
+    assert rows["quantile_run_status"][0]["hylak_id"] == 42
 
 
-def test_process_chunk_lakes_isolates_errors_and_skips_processed_ids() -> None:
-    lake_map = build_lake_map()
+def test_quantile_calculator_error_to_rows() -> None:
+    calc = QuantileCalculator()
+    rows = calc.error_to_rows(99, ValueError("boom"), 0, 1000)
 
-    def fake_run_single(
-        series_df, *, hylak_id, config, frozen_year_months, use_frozen_mask
-    ):
-        assert frozen_year_months is None
-        assert use_frozen_mask is False
-        if hylak_id == 202:
-            raise ValueError("boom")
-        labels_df = pd.DataFrame(
-            [
-                {
-                    "hylak_id": hylak_id,
-                    "year": 2000,
-                    "month": 1,
-                    "water_area": 1.0,
-                    "monthly_climatology": 1.0,
-                    "anomaly": 0.0,
-                    "q_low": -1.0,
-                    "q_high": 1.0,
-                    "extreme_label": "normal",
-                }
-            ]
-        )
-        return QuantileResult(
-            hylak_id=hylak_id,
-            climatology_df=pd.DataFrame(),
-            labels_df=labels_df,
-            extremes_df=pd.DataFrame(),
-            transitions_df=pd.DataFrame(),
-            q_low=-1.0,
-            q_high=1.0,
-        )
+    assert "quantile_run_status" in rows
+    assert len(rows["quantile_run_status"]) == 1
+    assert rows["quantile_run_status"][0]["status"] == RUN_STATUS_ERROR
+    assert rows["quantile_run_status"][0]["hylak_id"] == 99
+    assert "boom" in rows["quantile_run_status"][0]["error_message"]
 
-    payload = process_chunk_lakes(
-        lake_map,
+
+def test_range_filter() -> None:
+    rf = RangeFilter(start=10, end=20)
+    assert rf(range(0, 30)) == set(range(10, 20))
+
+    rf_no_end = RangeFilter(start=5)
+    assert rf_no_end(range(0, 10)) == set(range(5, 10))
+
+    rf_no_start = RangeFilter(end=5)
+    assert rf_no_start(range(0, 10)) == set(range(0, 5))
+
+
+def test_engine_single_process_with_mocks() -> None:
+    from lakeanalysis.batch.engine import Calculator, Reader, Writer
+
+    class FakeReader(Reader):
+        def fetch_lake_map(self, cs, ce):
+            return {i: _make_series_df() for i in range(cs, min(ce, 10))}
+
+        def fetch_frozen_map(self, cs, ce):
+            return {}
+
+        def fetch_done_ids(self, cs, ce):
+            return {0, 1}
+
+        def max_hylak_id(self):
+            return 9
+
+        def ensure_schema(self):
+            pass
+
+    class FakeWriter(Writer):
+        def __init__(self):
+            self.rows = {}
+
+        def persist(self, rows_by_table):
+            for k, v in rows_by_table.items():
+                self.rows.setdefault(k, []).extend(v)
+
+    class FakeCalculator(Calculator):
+        def run(self, task):
+            return {"hylak_id": task.hylak_id}
+
+        def result_to_rows(self, result):
+            return {"mock": [{"hylak_id": result["hylak_id"]}]}
+
+        def error_to_rows(self, hylak_id, error, cs, ce):
+            return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
+
+    writer = FakeWriter()
+    engine = Engine(
+        reader=FakeReader(),
+        writer=writer,
+        calculator=FakeCalculator(),
+        chunk_size=5,
+    )
+    report = engine.run()
+
+    assert report.total_chunks == 2
+    assert report.success_lakes == 8
+    assert report.skipped_lakes == 2
+    assert len(writer.rows.get("mock", [])) == 8
+
+
+def test_engine_skips_all_done_lakes() -> None:
+    from lakeanalysis.batch.engine import Calculator, Reader, Writer
+
+    class AllDoneReader(Reader):
+        def fetch_lake_map(self, cs, ce):
+            return {0: _make_series_df(), 1: _make_series_df()}
+
+        def fetch_frozen_map(self, cs, ce):
+            return {}
+
+        def fetch_done_ids(self, cs, ce):
+            return {0, 1}
+
+        def max_hylak_id(self):
+            return 1
+
+        def ensure_schema(self):
+            pass
+
+    class FakeWriter(Writer):
+        def persist(self, rows_by_table):
+            pass
+
+    class FakeCalculator(Calculator):
+        def run(self, task):
+            return {}
+
+        def result_to_rows(self, result):
+            return {}
+
+        def error_to_rows(self, hylak_id, error, cs, ce):
+            return {}
+
+    engine = Engine(reader=AllDoneReader(), writer=FakeWriter(), calculator=FakeCalculator(), chunk_size=5)
+    report = engine.run()
+
+    assert report.skipped_lakes == 2
+    assert report.success_lakes == 0
+
+
+def test_make_run_status_row_done() -> None:
+    row = make_run_status_row(
+        hylak_id=42,
         chunk_start=0,
         chunk_end=1000,
         workflow_version="test-v1",
-        service_config=QuantileServiceConfig(
-            min_valid_per_month=3,
-            min_valid_observations=36,
-        ),
-        processed_hylak_ids={101},
-        run_single_fn=fake_run_single,
+        status=RUN_STATUS_DONE,
     )
-
-    assert payload.skipped_lakes == 1
-    assert payload.success_lakes == 0
-    assert payload.error_lakes == 1
-    assert len(payload.status_rows) == 1
-    assert payload.status_rows[0]["hylak_id"] == 202
-    assert payload.status_rows[0]["status"] == "error"
-    assert payload.status_rows[0]["workflow_version"] == "test-v1"
+    assert row["status"] == "done"
+    assert row["hylak_id"] == 42
 
 
-def test_run_batch_rebuilds_summary_cache_from_db_aggregates(
-    monkeypatch, tmp_path: Path
-) -> None:
-    class DummyContext:
-        def __enter__(self):
-            return object()
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    class DummySeriesDB:
-        @staticmethod
-        def connection_context():
-            return DummyContext()
-
-    summary_payload = {
-        "transition_counts": pd.DataFrame(
-            [{"transition_type": "low_to_high", "count": 2}]
-        ),
-        "transition_seasonality": pd.DataFrame([{"to_month": 7, "count": 2}]),
-        "lake_transition_counts": pd.DataFrame(
-            [{"hylak_id": 101, "transition_count": 2}]
-        ),
-        "lake_extreme_counts": pd.DataFrame([{"hylak_id": 101, "extreme_count": 4}]),
-        "run_metadata": {"labels_rows": 24, "extremes_rows": 4, "transitions_rows": 2},
-    }
-    captured: dict[str, object] = {}
-
-    monkeypatch.setattr(batch_module, "series_db", DummySeriesDB())
-    monkeypatch.setattr(
-        batch_module, "ensure_quantile_tables", lambda conn: None
+def test_make_run_status_row_error() -> None:
+    row = make_run_status_row(
+        hylak_id=42,
+        chunk_start=0,
+        chunk_end=1000,
+        workflow_version="test-v1",
+        status=RUN_STATUS_ERROR,
+        error_message="boom",
     )
-    monkeypatch.setattr(batch_module, "fetch_max_hylak_id", lambda conn: 999)
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_source_hylak_ids_in_chunk",
-        lambda conn, start, end: {101, 202},
-    )
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_processed_hylak_ids_in_chunk",
-        lambda conn, start, end, workflow_version: {101, 202},
-    )
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_summary_cache_sources",
-        lambda conn, workflow_version: summary_payload,
-    )
-
-    def fail_fetch_lake_area_chunk(conn, chunk_start, chunk_end):
-        raise AssertionError(
-            "chunk data should not be fetched when the chunk is already processed"
-        )
-
-    def fake_write_summary_cache(cache_root, **kwargs):
-        captured["cache_root"] = cache_root
-        captured["payload"] = kwargs
-        return {"run_metadata": cache_root / "run_metadata.json"}
-
-    monkeypatch.setattr(
-        batch_module, "fetch_lake_area_chunk", fail_fetch_lake_area_chunk
-    )
-    monkeypatch.setattr(batch_module, "write_summary_cache", fake_write_summary_cache)
-
-    report = run_quantile_batch(
-        QuantileBatchConfig(
-            output_root=tmp_path,
-            chunk_size=1000,
-            plot_summary=False,
-        )
-    )
-
-    assert report.total_chunks == 1
-    assert report.processed_chunks == 0
-    assert report.skipped_chunks == 1
-    assert report.source_lakes == 2
-    assert captured["cache_root"] == tmp_path / "summary_cache"
-    assert captured["payload"] == summary_payload
-
-
-def test_run_batch_does_not_skip_chunk_when_processed_ids_only_match_by_count(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    class DummyContext:
-        def __enter__(self):
-            return object()
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    class DummySeriesDB:
-        @staticmethod
-        def connection_context():
-            return DummyContext()
-
-    payload = batch_module.ChunkProcessPayload(
-        label_rows=[],
-        extreme_rows=[],
-        transition_rows=[],
-        status_rows=[],
-        skipped_lakes=0,
-        success_lakes=0,
-        error_lakes=0,
-        summary=batch_module.SummaryAccumulator(),
-    )
-
-    monkeypatch.setattr(batch_module, "series_db", DummySeriesDB())
-    monkeypatch.setattr(
-        batch_module, "ensure_quantile_tables", lambda conn: None
-    )
-    monkeypatch.setattr(batch_module, "fetch_max_hylak_id", lambda conn: 999)
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_source_hylak_ids_in_chunk",
-        lambda conn, start, end: {101, 202},
-    )
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_processed_hylak_ids_in_chunk",
-        lambda conn, start, end, workflow_version: {101, 303},
-    )
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_lake_area_chunk",
-        lambda conn, start, end: {202: pd.DataFrame()},
-    )
-    monkeypatch.setattr(
-        batch_module, "process_chunk_lakes", lambda *args, **kwargs: payload
-    )
-    monkeypatch.setattr(batch_module, "_persist_chunk_payload", lambda payload: None)
-    monkeypatch.setattr(
-        batch_module,
-        "fetch_summary_cache_sources",
-        lambda conn, workflow_version: {
-            "transition_counts": pd.DataFrame(),
-            "transition_seasonality": pd.DataFrame(),
-            "lake_transition_counts": pd.DataFrame(),
-            "lake_extreme_counts": pd.DataFrame(),
-            "run_metadata": {},
-        },
-    )
-    monkeypatch.setattr(
-        batch_module, "write_summary_cache", lambda cache_root, **kwargs: {}
-    )
-
-    report = run_quantile_batch(
-        QuantileBatchConfig(
-            output_root=tmp_path,
-            chunk_size=1000,
-            plot_summary=False,
-        )
-    )
-
-    assert report.processed_chunks == 1
-    assert report.skipped_chunks == 0
+    assert row["status"] == "error"
+    assert row["error_message"] == "boom"

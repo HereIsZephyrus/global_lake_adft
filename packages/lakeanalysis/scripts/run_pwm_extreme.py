@@ -1,4 +1,4 @@
-"""Run EOT batch computation via unified batch framework."""
+"""Run PWM extreme batch computation via unified batch framework."""
 
 from __future__ import annotations
 
@@ -15,41 +15,30 @@ log = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run EOT batch computation.",
+        description="Run PWM extreme batch computation.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--chunk-size", type=int, default=10_000)
     parser.add_argument("--limit-id", type=int, default=None)
     parser.add_argument("--id-start", type=int, default=0)
     parser.add_argument("--id-end", type=int, default=None)
-    parser.add_argument(
-        "--tail",
-        choices=["high", "low", "both"],
-        default="both",
-    )
-    parser.add_argument(
-        "--threshold-quantiles",
-        nargs="+",
-        type=float,
-        default=[0.95, 0.98],
-    )
+    parser.add_argument("--min-valid-per-month", type=int, default=None)
+    parser.add_argument("--min-valid-observations", type=int, default=None)
     parser.add_argument("--io-budget", type=int, default=4, help="Max concurrent DB IO workers.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    Logger("run_eot")
-
-    tails = ["high", "low"] if args.tail == "both" else [args.tail]
+    Logger("run_pwm_extreme")
 
     factory = DBIOFactory()
-    reader = factory.create_reader("eot", workflow_version="eot-nhpp-v1")
-    writer = factory.create_writer("eot")
+    reader = factory.create_reader("pwm_extreme", workflow_version="pwm-extreme-v1")
+    writer = factory.create_writer("pwm_extreme")
     calculator = CalculatorFactory.create(
-        "eot",
-        tails=tails,
-        quantiles=args.threshold_quantiles,
+        "pwm_extreme",
+        min_valid_per_month=args.min_valid_per_month,
+        min_valid_observations=args.min_valid_observations,
     )
 
     lake_filter = None
