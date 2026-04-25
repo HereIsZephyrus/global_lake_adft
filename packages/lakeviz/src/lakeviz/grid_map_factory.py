@@ -1,9 +1,8 @@
 """Factory for global grid distribution maps — eliminates repeated boilerplate.
 
 Each domain sub-package (quantile, eot, pwm_extreme) follows the same
-pattern: fetch aggregated data → filter → convert to grid matrix →
-draw on a geographic ax → save.  This module provides ``make_grid_map``
-to generate those functions from a declarative config.
+pattern: fetch aggregated data via LakeProvider → filter → convert to
+grid matrix → draw on a geographic ax → save.
 """
 
 from __future__ import annotations
@@ -40,8 +39,8 @@ def make_grid_map(
     Parameters
     ----------
     fetch_fn:
-        Callable that returns a DataFrame from lakesource.
-        Signature: ``fetch_fn(source_config, resolution, *, refresh, data_dir, **kwargs) -> pd.DataFrame``
+        Callable that returns a DataFrame from LakeProvider.
+        Signature: ``fetch_fn(provider, resolution, *, refresh, **kwargs) -> pd.DataFrame``
     value_col:
         Column in the aggregated DataFrame to map into the grid.
     title:
@@ -67,7 +66,7 @@ def make_grid_map(
     Returns
     -------
     A callable with signature:
-        ``(config: GlobalGridConfig, *, refresh=False, data_dir=None, min_lakes=1) -> Path``
+        ``(config: GlobalGridConfig, *, refresh=False, min_lakes=1) -> Path``
     """
     _extra = extra_fetch_kwargs or {}
 
@@ -75,10 +74,9 @@ def make_grid_map(
         config: GlobalGridConfig,
         *,
         refresh: bool = False,
-        data_dir: Path | None = None,
         min_lakes: int = 1,
     ) -> Path:
-        agg = fetch_fn(config.source, config.resolution, refresh=refresh, data_dir=data_dir, **_extra)
+        agg = fetch_fn(config.provider, config.resolution, refresh=refresh, **_extra)
         if min_lakes > 1:
             agg = agg[agg["lake_count"] >= min_lakes]
         if pre_filter_fn is not None:
