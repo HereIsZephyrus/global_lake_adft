@@ -10,6 +10,8 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from lakesource.provider import LakeProvider
+
 from .protocol import RunReport, _iter_chunk_ranges
 
 log = logging.getLogger(__name__)
@@ -40,28 +42,6 @@ class RangeFilter(LakeFilter):
         return ids
 
 
-class Reader(ABC):
-    @abstractmethod
-    def fetch_lake_map(self, chunk_start: int, chunk_end: int) -> dict[int, pd.DataFrame]: ...
-
-    def fetch_frozen_map(self, chunk_start: int, chunk_end: int) -> dict[int, set[int]]:
-        return {}
-
-    @abstractmethod
-    def fetch_done_ids(self, chunk_start: int, chunk_end: int) -> set[int]: ...
-
-    @abstractmethod
-    def max_hylak_id(self) -> int: ...
-
-    @abstractmethod
-    def ensure_schema(self) -> None: ...
-
-
-class Writer(ABC):
-    @abstractmethod
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None: ...
-
-
 class Calculator(ABC):
     @abstractmethod
     def run(self, task: LakeTask) -> Any: ...
@@ -78,18 +58,18 @@ class Calculator(ABC):
 class Engine:
     def __init__(
         self,
-        reader: Reader,
-        writer: Writer,
+        provider: LakeProvider,
         calculator: Calculator,
         *,
+        algorithm: str = "quantile",
         lake_filter: LakeFilter | None = None,
         chunk_size: int = 10_000,
         limit_id: int | None = None,
         io_budget: int = 4,
     ) -> None:
-        self._reader = reader
-        self._writer = writer
+        self._provider = provider
         self._calculator = calculator
+        self._algorithm = algorithm
         self._lake_filter = lake_filter
         self._chunk_size = chunk_size
         self._limit_id = limit_id
@@ -114,28 +94,28 @@ class Engine:
         from .worker import Worker
 
         if rank == 0:
-            self._reader.ensure_schema()
-            max_id = self._reader.max_hylak_id()
+            self._provider.ensure_schema(self._algorithm)
+            max_id = self._provider.fetch_max_hylak_id()
             manager = Manager(comm, size, self._io_budget)
             return manager.run(max_id, self._chunk_size, self._limit_id)
 
         assignments = comm.bcast(None, root=0)
         worker = Worker(
-            rank, self._reader, self._calculator,
-            self._writer, self._chunk_size,
+            rank, self._provider, self._algorithm,
+            self._calculator, self._chunk_size,
         )
         worker.run(comm, assignments)
         comm.bcast(None, root=0)
         return None
 
     def _run_single(self) -> RunReport:
-        self._reader.ensure_schema()
-        max_id = self._reader.max_hylak_id()
+        self._provider.ensure_schema(self._algorithm)
+        max_id = self._provider.fetch_max_hylak_id()
         chunk_ranges = _iter_chunk_ranges(max_id, self._chunk_size, self._limit_id)
         report = RunReport(total_chunks=len(chunk_ranges))
 
         for chunk_start, chunk_end in chunk_ranges:
-            lake_map = self._reader.fetch_lake_map(chunk_start, chunk_end)
+            lake_map = self._provider.fetch_lake_area_chunk(chunk_start, chunk_end)
             if not lake_map:
                 report.skipped_chunks += 1
                 continue
@@ -143,7 +123,9 @@ class Engine:
             candidate_ids = set(lake_map.keys())
             if self._lake_filter:
                 candidate_ids = candidate_ids & self._lake_filter(candidate_ids)
-            done_ids = self._reader.fetch_done_ids(chunk_start, chunk_end)
+            done_ids = self._provider.fetch_done_ids(
+                self._algorithm, chunk_start, chunk_end
+            )
             pending_ids = candidate_ids - done_ids
 
             if not pending_ids:
@@ -152,7 +134,9 @@ class Engine:
                 report.skipped_lakes += len(candidate_ids)
                 continue
 
-            frozen_map = self._reader.fetch_frozen_map(chunk_start, chunk_end)
+            frozen_map = self._provider.fetch_frozen_year_months_chunk(
+                chunk_start, chunk_end
+            )
             report.source_lakes += len(candidate_ids)
             report.skipped_lakes += len(candidate_ids) - len(pending_ids)
 
@@ -176,7 +160,7 @@ class Engine:
                     report.error_lakes += 1
 
             if any(all_rows.values()):
-                self._writer.persist(dict(all_rows))
+                self._provider.persist(dict(all_rows))
             report.processed_chunks += 1
             log.info(
                 "Chunk [%d, %d): source=%d skip=%d success=%d error=%d",

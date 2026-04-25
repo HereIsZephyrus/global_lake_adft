@@ -1,4 +1,4 @@
-"""Worker: state-machine driven lake computation with own reader/calculator/writer.
+"""Worker: state-machine driven lake computation with own provider/calculator.
 
 State machine:
     pending ──TRIGGER_READ──▶ reading ──(auto)──▶ calculating ──(auto)──▶ pending
@@ -14,6 +14,8 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 
+from lakesource.provider import LakeProvider
+
 from .engine import LakeTask
 from .protocol import TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges
 
@@ -24,15 +26,15 @@ class Worker:
     def __init__(
         self,
         rank: int,
-        reader,
+        provider: LakeProvider,
+        algorithm: str,
         calculator,
-        writer,
         chunk_size: int,
     ) -> None:
         self._rank = rank
-        self._reader = reader
+        self._provider = provider
+        self._algorithm = algorithm
         self._calculator = calculator
-        self._writer = writer
         self._chunk_size = chunk_size
 
     def run(self, comm, assignments: dict[int, tuple[int, int]]) -> None:
@@ -53,7 +55,7 @@ class Worker:
             comm.recv(source=0, tag=TAG_TRIGGER)
             self._send(comm, WorkerState.READING, {})
 
-            lake_map = self._reader.fetch_lake_map(cs, ce)
+            lake_map = self._provider.fetch_lake_area_chunk(cs, ce)
             if not lake_map:
                 self._send(comm, WorkerState.CALCULATING, {
                     "source": 0, "skipped": 0, "success": 0, "error": 0,
@@ -65,8 +67,8 @@ class Worker:
                 total_stats["chunks"] += 1
                 continue
 
-            frozen_map = self._reader.fetch_frozen_map(cs, ce)
-            done_ids = self._reader.fetch_done_ids(cs, ce)
+            frozen_map = self._provider.fetch_frozen_year_months_chunk(cs, ce)
+            done_ids = self._provider.fetch_done_ids(self._algorithm, cs, ce)
             candidate_ids = set(lake_map.keys())
             pending_ids = candidate_ids - done_ids
 
@@ -104,7 +106,7 @@ class Worker:
             self._send(comm, WorkerState.WRITING, {})
 
             if any(all_rows.values()):
-                self._writer.persist(dict(all_rows))
+                self._provider.persist(dict(all_rows))
 
             for k in ("source", "skipped", "success", "error"):
                 total_stats[k] += chunk_stats[k]

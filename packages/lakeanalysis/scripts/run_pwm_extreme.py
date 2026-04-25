@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import logging
 
+from lakesource.config import SourceConfig
+from lakesource.provider import create_provider
+
 from lakeanalysis.batch import Engine, RangeFilter
-from lakeanalysis.batch.io import DBIOFactory
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -32,9 +34,7 @@ def main() -> None:
     args = parse_args()
     Logger("run_pwm_extreme")
 
-    factory = DBIOFactory()
-    reader = factory.create_reader("pwm_extreme", workflow_version="pwm-extreme-v1")
-    writer = factory.create_writer("pwm_extreme")
+    provider = create_provider(SourceConfig())
     calculator = CalculatorFactory.create(
         "pwm_extreme",
         min_valid_per_month=args.min_valid_per_month,
@@ -46,9 +46,9 @@ def main() -> None:
         lake_filter = RangeFilter(start=args.id_start, end=args.id_end)
 
     engine = Engine(
-        reader=reader,
-        writer=writer,
+        provider=provider,
         calculator=calculator,
+        algorithm="pwm_extreme",
         lake_filter=lake_filter,
         chunk_size=args.chunk_size,
         limit_id=args.limit_id,
