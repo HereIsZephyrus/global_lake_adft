@@ -81,21 +81,21 @@ def export_lake_info_with_coords(output_dir: Path) -> None:
     with series_db.connection_context() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT hylak_id,
+                SELECT *,
                        ST_Y(centroid) AS lat,
-                       ST_X(centroid) AS lon,
-                       linear_trend,
-                       seasonal_amplitude,
-                       atlas_area
+                       ST_X(centroid) AS lon
                 FROM lake_info
             """)
             rows = cur.fetchall()
             colnames = [d.name for d in cur.description]
 
     df = pd.DataFrame(rows, columns=colnames)
+    drop_cols = [c for c in ("centroid", "geometry") if c in df.columns]
+    if drop_cols:
+        df = df.drop(columns=drop_cols)
     df.to_parquet(out_path, index=False)
     elapsed = time.time() - start
-    log.info("  lake_info: %d rows in %.2fs → %s", len(df), elapsed, out_path)
+    log.info("  lake_info: %d rows, %d cols in %.2fs → %s", len(df), len(df.columns), elapsed, out_path)
 
 
 def main() -> None:
