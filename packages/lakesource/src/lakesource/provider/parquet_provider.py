@@ -34,9 +34,23 @@ class ParquetLakeProvider(LakeProvider):
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, pd.DataFrame]:
         df = self._client.query_df(
-            "SELECT * FROM area_quality WHERE hylak_id >= ? AND hylak_id < ?",
+            """
+            SELECT la.hylak_id,
+                   YEAR(la.year_month)  AS year,
+                   MONTH(la.year_month) AS month,
+                   la.water_area
+            FROM lake_area la
+            JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+            WHERE la.hylak_id >= ? AND la.hylak_id < ?
+            ORDER BY la.hylak_id, la.year_month
+            """,
             parameters=[chunk_start, chunk_end],
         )
+        if df.empty:
+            return {}
+        df["year"] = df["year"].astype(int)
+        df["month"] = df["month"].astype(int)
+        df["water_area"] = df["water_area"].astype(float)
         return self._split_by_hylak_id(df)
 
     def fetch_lake_area_by_ids(self, id_list: list[int]) -> dict[int, pd.DataFrame]:
@@ -44,9 +58,23 @@ class ParquetLakeProvider(LakeProvider):
             return {}
         placeholders = ",".join("?" for _ in id_list)
         df = self._client.query_df(
-            f"SELECT * FROM area_quality WHERE hylak_id IN ({placeholders})",
+            f"""
+            SELECT la.hylak_id,
+                   YEAR(la.year_month)  AS year,
+                   MONTH(la.year_month) AS month,
+                   la.water_area
+            FROM lake_area la
+            JOIN area_quality aq ON aq.hylak_id = la.hylak_id
+            WHERE la.hylak_id IN ({placeholders})
+            ORDER BY la.hylak_id, la.year_month
+            """,
             parameters=id_list,
         )
+        if df.empty:
+            return {}
+        df["year"] = df["year"].astype(int)
+        df["month"] = df["month"].astype(int)
+        df["water_area"] = df["water_area"].astype(float)
         return self._split_by_hylak_id(df)
 
     def fetch_frozen_year_months_chunk(
@@ -253,11 +281,20 @@ class ParquetLakeProvider(LakeProvider):
         )
 
     # ------------------------------------------------------------------
-    # Writes (not supported)
+    # Writes
     # ------------------------------------------------------------------
 
     def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        raise NotImplementedError("ParquetLakeProvider is read-only; use PostgresLakeProvider for writes")
+        if not any(rows_by_table.values()):
+            return
+        for table_name, rows in rows_by_table.items():
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            parquet_path = self._data_dir / f"{table_name}.parquet"
+            df.to_parquet(parquet_path, index=False)
+            self._client.register_or_replace(table_name, parquet_path)
+            log.info("Persisted %d rows to %s", len(df), parquet_path)
 
     # ------------------------------------------------------------------
     # Schema management (no-op for parquet)
