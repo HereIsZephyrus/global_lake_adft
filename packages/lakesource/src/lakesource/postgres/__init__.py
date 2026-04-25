@@ -47,6 +47,7 @@ __all__ = [
     "upsert_entropy",
     "upsert_eot_extremes",
     "upsert_eot_results",
+    "upsert_eot_run_status",
     "upsert_hawkes_lrt",
     "upsert_hawkes_results",
     "upsert_hawkes_transition_monthly",
@@ -92,6 +93,7 @@ def __getattr__(name: str):
         "ensure_quantile_tables",
         "upsert_eot_results",
         "upsert_eot_extremes",
+        "upsert_eot_run_status",
         "upsert_hawkes_results",
         "upsert_hawkes_lrt",
         "upsert_hawkes_transition_monthly",
@@ -112,6 +114,7 @@ def __getattr__(name: str):
     "fetch_pwm_extreme_status_ids_in_range",
     "upsert_pwm_extreme_run_status",
     "upsert_pwm_extreme_thresholds",
+    "upsert_eot_run_status",
     "upsert_quantile_abrupt_transitions",
         "upsert_quantile_run_status",
     }

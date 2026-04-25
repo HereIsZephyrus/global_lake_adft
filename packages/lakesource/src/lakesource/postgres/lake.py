@@ -16,8 +16,6 @@ from lakesource.table_config import TableConfig
 log = logging.getLogger(__name__)
 
 _DEFAULT_LAKE_GEOMETRY_TABLE = "LakeATLAS_v10_pol"
-_LEGACY_WORKFLOW_VERSION = "legacy"
-
 _default_table_config = TableConfig.default()
 
 
@@ -312,6 +310,42 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 )
 
 
+def _ensure_eot_run_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id         BIGINT        NOT NULL,
+    chunk_start      BIGINT        NOT NULL,
+    chunk_end        BIGINT        NOT NULL,
+    workflow_version VARCHAR(64)   NOT NULL,
+    status           VARCHAR(16)   NOT NULL,
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ   DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version)
+);
+""").format(table=sql.Identifier(tc.series_table("eot_run_status")))
+
+
+def _upsert_eot_run_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, chunk_start, chunk_end, workflow_version, status, error_message, created_at
+) VALUES (
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(workflow_version)s, %(status)s, %(error_message)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    created_at    = now();
+""").format(
+    table=sql.Identifier(tc.series_table("eot_run_status")),
+    conflict_cols=sql.SQL(", ").join(
+        sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+    ),
+)
+
+
 def _ensure_hawkes_results_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
@@ -465,33 +499,6 @@ CREATE TABLE IF NOT EXISTS {table} (
 """).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
-def _ensure_quantile_status_workflow_column_sql(tc: TableConfig) -> sql.Composed:
-    return sql.SQL(
-        "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workflow_version TEXT"
-    ).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
-
-
-def _drop_quantile_status_pk_sql(tc: TableConfig) -> sql.Composed:
-    table_name = tc.series_table("quantile_run_status")
-    return sql.SQL(
-        "ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}"
-    ).format(
-        table=sql.Identifier(table_name),
-        constraint=sql.Identifier(f"{table_name}_pkey"),
-    )
-
-
-def _add_quantile_status_pk_sql(tc: TableConfig) -> sql.Composed:
-    return sql.SQL(
-        "ALTER TABLE {table} ADD PRIMARY KEY ({columns})"
-    ).format(
-        table=sql.Identifier(tc.series_table("quantile_run_status")),
-        columns=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
-        ),
-    )
-
-
 def _create_quantile_status_version_index_sql(tc: TableConfig) -> sql.Composed:
     table_name = tc.series_table("quantile_run_status")
     return sql.SQL(
@@ -502,15 +509,6 @@ def _create_quantile_status_version_index_sql(tc: TableConfig) -> sql.Composed:
     )
 
 
-def _quantile_versioned_tables(
-    tc: TableConfig,
-) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    return (
-        (tc.series_table("quantile_labels"), ("hylak_id", "workflow_version", "year", "month")),
-        (tc.series_table("quantile_extremes"), ("hylak_id", "workflow_version", "year", "month", "event_type")),
-        (tc.series_table("quantile_abrupt_transitions"), ("hylak_id", "workflow_version", "from_year", "from_month", "to_year", "to_month", "transition_type")),
-        (tc.series_table("quantile_run_status"), ("hylak_id", "workflow_version")),
-    )
 
 
 def _upsert_hawkes_results_sql(tc: TableConfig) -> sql.Composed:
@@ -1452,17 +1450,13 @@ def ensure_eot_results_table(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Create the eot_results and eot_extremes tables in SERIES_DB if they do not exist.
-
-    Args:
-        conn: An open psycopg connection to SERIES_DB.
-        table_config: Table name configuration.
-    """
+    """Create the eot_results, eot_extremes, and eot_run_status tables in SERIES_DB if they do not exist."""
     with conn.cursor() as cur:
         cur.execute(_ensure_eot_results_table_sql(table_config))
         cur.execute(_ensure_eot_extremes_table_sql(table_config))
+        cur.execute(_ensure_eot_run_status_table_sql(table_config))
     conn.commit()
-    log.debug("Ensured eot_results and eot_extremes tables exist")
+    log.debug("Ensured eot_results, eot_extremes, and eot_run_status tables exist")
 
 
 def upsert_eot_results(
@@ -1470,23 +1464,15 @@ def upsert_eot_results(
     rows: list[dict],
     *,
     table_config: TableConfig = _default_table_config,
+    commit: bool = True,
 ) -> None:
-    """Insert or update EOT fit result rows.
-
-    Each dict in rows must contain the keys:
-        hylak_id, tail, threshold_quantile,
-        converged, log_likelihood, threshold,
-        n_extremes, n_observations, n_frozen_months,
-        beta0, beta1, sin_1, cos_1, sigma, xi, error_message.
-
-    Args:
-        conn: An open psycopg connection to SERIES_DB.
-        rows: List of dicts, one per (hylak_id, tail, threshold_quantile) triple.
-        table_config: Table name configuration.
-    """
+    """Insert or update EOT fit result rows."""
+    if not rows:
+        return
     with conn.cursor() as cur:
         cur.executemany(_upsert_eot_results_sql(table_config), rows)
-    conn.commit()
+    if commit:
+        conn.commit()
     log.info("Upserted %d eot_results row(s)", len(rows))
 
 
@@ -1495,22 +1481,32 @@ def upsert_eot_extremes(
     rows: list[dict],
     *,
     table_config: TableConfig = _default_table_config,
+    commit: bool = True,
 ) -> None:
-    """Insert or update EOT extreme-event rows.
-
-    Each dict in rows must contain the keys:
-        hylak_id, tail, threshold_quantile, cluster_id,
-        cluster_size, year, month, water_area, threshold_at_event.
-
-    Args:
-        conn: An open psycopg connection to SERIES_DB.
-        rows: List of dicts, one per declustered extreme event.
-        table_config: Table name configuration.
-    """
+    """Insert or update EOT extreme-event rows."""
+    if not rows:
+        return
     with conn.cursor() as cur:
         cur.executemany(_upsert_eot_extremes_sql(table_config), rows)
-    conn.commit()
+    if commit:
+        conn.commit()
     log.info("Upserted %d eot_extremes row(s)", len(rows))
+
+
+def upsert_eot_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_eot_run_status_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d eot_run_status row(s)", len(rows))
 
 
 def ensure_hawkes_results_table(
@@ -1579,54 +1575,9 @@ def ensure_quantile_tables(
         cur.execute(_ensure_quantile_extremes_table_sql(table_config))
         cur.execute(_ensure_quantile_abrupt_table_sql(table_config))
         cur.execute(_ensure_quantile_status_table_sql(table_config))
-        _ensure_quantile_workflow_versioning(cur, table_config)
         cur.execute(_create_quantile_status_version_index_sql(table_config))
     conn.commit()
     log.debug("Ensured monthly transition tables exist")
-
-
-def _ensure_quantile_workflow_versioning(
-    cur: psycopg.Cursor,
-    table_config: TableConfig = _default_table_config,
-) -> None:
-    for table_name, primary_key_columns in _quantile_versioned_tables(table_config):
-        table_ident = sql.Identifier(table_name)
-        constraint_ident = sql.Identifier(f"{table_name}_pkey")
-        pk_columns_sql = sql.SQL(", ").join(
-            sql.Identifier(column_name) for column_name in primary_key_columns
-        )
-        cur.execute(
-            sql.SQL(
-                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS workflow_version TEXT"
-            ).format(
-                table=table_ident,
-            )
-        )
-        cur.execute(
-            sql.SQL(
-                "UPDATE {table} SET workflow_version = %s WHERE workflow_version IS NULL"
-            ).format(table=table_ident),
-            (_LEGACY_WORKFLOW_VERSION,),
-        )
-        cur.execute(
-            sql.SQL(
-                "ALTER TABLE {table} ALTER COLUMN workflow_version SET NOT NULL"
-            ).format(table=table_ident)
-        )
-        cur.execute(
-            sql.SQL(
-                "ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {constraint}"
-            ).format(
-                table=table_ident,
-                constraint=constraint_ident,
-            )
-        )
-        cur.execute(
-            sql.SQL("ALTER TABLE {table} ADD PRIMARY KEY ({columns})").format(
-                table=table_ident,
-                columns=pk_columns_sql,
-            )
-        )
 
 
 def upsert_quantile_labels(
@@ -2050,6 +2001,7 @@ def ensure_pwm_extreme_tables(
     with conn.cursor() as cur:
         cur.execute(_ensure_pwm_extreme_thresholds_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_status_table_sql(table_config))
+    conn.commit()
 
 
 def upsert_pwm_extreme_thresholds(
