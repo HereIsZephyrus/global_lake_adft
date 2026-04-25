@@ -94,13 +94,15 @@ class PostgresLakeProvider(LakeProvider):
                 from lakesource.postgres import fetch_quantile_status_ids_in_range
 
                 return fetch_quantile_status_ids_in_range(
-                    conn, chunk_start, chunk_end
+                    conn, chunk_start, chunk_end,
+                    workflow_version=self._config.workflow_version,
                 )
             if algorithm == "pwm_extreme":
                 from lakesource.postgres import fetch_pwm_extreme_status_ids_in_range
 
                 return fetch_pwm_extreme_status_ids_in_range(
-                    conn, chunk_start, chunk_end
+                    conn, chunk_start, chunk_end,
+                    workflow_version=self._config.workflow_version,
                 )
             if algorithm == "eot":
                 return self._fetch_eot_done_ids(conn, chunk_start, chunk_end)
@@ -113,11 +115,17 @@ class PostgresLakeProvider(LakeProvider):
             if algorithm == "quantile":
                 from lakesource.postgres import count_quantile_status_in_range
 
-                return count_quantile_status_in_range(conn, chunk_start, chunk_end)
+                return count_quantile_status_in_range(
+                    conn, chunk_start, chunk_end,
+                    workflow_version=self._config.workflow_version,
+                )
             if algorithm == "pwm_extreme":
                 from lakesource.postgres import count_pwm_extreme_status_in_range
 
-                return count_pwm_extreme_status_in_range(conn, chunk_start, chunk_end)
+                return count_pwm_extreme_status_in_range(
+                    conn, chunk_start, chunk_end,
+                    workflow_version=self._config.workflow_version,
+                )
         return 0
 
     def _fetch_eot_done_ids(
@@ -129,9 +137,10 @@ class PostgresLakeProvider(LakeProvider):
                 SELECT DISTINCT hylak_id
                 FROM eot_run_status
                 WHERE hylak_id >= %s AND hylak_id < %s
+                  AND workflow_version = %s
                   AND status = 'done'
                 """,
-                (chunk_start, chunk_end),
+                (chunk_start, chunk_end, self._config.workflow_version),
             )
             return {int(row[0]) for row in cur.fetchall()}
 
@@ -287,10 +296,11 @@ class PostgresLakeProvider(LakeProvider):
                     hylak_id BIGINT NOT NULL,
                     chunk_start BIGINT NOT NULL,
                     chunk_end BIGINT NOT NULL,
+                    workflow_version VARCHAR(64) NOT NULL,
                     status VARCHAR(16) NOT NULL,
                     error_message TEXT,
                     created_at TIMESTAMP DEFAULT NOW(),
-                    PRIMARY KEY (hylak_id)
+                    PRIMARY KEY (hylak_id, workflow_version)
                 )
             """)
         conn.commit()
