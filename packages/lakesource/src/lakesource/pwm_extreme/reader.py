@@ -17,7 +17,7 @@ from lakesource.table_config import TableConfig
 
 log = logging.getLogger(__name__)
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "pwm_extreme"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "data" / "pwm_extreme"
 
 
 def _convergence_grid_agg_sql(tc: TableConfig) -> psql.Composed:

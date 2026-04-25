@@ -29,7 +29,7 @@ from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
 def parse_args() -> argparse.Namespace:

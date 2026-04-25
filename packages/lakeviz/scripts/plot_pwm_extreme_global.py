@@ -25,7 +25,7 @@ from lakeviz.pwm_extreme import (
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
 def parse_args() -> argparse.Namespace:

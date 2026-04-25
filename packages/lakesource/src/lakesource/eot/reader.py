@@ -19,7 +19,7 @@ from lakesource.table_config import TableConfig
 
 log = logging.getLogger(__name__)
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "eot"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "data" / "eot"
 
 
 def _available_quantiles_sql(tc: TableConfig) -> psql.Composed:

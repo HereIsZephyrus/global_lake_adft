@@ -19,7 +19,7 @@ from lakesource.table_config import TableConfig
 
 log = logging.getLogger(__name__)
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "quantile"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "data" / "quantile"
 
 
 def _extremes_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
