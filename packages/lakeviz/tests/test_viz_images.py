@@ -12,8 +12,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import cartopy.crs as ccrs
 
-from lakeviz.style.base import AxKind, AxisStyle, apply_axis_style
+from lakeviz.style.base import AxKind, AxisStyle, apply_axis_style, get_ax_kind
 from lakeviz.style.line import LineStyle
 from lakeviz.style.scatter import ScatterStyle
 from lakeviz.style.bar import BarStyle
@@ -56,6 +57,8 @@ from lakeviz.domain.pwm_extreme import (
     draw_quantile_function, draw_threshold_summary,
 )
 from lakeviz.layout import create_figure, save
+from lakeviz.map_plot import draw_global_grid, plot_global_grid
+from lakeviz.grid import agg_to_grid_matrix
 
 OUT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "figure_test"
 
@@ -376,3 +379,124 @@ def test_cross_domain_panel():
     fig.suptitle("Cross-domain panel (EOT + Hawkes + Entropy)", fontsize=14, fontweight="bold")
     fig.tight_layout()
     _save(fig, "cross_domain_panel.png")
+
+
+# ---------------------------------------------------------------------------
+# Geographic distribution tests
+# ---------------------------------------------------------------------------
+
+def _geo_grid_data(resolution=2.0):
+    n_lon = int(360 / resolution)
+    n_lat = int(180 / resolution)
+    lons = np.linspace(-180 + resolution / 2, 180 - resolution / 2, n_lon)
+    lats = np.linspace(-90 + resolution / 2, 90 - resolution / 2, n_lat)
+    values = np.zeros((n_lat, n_lon))
+    for i, lat in enumerate(lats):
+        for j, lon in enumerate(lons):
+            dist = np.sqrt((lat - 30) ** 2 + (lon - 100) ** 2)
+            values[i, j] = np.exp(-dist ** 2 / 1000) * 100 + rng.uniform(0, 5)
+    values[:, :n_lon // 4] = np.nan
+    return lons, lats, values
+
+
+def _geo_grid_data_multi(resolution=5.0):
+    n_lon = int(360 / resolution)
+    n_lat = int(180 / resolution)
+    lons = np.linspace(-180 + resolution / 2, 180 - resolution / 2, n_lon)
+    lats = np.linspace(-90 + resolution / 2, 90 - resolution / 2, n_lat)
+    values = np.zeros((n_lat, n_lon))
+    for i, lat in enumerate(lats):
+        for j, lon in enumerate(lons):
+            d1 = np.sqrt((lat - 40) ** 2 + (lon - 120) ** 2)
+            d2 = np.sqrt((lat + 20) ** 2 + (lon + 60) ** 2)
+            values[i, j] = 50 * np.exp(-d1 ** 2 / 500) + 30 * np.exp(-d2 ** 2 / 800) + rng.uniform(0, 3)
+    return lons, lats, values
+
+
+def test_global_grid_basic():
+    lons, lats, values = _geo_grid_data(resolution=2.0)
+    fig, ax = plt.subplots(figsize=(16, 8), subplot_kw={"projection": ccrs.Robinson()})
+    draw_global_grid(ax, lons, lats, values, title="全球分布测试 (单热点)", cbar_label="事件密度")
+    assert get_ax_kind(ax) == AxKind.GEOGRAPHIC
+    _save(fig, "global_grid_basic.png")
+
+
+def test_global_grid_log_scale():
+    lons, lats, values = _geo_grid_data_multi(resolution=5.0)
+    fig, ax = plt.subplots(figsize=(16, 8), subplot_kw={"projection": ccrs.Robinson()})
+    draw_global_grid(ax, lons, lats, values, title="全球分布测试 (对数色阶)", cmap="YlOrRd", log_scale=True, cbar_label="每湖事件数")
+    assert get_ax_kind(ax) == AxKind.GEOGRAPHIC
+    _save(fig, "global_grid_log.png")
+
+
+def test_global_grid_linear_scale():
+    lons, lats, values = _geo_grid_data(resolution=3.0)
+    values = values / values.max()
+    fig, ax = plt.subplots(figsize=(16, 8), subplot_kw={"projection": ccrs.Robinson()})
+    draw_global_grid(ax, lons, lats, values, title="全球分布测试 (线性色阶)", cmap="RdYlGn", log_scale=False, vmin=0, vmax=1, cbar_label="收敛率")
+    _save(fig, "global_grid_linear.png")
+
+
+def test_global_grid_different_projections():
+    lons, lats, values = _geo_grid_data_multi(resolution=4.0)
+    fig, axes = plt.subplots(2, 2, figsize=(20, 16), subplot_kw={"projection": ccrs.Robinson()})
+    axes = axes.flatten()
+    projections = ["Robinson", "Robinson", "Robinson", "Robinson"]
+    cmaps = ["YlOrRd", "Blues", "Greens", "PuBu"]
+    titles = ["YlOrRd 色阶", "Blues 色阶", "Greens 色阶", "PuBu 色阶"]
+    for ax, cmap, title in zip(axes, cmaps, titles):
+        draw_global_grid(ax, lons, lats, values, title=title, cmap=cmap, cbar_label="密度")
+        assert get_ax_kind(ax) == AxKind.GEOGRAPHIC
+    fig.suptitle("不同色阶的全球分布图", fontsize=16, fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "global_grid_cmaps.png")
+
+
+def test_cross_domain_statistical_and_geographic():
+    lons, lats, values = _geo_grid_data_multi(resolution=5.0)
+    fig = plt.figure(figsize=(20, 12))
+    import matplotlib.gridspec as gridspec
+    gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1.2])
+    ax_mrl = fig.add_subplot(gs[0, 0])
+    ax_pp = fig.add_subplot(gs[0, 1])
+    ax_timeline = fig.add_subplot(gs[0, 2])
+    ax_geo = fig.add_subplot(gs[1, :], projection=ccrs.Robinson())
+    draw_mrl(ax_mrl, _mrl_df())
+    assert get_ax_kind(ax_mrl) == AxKind.STATISTICAL
+    draw_pp(ax_pp, _pp_df())
+    assert get_ax_kind(ax_pp) == AxKind.STATISTICAL
+    draw_event_timeline(ax_timeline, _hawkes_events())
+    assert get_ax_kind(ax_timeline) == AxKind.STATISTICAL
+    draw_global_grid(ax_geo, lons, lats, values, title="全球事件密度分布", cmap="YlOrRd", cbar_label="事件密度")
+    assert get_ax_kind(ax_geo) == AxKind.GEOGRAPHIC
+    fig.suptitle("跨域组合面板：统计图 + 地理分布图", fontsize=16, fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "cross_domain_stat_geo.png")
+
+
+def test_global_grid_via_agg_to_grid_matrix():
+    agg_df = pd.DataFrame({
+        "cell_lat": rng.uniform(-60, 60, 200),
+        "cell_lon": rng.uniform(-180, 180, 200),
+        "event_count": rng.integers(1, 50, 200),
+        "lake_count": rng.integers(1, 10, 200),
+    })
+    agg_df["mean_per_lake"] = agg_df["event_count"] / agg_df["lake_count"]
+    lons, lats, values = agg_to_grid_matrix(agg_df, "mean_per_lake", resolution=5.0)
+    fig, ax = plt.subplots(figsize=(16, 8), subplot_kw={"projection": ccrs.Robinson()})
+    draw_global_grid(ax, lons, lats, values, title="从 agg_to_grid_matrix 生成的全球分布", cmap="YlOrRd", cbar_label="每湖事件数")
+    assert get_ax_kind(ax) == AxKind.GEOGRAPHIC
+    _save(fig, "global_grid_from_agg.png")
+
+
+def test_multi_panel_geographic():
+    lons1, lats1, vals1 = _geo_grid_data(resolution=4.0)
+    lons2, lats2, vals2 = _geo_grid_data_multi(resolution=4.0)
+    fig, axes = plt.subplots(1, 2, figsize=(24, 8), subplot_kw={"projection": ccrs.Robinson()})
+    draw_global_grid(axes[0], lons1, lats1, vals1, title="分布 A：单热点模式", cmap="YlOrRd", cbar_label="密度 A")
+    draw_global_grid(axes[1], lons2, lats2, vals2, title="分布 B：双热点模式", cmap="Blues", cbar_label="密度 B")
+    for ax in axes:
+        assert get_ax_kind(ax) == AxKind.GEOGRAPHIC
+    fig.suptitle("多面板地理分布对比", fontsize=16, fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "multi_panel_geographic.png")
