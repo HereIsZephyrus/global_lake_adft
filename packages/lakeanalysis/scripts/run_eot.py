@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import logging
 
+from lakesource.config import SourceConfig
+from lakesource.provider import create_provider
+
 from lakeanalysis.batch import Engine, RangeFilter
-from lakeanalysis.batch.io import DBIOFactory
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -43,9 +45,7 @@ def main() -> None:
 
     tails = ["high", "low"] if args.tail == "both" else [args.tail]
 
-    factory = DBIOFactory()
-    reader = factory.create_reader("eot", workflow_version="eot-nhpp-v1")
-    writer = factory.create_writer("eot")
+    provider = create_provider(SourceConfig())
     calculator = CalculatorFactory.create(
         "eot",
         tails=tails,
@@ -57,9 +57,9 @@ def main() -> None:
         lake_filter = RangeFilter(start=args.id_start, end=args.id_end)
 
     engine = Engine(
-        reader=reader,
-        writer=writer,
+        provider=provider,
         calculator=calculator,
+        algorithm="eot",
         lake_filter=lake_filter,
         chunk_size=args.chunk_size,
         limit_id=args.limit_id,
