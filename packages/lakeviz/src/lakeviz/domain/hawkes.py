@@ -35,7 +35,7 @@ def draw_event_timeline(
         if not wet.empty:
             draw_scatter(ax, wet["time"], np.full(len(wet), 1.0), style=wet_style)
     ax.set_yticks([0, 1], ["Dry", "Wet"])
-    apply_axis_style(ax, axis_style._replace(grid_alpha=0.2, grid_linestyle=":"))
+    apply_axis_style(ax, axis_style.replace(grid_alpha=0.2, grid_linestyle=":"))
     ax.legend(loc="upper right")
 
 
@@ -56,7 +56,7 @@ def draw_intensity_decomposition(
     for axis, channel in zip((ax_d, ax_w), channels, strict=True):
         for prefix, style in line_styles.items():
             col = f"{prefix}_{channel}"
-            draw_line(axis, decomposition_df["time"], decomposition_df[col], style=style._replace(label=col))
+            draw_line(axis, decomposition_df["time"], decomposition_df[col], style=style.replace(label=col))
         axis.set_ylabel(channel)
         axis.grid(alpha=0.2, linestyle=":")
         axis.legend(loc="upper right")
@@ -75,9 +75,9 @@ def draw_kernel_matrix(
 ) -> None:
     labels = [f"{source}->{target}" for target in TYPE_LABELS for source in TYPE_LABELS]
     draw_bar(ax_alpha, labels, alpha.reshape(-1), style=BarStyle())
-    apply_axis_style(ax_alpha, alpha_axis._replace(grid_alpha=0.2, grid_linestyle=":"))
+    apply_axis_style(ax_alpha, alpha_axis.replace(grid_alpha=0.2, grid_linestyle=":"))
     draw_bar(ax_beta, labels, beta.reshape(-1), style=BarStyle())
-    apply_axis_style(ax_beta, beta_axis._replace(grid_alpha=0.2, grid_linestyle=":"))
+    apply_axis_style(ax_beta, beta_axis.replace(grid_alpha=0.2, grid_linestyle=":"))
 
 
 def draw_lrt_summary(
@@ -90,11 +90,11 @@ def draw_lrt_summary(
 ) -> None:
     frame = lrt_df.copy()
     draw_bar(ax_lr, frame["test_name"], frame["lr_statistic"], style=BarStyle())
-    apply_axis_style(ax_lr, lr_axis._replace(grid_alpha=0.2, grid_linestyle=":"))
+    apply_axis_style(ax_lr, lr_axis.replace(grid_alpha=0.2, grid_linestyle=":"))
     draw_bar(ax_p, frame["test_name"], frame["p_value"], style=BarStyle())
     alpha_val = float(frame["significance_level"].iloc[0]) if "significance_level" in frame.columns and not frame.empty else 0.05
     draw_axhline(ax_p, alpha_val, style=ReferenceLineStyle(linestyle="--", color="tomato", label=f"alpha={alpha_val:.2f}"))
-    apply_axis_style(ax_p, p_axis._replace(grid_alpha=0.2, grid_linestyle=":"))
+    apply_axis_style(ax_p, p_axis.replace(grid_alpha=0.2, grid_linestyle=":"))
     ax_p.legend(loc="upper right")
 
 

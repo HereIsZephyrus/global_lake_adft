@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from enum import Enum
 
 
@@ -26,6 +26,9 @@ class DrawStyle:
     label: str | None = None
     zorder: int = 2
 
+    def replace(self, **kwargs):
+        return dc_replace(self, **kwargs)
+
 
 @dataclass(frozen=True)
 class AxisStyle:
@@ -37,6 +40,9 @@ class AxisStyle:
     grid_alpha: float = 0.2
     grid_linestyle: str = ":"
     x_rotation: float = 0
+
+    def replace(self, **kwargs):
+        return dc_replace(self, **kwargs)
 
 
 @dataclass(frozen=True)

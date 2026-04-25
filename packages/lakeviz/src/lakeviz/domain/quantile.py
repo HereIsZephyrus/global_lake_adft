@@ -224,7 +224,7 @@ def draw_adft_fallback(
     apply_axis_style(ax, AxisStyle(
         xlabel="时间 (Year-Month)", ylabel="水域面积 (km²)",
         title=f"湖泊 {hylak_id} 面积变化时序图（含ADFT事件）",
-    )._replace(grid_alpha=0.3, grid_linestyle="--"))
+    ).replace(grid_alpha=0.3, grid_linestyle="--"))
     ax.legend(loc="best", fontsize=11, framealpha=0.9)
     ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter("%Y-%m"))
     ax.xaxis.set_major_locator(plt.matplotlib.dates.YearLocator())

@@ -80,7 +80,7 @@ def draw_extremes_timeline(
             ax,
             threshold_curve_df["time"].to_numpy(dtype=float),
             displayed_u,
-            style=threshold_style._replace(label="时间可变阈值 u(t)"),
+            style=threshold_style.replace(label="时间可变阈值 u(t)"),
         )
     elif threshold is not None:
         displayed_threshold = -threshold if direction == "low" else threshold
@@ -159,7 +159,7 @@ def draw_location_model(
             ax,
             threshold_curve_df["time"].to_numpy(dtype=float),
             threshold_curve_df["threshold"].to_numpy(dtype=float),
-            style=threshold_style._replace(label="时间可变阈值 u(t)"),
+            style=threshold_style.replace(label="时间可变阈值 u(t)"),
         )
     elif threshold is not None:
         draw_axhline(ax, threshold, style=ReferenceLineStyle(color="tomato", linestyle="--", label="阈值"))
@@ -205,21 +205,21 @@ def draw_eot_extremes(
             high["severity"] = high["water_area"] - high["threshold_at_event"]
             top_high = high.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_high.iterrows():
-                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color=high_style.color)
+                draw_annotate_point(ax, f"{int(row['month']):02d}", (row["date"], row["water_area"]), color=high_style.color)
 
         if not low.empty:
             draw_scatter(ax, low["date"], low["water_area"], style=low_style)
             low["severity"] = low["threshold_at_event"] - low["water_area"]
             top_low = low.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_low.iterrows():
-                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color=low_style.color)
+                draw_annotate_point(ax, f"{int(row['month']):02d}", (row["date"], row["water_area"]), xytext=(4, -10), color=low_style.color)
 
     if axis_style is None:
         axis_style = AxisStyle(
             xlabel="时间", ylabel="湖泊水面积(m²)",
             title=f"hylak_id={hylak_id} 月尺度时序与 EOT 异常",
         )
-    apply_axis_style(ax, axis_style._replace(grid_alpha=0.22, grid_linestyle=":"))
+    apply_axis_style(ax, axis_style.replace(grid_alpha=0.22, grid_linestyle=":"))
     ax.legend()
 
 
@@ -277,14 +277,14 @@ def draw_extremes_with_hawkes(
             high["severity"] = high["water_area"] - high["threshold_at_event"]
             top_high = high.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_high.iterrows():
-                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, color=high_style.color)
+                draw_annotate_point(ax, f"{int(row['month']):02d}", (row["date"], row["water_area"]), color=high_style.color)
 
         if not low.empty:
             draw_scatter(ax, low["date"], low["water_area"], style=low_style)
             low["severity"] = low["threshold_at_event"] - low["water_area"]
             top_low = low.sort_values("severity", ascending=False).head(max(int(annotate_top_n_each_tail), 0))
             for _, row in top_low.iterrows():
-                draw_annotate_point(f"{int(row['month']):02d}", (row["date"], row["water_area"]), ax=ax, xytext=(4, -10), color=low_style.color)
+                draw_annotate_point(ax, f"{int(row['month']):02d}", (row["date"], row["water_area"]), xytext=(4, -10), color=low_style.color)
 
     extra_handles: list[mpatches.Patch] = []
     if hawkes_df is not None and not hawkes_df.empty:
@@ -300,7 +300,7 @@ def draw_extremes_with_hawkes(
             xlabel="时间 (Year-Month)", ylabel="水域面积 (km²)",
             title=f"湖泊 {hylak_id} 面积变化时序图（EOT极端 + Hawkes方向性转移）",
         )
-    apply_axis_style(ax, axis_style._replace(grid_alpha=0.3, grid_linestyle="--"))
+    apply_axis_style(ax, axis_style.replace(grid_alpha=0.3, grid_linestyle="--"))
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles + extra_handles, labels + [h.get_label() for h in extra_handles], loc="best", fontsize=10, framealpha=0.9)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
