@@ -2,11 +2,8 @@
 
 State machine:
     pending ──TRIGGER_READ──▶ reading ──(auto)──▶ calculating ──(auto)──▶ pending
-    pending ──TRIGGER_WRITE──▶ writing ──(auto)──▶ pending / done
 
-IO slots are occupied when TRIGGER is sent, released when the IO phase ends:
-  - TRIGGER_READ sent → io_active += 1; CALCULATING received → io_active -= 1
-  - TRIGGER_WRITE sent → io_active += 1; PENDING(prev=writing) received → io_active -= 1
+Workers send computed data to rank 0 via TAG_DATA; rank 0 handles all writes.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ import logging
 from lakesource.provider import LakeProvider
 
 from .engine import LakeTask
-from .protocol import TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges
+from .protocol import TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges
 
 log = logging.getLogger(__name__)
 
@@ -98,13 +95,8 @@ class Worker:
                         all_rows[table].extend(rows)
                     chunk_stats["error"] += 1
 
-            self._send(comm, WorkerState.PENDING, {})
-
-            comm.recv(source=0, tag=TAG_TRIGGER)
-            self._send(comm, WorkerState.WRITING, {})
-
             if any(all_rows.values()):
-                self._provider.persist(dict(all_rows))
+                comm.send(dict(all_rows), dest=0, tag=TAG_DATA)
 
             for k in ("source", "skipped", "success", "error"):
                 total_stats[k] += chunk_stats[k]
@@ -190,13 +182,8 @@ class Worker:
                         all_rows[table].extend(rows)
                     chunk_stats["error"] += 1
 
-            self._send(comm, WorkerState.PENDING, {})
-
-            comm.recv(source=0, tag=TAG_TRIGGER)
-            self._send(comm, WorkerState.WRITING, {})
-
             if any(all_rows.values()):
-                self._provider.persist(dict(all_rows))
+                comm.send(dict(all_rows), dest=0, tag=TAG_DATA)
 
             for k in ("source", "skipped", "success", "error"):
                 total_stats[k] += chunk_stats[k]

@@ -1,36 +1,41 @@
 """Manager: IO scheduler and status tracker for MPI batch computation.
 
 IO slot lifecycle:
-  - TRIGGER_READ/TRIGGER_WRITE sent → io_active += 1
+  - TRIGGER_READ sent → io_active += 1
   - CALCULATING received (reading ended) → io_active -= 1
-  - PENDING received with prev=WRITING (writing ended) → io_active -= 1
+
+Workers send computed data to rank 0 via TAG_DATA; Manager collects and flushes.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 import logging
 import time
 from collections import deque
 
-from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges, _iter_id_batches
+from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges, _iter_id_batches
 from .engine import IdSetFilter, RangeFilter
 
 log = logging.getLogger(__name__)
 
 
 class Manager:
-    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None) -> None:
+    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None, provider=None) -> None:
         self._comm = comm
         self._size = size
         self._io_budget = io_budget
         self._lake_filter = lake_filter
+        self._provider = provider
         self._io_active = 0
         self._n_workers = size - 1
         self._worker_states: dict[int, str] = {}
         self._read_queue: deque[int] = deque()
-        self._write_queue: deque[int] = deque()
         self._done_workers: set[int] = set()
         self._report = RunReport()
+        self._pending_rows: dict[str, list[dict]] = defaultdict(list)
+        self._chunks_since_flush = 0
+        self._flush_interval = 50
 
     @property
     def report(self) -> RunReport:
@@ -48,6 +53,7 @@ class Manager:
         while len(self._done_workers) < self._n_workers:
             self._poll_and_dispatch()
 
+        self._flush()
         self._comm.bcast(None, root=0)
         log.info(
             "All workers done: success=%d error=%d skipped=%d",
@@ -66,6 +72,7 @@ class Manager:
         while len(self._done_workers) < self._n_workers:
             self._poll_and_dispatch()
 
+        self._flush()
         self._comm.bcast(None, root=0)
         log.info(
             "ID-batch all workers done: success=%d error=%d skipped=%d",
@@ -77,6 +84,11 @@ class Manager:
 
     def _poll_and_dispatch(self) -> None:
         from mpi4py import MPI
+
+        if self._comm.iprobe(source=MPI.ANY_SOURCE, tag=TAG_DATA):
+            status = MPI.Status()
+            data = self._comm.recv(source=MPI.ANY_SOURCE, tag=TAG_DATA, status=status)
+            self._merge_rows(data)
 
         if not self._comm.iprobe(source=MPI.ANY_SOURCE, tag=TAG_STATUS):
             time.sleep(0.01)
@@ -99,20 +111,12 @@ class Manager:
             self._report.skipped_lakes += stats.get("skipped", 0)
             self._report.success_lakes += stats.get("success", 0)
             self._report.error_lakes += stats.get("error", 0)
-            self._write_queue.append(worker)
+            self._read_queue.append(worker)
 
         elif state == WorkerState.PENDING:
-            if prev == WorkerState.WRITING:
-                self._io_active -= 1
-                self._read_queue.append(worker)
-            elif prev == WorkerState.CALCULATING:
-                pass
-            else:
-                self._read_queue.append(worker)
+            self._read_queue.append(worker)
 
         elif state == WorkerState.DONE:
-            if prev == WorkerState.WRITING:
-                self._io_active -= 1
             self._report.source_lakes += stats.get("source", 0)
             self._report.skipped_lakes += stats.get("skipped", 0)
             self._report.success_lakes += stats.get("success", 0)
@@ -134,10 +138,23 @@ class Manager:
             self._comm.send(TRIGGER_READ, dest=worker, tag=TAG_TRIGGER)
             self._io_active += 1
 
-        while self._write_queue and self._io_active < self._io_budget:
-            worker = self._write_queue.popleft()
-            self._comm.send(TRIGGER_WRITE, dest=worker, tag=TAG_TRIGGER)
-            self._io_active += 1
+    def _merge_rows(self, data: dict[str, list[dict]]) -> None:
+        for table_name, rows in data.items():
+            self._pending_rows[table_name].extend(rows)
+        self._chunks_since_flush += 1
+        if self._chunks_since_flush >= self._flush_interval:
+            self._flush()
+
+    def _flush(self) -> None:
+        if not any(self._pending_rows.values()):
+            return
+        if self._provider is None:
+            log.warning("No provider set, cannot flush data")
+            return
+        self._provider.persist(dict(self._pending_rows))
+        self._pending_rows = defaultdict(list)
+        self._chunks_since_flush = 0
+        log.info("Flushed data to parquet")
 
     def _assign(self, max_hylak_id: int, chunk_size: int) -> dict[int, tuple[int, int]]:
         start = 0

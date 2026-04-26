@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+
+os.environ.setdefault("NUMBA_NUM_THREADS", "1")
 
 from lakesource.config import SourceConfig
 from lakesource.provider import create_provider

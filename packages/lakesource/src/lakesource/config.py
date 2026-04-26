@@ -50,7 +50,7 @@ class SourceConfig:
         series_db_name: SERIES_DB database name (default from SERIES_DB env).
     """
 
-    backend: Backend = Backend.POSTGRES
+    backend: Backend | None = None
     data_dir: Path | None = None
     data_path: Path | None = None
     workflow_version: str = "monthly-transition-v1"
@@ -69,8 +69,24 @@ class SourceConfig:
         if not normalized:
             raise ValueError("workflow_version must not be empty")
         object.__setattr__(self, "workflow_version", normalized)
+
+        if self.backend is None:
+            b = _env("DATA_BACKEND")
+            if b:
+                try:
+                    object.__setattr__(self, "backend", Backend(b.lower()))
+                except ValueError:
+                    raise ValueError(f"Invalid DATA_BACKEND: {b!r}") from None
+            else:
+                object.__setattr__(self, "backend", Backend.POSTGRES)
+
         if self.backend == Backend.PARQUET and self.data_dir is None:
-            raise ValueError("data_dir is required when backend=parquet")
+            d = _env("PARQUET_DATA_DIR")
+            if d:
+                object.__setattr__(self, "data_dir", Path(d))
+            else:
+                raise ValueError("data_dir is required when backend=parquet (set PARQUET_DATA_DIR)")
+
         if self.tables is None:
             object.__setattr__(self, "tables", TableConfig.default())
 

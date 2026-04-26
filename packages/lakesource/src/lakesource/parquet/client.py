@@ -32,6 +32,7 @@ class DuckDBClient:
         self.data_dir = Path(data_dir) if data_dir else None
         self._table_config = table_config
         self.con = duckdb.connect(database=":memory:")
+        self.con.execute("SET threads=1")
 
         if self.data_dir:
             log.info("Initializing DuckDB client, data_dir: %s", self.data_dir)

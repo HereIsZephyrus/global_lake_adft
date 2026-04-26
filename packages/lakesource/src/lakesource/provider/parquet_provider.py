@@ -290,11 +290,14 @@ class ParquetLakeProvider(LakeProvider):
         for table_name, rows in rows_by_table.items():
             if not rows:
                 continue
-            df = pd.DataFrame(rows)
+            new_df = pd.DataFrame(rows)
             parquet_path = self._data_dir / f"{table_name}.parquet"
-            df.to_parquet(parquet_path, index=False)
+            if parquet_path.exists():
+                existing_df = pd.read_parquet(parquet_path)
+                new_df = pd.concat([existing_df, new_df], ignore_index=True)
+            new_df.to_parquet(parquet_path, index=False)
             self._client.register_or_replace(table_name, parquet_path)
-            log.info("Persisted %d rows to %s", len(df), parquet_path)
+            log.info("Persisted %d rows to %s (total: %d)", len(rows), parquet_path, len(new_df))
 
     # ------------------------------------------------------------------
     # Schema management (no-op for parquet)

@@ -114,7 +114,7 @@ class Engine:
             if rank == 0:
                 self._provider.ensure_schema(self._algorithm)
                 sorted_ids = sorted(self._lake_filter.ids)
-                manager = Manager(comm, size, self._io_budget, self._lake_filter)
+                manager = Manager(comm, size, self._io_budget, self._lake_filter, self._provider)
                 return manager.run_id_batch(sorted_ids, self._chunk_size)
 
             assignments = comm.bcast(None, root=0)
@@ -135,7 +135,7 @@ class Engine:
         if rank == 0:
             self._provider.ensure_schema(self._algorithm)
             max_id = self._provider.fetch_max_hylak_id()
-            manager = Manager(comm, size, self._io_budget, self._lake_filter)
+            manager = Manager(comm, size, self._io_budget, self._lake_filter, self._provider)
             return manager.run(max_id, self._chunk_size)
 
         assignments = comm.bcast(None, root=0)

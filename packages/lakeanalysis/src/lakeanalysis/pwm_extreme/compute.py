@@ -14,9 +14,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.integrate import quad
+from scipy.integrate import quad, IntegrationWarning
 from scipy.optimize import minimize
 from scipy.special import comb
+import warnings
 
 try:
     from numba import njit
@@ -108,6 +109,8 @@ def _objective(
 ) -> float:
     """Least-squares objective: sum of (integral_k - b_k)^2 + L2 penalty."""
     residuals = _compute_residuals(lam, b_target, K, epsilon, config)
+    if not np.all(np.isfinite(residuals)):
+        return 1e15 + config.l2_regularization * float(np.sum(lam ** 2))
     penalty = config.l2_regularization * float(np.sum(lam ** 2))
     return float(np.sum(residuals ** 2)) + penalty
 
@@ -131,15 +134,25 @@ def _compute_residuals(
                 x_val = float(crossent_quantile(np.array([u]), lam, epsilon)[0])
                 return (u ** _k) * x_val
 
-        integral, err = quad(
-            integrand,
-            0.0,
-            config.integration_upper,
-            limit=500,
-        )
-        if abs(integral) > 1e-15:
-            max_rel_err = max(max_rel_err, abs(err / integral))
-        residuals[k] = integral - b_target[k]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=IntegrationWarning)
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            try:
+                integral, err = quad(
+                    integrand,
+                    0.0,
+                    config.integration_upper,
+                    limit=500,
+                )
+            except Exception:
+                integral = np.nan
+
+        if not np.isfinite(integral):
+            residuals[k] = 1e10
+        else:
+            if abs(integral) > 1e-15:
+                max_rel_err = max(max_rel_err, abs(err / integral))
+            residuals[k] = integral - b_target[k]
     if max_rel_err > 1e-6:
         log.debug("quad max relative error %.2e", max_rel_err)
     return residuals
@@ -165,11 +178,13 @@ def solve_lagrange_multipliers(
     if config is None:
         config = PWMExtremeConfig()
     lam0 = np.zeros(K + 1, dtype=float)
+    bounds = [(-100.0, 100.0)] * (K + 1)
     result = minimize(
         _objective,
         lam0,
         args=(b_target, K, epsilon, config),
         method="L-BFGS-B",
+        bounds=bounds,
         options={"maxiter": 5000, "ftol": 1e-12},
     )
     return result.x.astype(float), bool(result.success), float(result.fun)
@@ -298,15 +313,18 @@ def compute_monthly_thresholds(
             )
             continue
         try:
-            mr = compute_one_month_thresholds(
-                month_values,
-                month,
-                hylak_id=hylak_id,
-                config=config,
-            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=IntegrationWarning)
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                mr = compute_one_month_thresholds(
+                    month_values,
+                    month,
+                    hylak_id=hylak_id,
+                    config=config,
+                )
             month_results.append(mr)
             thresholds[month] = (mr.threshold_low, mr.threshold_high)
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError, FloatingPointError) as exc:
             log.debug("PWM extreme failed for month %d: %s", month, exc)
 
     if not month_results:

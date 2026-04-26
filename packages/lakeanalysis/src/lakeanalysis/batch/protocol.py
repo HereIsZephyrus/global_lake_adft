@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 TAG_STATUS = 1
 TAG_TRIGGER = 2
+TAG_DATA = 3
 
 TRIGGER_READ = "trigger_read"
 TRIGGER_WRITE = "trigger_write"
