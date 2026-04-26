@@ -151,12 +151,17 @@ class Manager:
             return {r: (0, 0) for r in range(1, self._size)}
 
         total = end - start
-        per_worker = (total + self._n_workers - 1) // self._n_workers
+        base = total // self._n_workers
+        remainder = total % self._n_workers
+
         assignments: dict[int, tuple[int, int]] = {}
+        idx = 0
         for r in range(1, self._size):
-            worker_start = start + (r - 1) * per_worker
-            worker_end = min(start + r * per_worker, end)
+            count = base + (1 if r <= remainder else 0)
+            worker_start = start + idx
+            worker_end = start + idx + count
             assignments[r] = (worker_start, worker_end)
+            idx += count
 
         log.info(
             "Assigned %d workers, io_budget=%d: %s",
@@ -171,12 +176,15 @@ class Manager:
     ) -> dict[int, list[list[int]]]:
         all_batches = _iter_id_batches(sorted_ids, batch_size)
         n_batches = len(all_batches)
-        per_worker = (n_batches + self._n_workers - 1) // self._n_workers
+        base = n_batches // self._n_workers
+        remainder = n_batches % self._n_workers
+
         assignments: dict[int, list[list[int]]] = {}
+        idx = 0
         for r in range(1, self._size):
-            start_idx = (r - 1) * per_worker
-            end_idx = min(r * per_worker, n_batches)
-            assignments[r] = all_batches[start_idx:end_idx]
+            count = base + (1 if r <= remainder else 0)
+            assignments[r] = all_batches[idx : idx + count]
+            idx += count
 
         log.info(
             "ID-batch assigned %d workers, %d batches, batch_size=%d: %s",
