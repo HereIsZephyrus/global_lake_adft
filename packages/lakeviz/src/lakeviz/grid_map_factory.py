@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import GlobalGridConfig
+from .config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from .grid import agg_to_grid_matrix
 from .map_plot import draw_global_grid
 
@@ -105,7 +105,7 @@ def make_grid_map(
             title=title, cmap=cmap, log_scale=log_scale,
             vmin=vmin, vmax=vmax, cbar_label=cbar_label,
         )
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        fig.savefig(out_path, dpi=DEFAULT_VIZ_CONFIG.default_dpi, bbox_inches="tight")
         plt.close(fig)
         log.info("Saved: %s → %s", title, out_path)
         return out_path

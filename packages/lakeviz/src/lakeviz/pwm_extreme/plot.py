@@ -10,6 +10,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from lakeviz.config import DEFAULT_VIZ_CONFIG
+
 
 def _render_quantile_function(
     curve_df: pd.DataFrame,
@@ -27,7 +29,7 @@ def _render_quantile_function(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"month_{month}_quantile.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=DEFAULT_VIZ_CONFIG.default_dpi)
         plt.close(fig)
         return path
     plt.close(fig)
@@ -83,6 +85,6 @@ def plot_pwm_extreme_threshold_summary(
     fig.tight_layout()
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "threshold_summary.png"
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=DEFAULT_VIZ_CONFIG.default_dpi)
     plt.close(fig)
     return path

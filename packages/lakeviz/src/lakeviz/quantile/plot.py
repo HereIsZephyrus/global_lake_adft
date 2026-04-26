@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from lakeviz.plot_config import setup_chinese_font
+from lakeviz.layout import save as _save
 
 
 def plot_monthly_timeline(
@@ -171,12 +172,10 @@ def save_lake_plots(
     anomaly_path = output_dir / "anomaly_timeline.png"
 
     monthly_fig = plot_monthly_timeline(labels_df, transitions_df, hylak_id=hylak_id)
-    monthly_fig.savefig(monthly_path, dpi=300, bbox_inches="tight")
-    plt.close(monthly_fig)
+    _save(monthly_fig, monthly_path)
 
     anomaly_fig = plot_anomaly_timeline(labels_df, hylak_id=hylak_id)
-    anomaly_fig.savefig(anomaly_path, dpi=300, bbox_inches="tight")
-    plt.close(anomaly_fig)
+    _save(anomaly_fig, anomaly_path)
 
     return {
         "monthly_timeline": monthly_path,
@@ -194,12 +193,10 @@ def save_summary_plots(transitions_df: pd.DataFrame, output_root: Path) -> dict[
     seasonality_path = output_dir / "transition_seasonality.png"
 
     count_fig = plot_transition_count_summary(transitions_df)
-    count_fig.savefig(count_path, dpi=300, bbox_inches="tight")
-    plt.close(count_fig)
+    _save(count_fig, count_path)
 
     seasonality_fig = plot_transition_seasonality_summary(transitions_df)
-    seasonality_fig.savefig(seasonality_path, dpi=300, bbox_inches="tight")
-    plt.close(seasonality_fig)
+    _save(seasonality_fig, seasonality_path)
 
     return {
         "transition_count_summary": count_path,
