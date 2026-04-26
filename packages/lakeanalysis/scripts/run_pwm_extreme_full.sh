@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run PWM extreme full-batch with 16 MPI workers.
+# Run PWM extreme full-batch with 8 MPI workers.
 #
 # Usage:
 #   bash scripts/run_pwm_extreme_full.sh [--dry-run]
@@ -7,7 +7,7 @@
 # Prerequisites:
 #   - mpi4py installed (uv pip install mpi4py)
 #   - PostgreSQL accessible (SERIES_DB, DB_USER, DB_PASSWORD env vars)
-#   - 16+ CPU cores recommended
+#   - 8+ CPU cores recommended
 #
 # --dry-run: only print the command, do not execute
 
@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-NP=16
+NP=8
 CHUNK_SIZE=10000
 IO_BUDGET=4
 

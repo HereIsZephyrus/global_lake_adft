@@ -56,10 +56,13 @@ class DuckDBClient:
     def register_dir(self) -> None:
         """Register all Parquet files in data_dir as DuckDB views.
 
-        File stems are mapped to logical names via TableConfig.parquet.
-        For example, if config maps ``lake_area`` → ``lake_area``,
-        then ``lake_area.parquet`` is registered as view ``lake_area``.
-        If a file stem is not in the mapping, it is registered as-is.
+        Supports two layouts:
+          1. Subdirectory (chunked large table): data_dir/table_name/*.parquet
+             → registered as a single view via read_parquet glob.
+          2. Single file (small table): data_dir/table_name.parquet
+             → registered as a view directly.
+
+        Directory/file names are mapped to logical names via TableConfig.parquet.
         """
         if not self.data_dir:
             raise ValueError("data_dir is not set")
@@ -68,14 +71,25 @@ class DuckDBClient:
         for logical, file_stem in self._table_config.parquet.items():
             reverse_map[file_stem] = logical
 
-        for parquet_file in sorted(self.data_dir.glob("*.parquet")):
-            file_stem = parquet_file.stem
-            view_name = reverse_map.get(file_stem, file_stem)
-            try:
-                self.register_parquet(view_name, parquet_file)
-                log.info("Registered table %s: %s", view_name, parquet_file.name)
-            except Exception as e:
-                log.warning("Failed to register %s: %s", parquet_file, e)
+        for entry in sorted(self.data_dir.iterdir()):
+            if entry.is_dir():
+                view_name = reverse_map.get(entry.name, entry.name)
+                glob_pattern = str(entry / "*.parquet")
+                try:
+                    self.con.execute(
+                        f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{glob_pattern}')"
+                    )
+                    log.info("Registered table %s: %s/*.parquet", view_name, entry.name)
+                except Exception as e:
+                    log.warning("Failed to register %s: %s", entry, e)
+            elif entry.suffix == ".parquet":
+                file_stem = entry.stem
+                view_name = reverse_map.get(file_stem, file_stem)
+                try:
+                    self.register_parquet(view_name, entry)
+                    log.info("Registered table %s: %s", view_name, entry.name)
+                except Exception as e:
+                    log.warning("Failed to register %s: %s", entry, e)
 
     def list_registered_tables(self) -> list[str]:
         result = self.con.execute(
