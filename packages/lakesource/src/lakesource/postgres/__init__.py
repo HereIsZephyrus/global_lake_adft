@@ -55,6 +55,9 @@ __all__ = [
     "upsert_quantile_extremes",
     "upsert_quantile_labels",
     "upsert_quantile_run_status",
+    "ensure_comparison_tables",
+    "upsert_comparison_run_status",
+    "fetch_comparison_status_ids_in_range",
 ]
 
 
@@ -117,6 +120,9 @@ def __getattr__(name: str):
     "upsert_eot_run_status",
     "upsert_quantile_abrupt_transitions",
         "upsert_quantile_run_status",
+        "ensure_comparison_tables",
+        "upsert_comparison_run_status",
+        "fetch_comparison_status_ids_in_range",
     }
     _HAWKES_QC_SYMBOLS = {
         "fetch_hawkes_qc_summary_by_quantile",

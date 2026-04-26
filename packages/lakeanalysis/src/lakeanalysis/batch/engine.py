@@ -12,7 +12,7 @@ import pandas as pd
 
 from lakesource.provider import LakeProvider
 
-from .protocol import RunReport, _iter_chunk_ranges
+from .protocol import RunReport, _iter_chunk_ranges, _iter_id_batches
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +40,18 @@ class RangeFilter(LakeFilter):
         if self.end is not None:
             ids = {i for i in ids if i < self.end}
         return ids
+
+
+class IdSetFilter(LakeFilter):
+    def __init__(self, ids: set[int] | list[int]) -> None:
+        self._ids = set(ids)
+
+    def __call__(self, hylak_ids: Iterable[int]) -> set[int]:
+        return self._ids & set(hylak_ids)
+
+    @property
+    def ids(self) -> set[int]:
+        return self._ids
 
 
 class Calculator(ABC):
@@ -73,6 +85,9 @@ class Engine:
         self._chunk_size = chunk_size
         self._io_budget = io_budget
 
+    def _is_id_batch_mode(self) -> bool:
+        return isinstance(self._lake_filter, IdSetFilter)
+
     def _get_range(self) -> tuple[int, int | None]:
         if self._lake_filter and isinstance(self._lake_filter, RangeFilter):
             return self._lake_filter.start, self._lake_filter.end
@@ -89,6 +104,27 @@ class Engine:
             size = 1
             rank = 0
             comm = None
+
+        if self._is_id_batch_mode():
+            if size <= 1:
+                return self._run_id_batch_single()
+            from .manager import Manager
+            from .worker import Worker
+
+            if rank == 0:
+                self._provider.ensure_schema(self._algorithm)
+                sorted_ids = sorted(self._lake_filter.ids)
+                manager = Manager(comm, size, self._io_budget, self._lake_filter)
+                return manager.run_id_batch(sorted_ids, self._chunk_size)
+
+            assignments = comm.bcast(None, root=0)
+            worker = Worker(
+                rank, self._provider, self._algorithm,
+                self._calculator, self._chunk_size,
+            )
+            worker.run_id_batch(comm, assignments)
+            comm.bcast(None, root=0)
+            return None
 
         if size <= 1:
             return self._run_single()
@@ -177,3 +213,72 @@ class Engine:
             )
 
         return report
+
+    def _run_id_batch_single(self) -> RunReport:
+        self._provider.ensure_schema(self._algorithm)
+        sorted_ids = sorted(self._lake_filter.ids)
+        id_batches = _iter_id_batches(sorted_ids, self._chunk_size)
+        report = RunReport(total_chunks=len(id_batches))
+
+        for batch_idx, id_batch in enumerate(id_batches):
+            lake_map = self._provider.fetch_lake_area_by_ids(id_batch)
+            if not lake_map:
+                report.skipped_chunks += 1
+                continue
+
+            candidate_ids = set(lake_map.keys())
+            done_ids = self._fetch_done_ids_by_batch(id_batch)
+            pending_ids = candidate_ids - done_ids
+
+            if not pending_ids:
+                report.skipped_chunks += 1
+                report.source_lakes += len(candidate_ids)
+                report.skipped_lakes += len(candidate_ids)
+                continue
+
+            frozen_map = self._provider.fetch_frozen_year_months_by_ids(id_batch)
+            report.source_lakes += len(candidate_ids)
+            report.skipped_lakes += len(candidate_ids) - len(pending_ids)
+
+            all_rows: dict[str, list[dict]] = defaultdict(list)
+            for hid in sorted(pending_ids):
+                task = LakeTask(
+                    hylak_id=hid,
+                    series_df=lake_map[hid],
+                    frozen_year_months=frozenset(frozen_map.get(hid, set())),
+                )
+                try:
+                    result = self._calculator.run(task)
+                    for table, rows in self._calculator.result_to_rows(result).items():
+                        all_rows[table].extend(rows)
+                    report.success_lakes += 1
+                except Exception as exc:
+                    for table, rows in self._calculator.error_to_rows(
+                        hid, exc, batch_idx, batch_idx + 1
+                    ).items():
+                        all_rows[table].extend(rows)
+                    report.error_lakes += 1
+
+            if any(all_rows.values()):
+                self._provider.persist(dict(all_rows))
+            report.processed_chunks += 1
+            log.info(
+                "ID batch %d/%d: ids=%d source=%d skip=%d success=%d error=%d",
+                batch_idx + 1,
+                len(id_batches),
+                len(id_batch),
+                len(candidate_ids),
+                report.skipped_lakes,
+                report.success_lakes,
+                report.error_lakes,
+            )
+
+        return report
+
+    def _fetch_done_ids_by_batch(self, id_batch: list[int]) -> set[int]:
+        if not id_batch:
+            return set()
+        lo = min(id_batch)
+        hi = max(id_batch) + 1
+        done = self._provider.fetch_done_ids(self._algorithm, lo, hi)
+        return done & set(id_batch)

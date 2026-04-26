@@ -12,8 +12,8 @@ import logging
 import time
 from collections import deque
 
-from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges
-from .engine import RangeFilter
+from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges, _iter_id_batches
+from .engine import IdSetFilter, RangeFilter
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,24 @@ class Manager:
         self._comm.bcast(None, root=0)
         log.info(
             "All workers done: success=%d error=%d skipped=%d",
+            self._report.success_lakes,
+            self._report.error_lakes,
+            self._report.skipped_lakes,
+        )
+        return self._report
+
+    def run_id_batch(self, sorted_ids: list[int], batch_size: int) -> RunReport:
+        assignments = self._assign_id_batches(sorted_ids, batch_size)
+        self._comm.bcast(assignments, root=0)
+
+        self._report.total_chunks = sum(len(batches) for batches in assignments.values())
+
+        while len(self._done_workers) < self._n_workers:
+            self._poll_and_dispatch()
+
+        self._comm.bcast(None, root=0)
+        log.info(
+            "ID-batch all workers done: success=%d error=%d skipped=%d",
             self._report.success_lakes,
             self._report.error_lakes,
             self._report.skipped_lakes,
@@ -145,5 +163,26 @@ class Manager:
             self._n_workers,
             self._io_budget,
             {r: f"[{s},{e})" for r, (s, e) in assignments.items()},
+        )
+        return assignments
+
+    def _assign_id_batches(
+        self, sorted_ids: list[int], batch_size: int
+    ) -> dict[int, list[list[int]]]:
+        all_batches = _iter_id_batches(sorted_ids, batch_size)
+        n_batches = len(all_batches)
+        per_worker = (n_batches + self._n_workers - 1) // self._n_workers
+        assignments: dict[int, list[list[int]]] = {}
+        for r in range(1, self._size):
+            start_idx = (r - 1) * per_worker
+            end_idx = min(r * per_worker, n_batches)
+            assignments[r] = all_batches[start_idx:end_idx]
+
+        log.info(
+            "ID-batch assigned %d workers, %d batches, batch_size=%d: %s",
+            self._n_workers,
+            n_batches,
+            batch_size,
+            {r: len(b) for r, b in assignments.items()},
         )
         return assignments

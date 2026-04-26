@@ -106,6 +106,13 @@ class PostgresLakeProvider(LakeProvider):
                 )
             if algorithm == "eot":
                 return self._fetch_eot_done_ids(conn, chunk_start, chunk_end)
+            if algorithm == "comparison":
+                from lakesource.postgres import fetch_comparison_status_ids_in_range
+
+                return fetch_comparison_status_ids_in_range(
+                    conn, chunk_start, chunk_end,
+                    workflow_version=self._config.workflow_version,
+                )
         return set()
 
     def count_done_ids(
@@ -260,6 +267,7 @@ class PostgresLakeProvider(LakeProvider):
             "eot_results": "upsert_eot_results",
             "eot_extremes": "upsert_eot_extremes",
             "eot_run_status": "upsert_eot_run_status",
+            "comparison_run_status": "upsert_comparison_run_status",
         }
         fn_name = _FNS.get(table_name)
         if fn_name is None:
@@ -287,6 +295,14 @@ class PostgresLakeProvider(LakeProvider):
 
                 ensure_eot_results_table(conn)
                 self._ensure_eot_run_status(conn)
+            elif algorithm == "comparison":
+                from lakesource.comparison import ensure_comparison_tables
+
+                ensure_comparison_tables(conn)
+                from lakesource.postgres import ensure_quantile_tables, ensure_pwm_extreme_tables
+
+                ensure_quantile_tables(conn)
+                ensure_pwm_extreme_tables(conn)
 
     @staticmethod
     def _ensure_eot_run_status(conn: psycopg.Connection) -> None:

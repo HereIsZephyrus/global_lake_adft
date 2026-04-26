@@ -48,3 +48,15 @@ def _iter_chunk_ranges(
             chunk_end = min(chunk_end, end)
         ranges.append((chunk_start, chunk_end))
     return ranges
+
+
+def _iter_id_batches(
+    sorted_ids: list[int],
+    batch_size: int,
+) -> list[list[int]]:
+    if not sorted_ids or batch_size <= 0:
+        return []
+    batches: list[list[int]] = []
+    for i in range(0, len(sorted_ids), batch_size):
+        batches.append(sorted_ids[i : i + batch_size])
+    return batches

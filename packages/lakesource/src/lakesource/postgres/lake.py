@@ -2068,3 +2068,83 @@ def fetch_pwm_extreme_status_ids_in_range(
             {"chunk_start": chunk_start, "chunk_end": chunk_end, "workflow_version": workflow_version},
         )
         return {int(row[0]) for row in cur.fetchall()}
+
+
+# ------------------------------------------------------------------
+# Comparison experiment tables
+# ------------------------------------------------------------------
+
+_ensure_comparison_run_status_sql = sql.SQL("""
+CREATE TABLE IF NOT EXISTS comparison_run_status (
+    hylak_id BIGINT NOT NULL,
+    chunk_start BIGINT NOT NULL,
+    chunk_end BIGINT NOT NULL,
+    workflow_version VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    quantile_status VARCHAR(16),
+    pwm_status VARCHAR(16),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (hylak_id, workflow_version)
+)
+""")
+
+_upsert_comparison_run_status_sql = sql.SQL("""
+INSERT INTO comparison_run_status
+    (hylak_id, chunk_start, chunk_end, workflow_version, status,
+     quantile_status, pwm_status, error_message)
+VALUES (%(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(workflow_version)s,
+        %(status)s, %(quantile_status)s, %(pwm_status)s, %(error_message)s)
+ON CONFLICT (hylak_id, workflow_version) DO UPDATE SET
+    chunk_start = EXCLUDED.chunk_start,
+    status = EXCLUDED.status,
+    quantile_status = EXCLUDED.quantile_status,
+    pwm_status = EXCLUDED.pwm_status,
+    error_message = EXCLUDED.error_message,
+    created_at = NOW()
+""")
+
+
+def ensure_comparison_tables(
+    conn: psycopg.Connection,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_ensure_comparison_run_status_sql)
+    conn.commit()
+    log.debug("Ensured comparison_run_status table exists")
+
+
+def upsert_comparison_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    commit: bool = True,
+) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_comparison_run_status_sql, rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d comparison_run_status row(s)", len(rows))
+
+
+def fetch_comparison_status_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+) -> set[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT hylak_id
+            FROM comparison_run_status
+            WHERE hylak_id >= %s AND hylak_id < %s
+              AND workflow_version = %s
+              AND status = 'done'
+            """,
+            (chunk_start, chunk_end, workflow_version),
+        )
+        return {int(row[0]) for row in cur.fetchall()}
