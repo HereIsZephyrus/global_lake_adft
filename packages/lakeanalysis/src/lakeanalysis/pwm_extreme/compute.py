@@ -18,6 +18,14 @@ from scipy.integrate import quad
 from scipy.optimize import minimize
 from scipy.special import comb
 
+try:
+    from numba import njit
+    HAS_NUMBA = True
+except ImportError:
+    HAS_NUMBA = False
+    def njit(func):
+        return func
+
 from lakeanalysis.quality.frozen import filter_frozen_rows
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
@@ -56,17 +64,22 @@ def compute_pwm_beta(z_sorted: np.ndarray, K: int) -> np.ndarray:
 
 
 def shifted_exponential_prior(u: np.ndarray, epsilon: float) -> np.ndarray:
-    """Shifted-exponential prior quantile function y(u) = ε - (1-ε)ln(1-u).
-
-    Args:
-        u: Probability levels in [0, 1).
-        epsilon: Shift parameter (normalised minimum observation).
-
-    Returns:
-        Prior quantile values.
-    """
+    """Shifted-exponential prior quantile function y(u) = ε - (1-ε)ln(1-u)."""
     u = np.clip(u, 0.0, 1.0 - 1e-12)
     return epsilon - (1.0 - epsilon) * np.log(1.0 - u)
+
+
+@njit
+def _crossent_quantile_scalar(u: float, lam: np.ndarray, epsilon: float) -> float:
+    """Fast scalar version for numba JIT."""
+    u_clipped = min(max(u, 0.0), 1.0 - 1e-12)
+    y = epsilon - (1.0 - epsilon) * np.log(1.0 - u_clipped)
+    exp_term = 1.0
+    u_pow = 1.0
+    for j in range(len(lam)):
+        exp_term *= np.exp(-lam[j] * u_pow)
+        u_pow *= u_clipped
+    return y * exp_term
 
 
 def crossent_quantile(
@@ -74,16 +87,12 @@ def crossent_quantile(
     lam: np.ndarray,
     epsilon: float,
 ) -> np.ndarray:
-    """Cross-entropy quantile function x(u) = y(u) * exp(-Σ λ_j u^j).
-
-    Args:
-        u: Probability levels in [0, 1).
-        lam: Lagrange multipliers λ_0..λ_K.
-        epsilon: Shift parameter for the prior.
-
-    Returns:
-        Quantile values.
-    """
+    """Cross-entropy quantile function x(u) = y(u) * exp(-Σ λ_j u^j)."""
+    if HAS_NUMBA and u.ndim == 1 and len(u) > 0:
+        result = np.empty(len(u), dtype=float)
+        for i in range(len(u)):
+            result[i] = _crossent_quantile_scalar(u[i], lam, epsilon)
+        return result
     y = shifted_exponential_prior(u, epsilon)
     u_pow = np.column_stack([u ** j for j in range(len(lam))])
     exp_term = np.exp(-u_pow @ lam)
@@ -112,18 +121,27 @@ def _compute_residuals(
 ) -> np.ndarray:
     """Compute constraint residuals: integral_k - b_k for k=0..K."""
     residuals = np.zeros(K + 1, dtype=float)
+    max_rel_err = 0.0
     for k in range(K + 1):
-        def integrand(u: float, _k: int = k) -> float:
-            x_val = float(crossent_quantile(np.array([u]), lam, epsilon)[0])
-            return (u ** _k) * x_val
+        if HAS_NUMBA:
+            def integrand(u: float, _k: int = k) -> float:
+                return (u ** _k) * _crossent_quantile_scalar(u, lam, epsilon)
+        else:
+            def integrand(u: float, _k: int = k) -> float:
+                x_val = float(crossent_quantile(np.array([u]), lam, epsilon)[0])
+                return (u ** _k) * x_val
 
-        integral, _ = quad(
+        integral, err = quad(
             integrand,
             0.0,
             config.integration_upper,
-            limit=200,
+            limit=500,
         )
+        if abs(integral) > 1e-15:
+            max_rel_err = max(max_rel_err, abs(err / integral))
         residuals[k] = integral - b_target[k]
+    if max_rel_err > 1e-6:
+        log.debug("quad max relative error %.2e", max_rel_err)
     return residuals
 
 

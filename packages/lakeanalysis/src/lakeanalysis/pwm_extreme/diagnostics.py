@@ -53,7 +53,7 @@ def pwm_constraint_residuals(
             x_val = float(crossent_quantile(np.array([u]), lambda_opt, epsilon)[0])
             return (u ** _k) * x_val
 
-        integral, _ = quad(integrand, 0.0, 1.0 - 1e-10, limit=200)
+        integral, err = quad(integrand, 0.0, 1.0 - 1e-10, limit=500)
         records.append({
             "k": k,
             "b_target": float(b_target[k]),
