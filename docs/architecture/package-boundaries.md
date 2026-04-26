@@ -6,6 +6,24 @@
 - 数据库访问与批量查询
 - 研究脚本与可视化产出
 
+### 模块结构
+
+| 模块 | 职责 |
+|------|------|
+| `batch` | MPI 分布式批处理框架 |
+| `quantile` | 月距平分位数极端事件识别 |
+| `pwm_extreme` | PWM 极值阈值估计 |
+| `eot` | 极值阈值检验 |
+
+### 依赖关系
+
+```
+lakeanalysis
+    └── lakesource (LakeProvider, SourceConfig)
+```
+
+`lakeanalysis.batch` 通过 `LakeProvider` 抽象访问数据，支持 PostgreSQL 和 Parquet 两种后端。
+
 ## 数据边界
 
 仓库内 `data/` 目录用于本地输入、缓存和分析输出，不视为可发布源码的一部分。
