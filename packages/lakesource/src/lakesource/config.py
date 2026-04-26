@@ -52,6 +52,7 @@ class SourceConfig:
 
     backend: Backend | None = None
     data_dir: Path | None = None
+    output_dir: Path | None = None
     data_path: Path | None = None
     workflow_version: str = "monthly-transition-v1"
     year_start: int | None = None
@@ -86,6 +87,11 @@ class SourceConfig:
                 object.__setattr__(self, "data_dir", Path(d))
             else:
                 raise ValueError("data_dir is required when backend=parquet (set PARQUET_DATA_DIR)")
+
+        if self.output_dir is None:
+            od = _env("PARQUET_OUTPUT_DIR")
+            if od:
+                object.__setattr__(self, "output_dir", Path(od))
 
         if self.tables is None:
             object.__setattr__(self, "tables", TableConfig.default())

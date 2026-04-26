@@ -23,6 +23,7 @@ class ParquetLakeProvider(LakeProvider):
         self._config = config
         self._tc = config.t
         self._data_dir = Path(config.data_dir)
+        self._output_dir = Path(config.output_dir) if config.output_dir else self._data_dir
         self._client = DuckDBClient(data_dir=self._data_dir, table_config=self._tc)
         self._cache_dir = self._data_dir.parent / "cache"
 
@@ -291,7 +292,7 @@ class ParquetLakeProvider(LakeProvider):
             if not rows:
                 continue
             new_df = pd.DataFrame(rows)
-            parquet_path = self._data_dir / f"{table_name}.parquet"
+            parquet_path = self._output_dir / f"{table_name}.parquet"
             if parquet_path.exists():
                 existing_df = pd.read_parquet(parquet_path)
                 new_df = pd.concat([existing_df, new_df], ignore_index=True)
