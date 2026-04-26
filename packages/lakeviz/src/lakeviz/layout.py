@@ -17,6 +17,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
+from lakeviz.config import DEFAULT_VIZ_CONFIG
 from lakeviz.style.base import AxKind, stamp_ax
 
 log = logging.getLogger(__name__)
@@ -90,10 +91,12 @@ def save(
     fig: plt.Figure,
     path: Path | str,
     *,
-    dpi: int = 300,
+    dpi: int | None = None,
     close: bool = True,
 ) -> Path:
     """Save a Figure to disk."""
+    if dpi is None:
+        dpi = DEFAULT_VIZ_CONFIG.default_dpi
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=dpi, bbox_inches="tight")

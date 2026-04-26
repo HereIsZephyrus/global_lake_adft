@@ -5,6 +5,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from lakeviz.config import DEFAULT_VIZ_CONFIG
 from lakeviz.draw.line import draw_line
 from lakeviz.style.base import AxisStyle, apply_axis_style
 from lakeviz.style.line import LineStyle
@@ -62,7 +63,7 @@ def plot_pwm_extreme_quantile_functions(month_curves, output_dir) -> dict[int, s
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             path = output_dir / f"month_{month}_quantile.png"
-            fig.savefig(path, dpi=150)
+            fig.savefig(path, dpi=DEFAULT_VIZ_CONFIG.default_dpi)
             paths[month] = str(path)
         plt.close(fig)
     return paths
@@ -76,6 +77,6 @@ def plot_pwm_extreme_threshold_summary(thresholds_df, hylak_id, output_dir) -> s
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "threshold_summary.png"
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=DEFAULT_VIZ_CONFIG.default_dpi)
     plt.close(fig)
     return str(path)

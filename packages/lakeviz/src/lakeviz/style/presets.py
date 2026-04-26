@@ -7,6 +7,8 @@ any preset by passing a custom style object.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .line import LineStyle
 from .scatter import ScatterStyle
 from .bar import BarStyle
@@ -14,6 +16,21 @@ from .histogram import HistogramStyle
 from .fill import FillStyle
 from .reference import ReferenceLineStyle
 from .base import AxisStyle
+
+if TYPE_CHECKING:
+    from lakeviz.config import VizConfig
+
+
+# ---------------------------------------------------------------------------
+# NCL-style colormap presets (matplotlib equivalents)
+# ---------------------------------------------------------------------------
+NCL_CMAPS = {
+    "diverging": "coolwarm",
+    "diverging_alt": "RdBu_r",
+    "sequential": "plasma",
+    "temperature": "YlOrRd",
+    "rainbow_alt": "viridis",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +111,9 @@ SIMILARITY_SCATTER = ScatterStyle(alpha=0.4, s=10, rasterized=True)
 # Global theme
 # ---------------------------------------------------------------------------
 class Theme:
-    PRIMARY = "steelblue"
+    PRIMARY = "#afafaf"
+    PRIMARY_ALT = "#C0C2EA"
+    SECONDARY = "#E28D90"
     DANGER = "tomato"
     SUCCESS = "seagreen"
     WARNING = "#D2691E"
@@ -104,7 +123,11 @@ class Theme:
     WET_TO_DROUGHT = "#D2691E"
 
     @staticmethod
-    def apply() -> None:
+    def apply(cfg: VizConfig | None = None) -> None:
         import matplotlib.pyplot as plt
-        plt.rcParams["font.sans-serif"] = ["Unifont", "DejaVu Sans"]
+        if cfg is None:
+            from lakeviz.config import DEFAULT_VIZ_CONFIG
+            cfg = DEFAULT_VIZ_CONFIG
+        plt.rcParams["font.family"] = "serif"
+        plt.rcParams["font.serif"] = [cfg.font_en, cfg.font_cjk]
         plt.rcParams["axes.unicode_minus"] = False

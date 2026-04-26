@@ -17,16 +17,19 @@ domain sub-modules.
 
 from __future__ import annotations
 
-from .config import GlobalGridConfig
+from .config import GlobalGridConfig, VizConfig, DEFAULT_VIZ_CONFIG
 from .grid import agg_to_grid_matrix, build_grid_counts, build_grid_stats
 from .map_plot import plot_global_grid, draw_global_grid
 from .render import setup_web_backend, fig_to_base64
 from .layout import create_figure, save
 from .style.base import AxKind
 from .style import Theme
+from .style.presets import NCL_CMAPS
 
 __all__ = [
     "GlobalGridConfig",
+    "VizConfig",
+    "DEFAULT_VIZ_CONFIG",
     "agg_to_grid_matrix",
     "build_grid_counts",
     "build_grid_stats",
@@ -38,4 +41,5 @@ __all__ = [
     "save",
     "AxKind",
     "Theme",
+    "NCL_CMAPS",
 ]

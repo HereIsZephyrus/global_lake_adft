@@ -19,8 +19,8 @@ class AxKind(Enum):
 
 @dataclass(frozen=True)
 class DrawStyle:
-    color: str = "steelblue"
-    linewidth: float = 1.2
+    color: str = "#afafaf"
+    linewidth: float = 1.1
     linestyle: str = "-"
     alpha: float = 1.0
     label: str | None = None
@@ -40,6 +40,7 @@ class AxisStyle:
     grid_alpha: float = 0.2
     grid_linestyle: str = ":"
     x_rotation: float = 0
+    contour_linewidth: float = 0.5
 
     def replace(self, **kwargs):
         return dc_replace(self, **kwargs)
