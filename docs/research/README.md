@@ -2,6 +2,12 @@
 
 本目录集中保存跨包共享的研究型文档、算法说明、方法笔记和论文摘录。
 
+## 算法对比
+
+| 文档 | 说明 |
+|------|------|
+| `极端事件识别算法对比.md` | Quantile、PWM Extreme、EOT 三种算法对比 |
+
 ## 算法文档
 
 | 文档 | 说明 |
@@ -10,12 +16,12 @@
 | `EOT模块算法说明.md` | EOT 算法数学推导 |
 | `eot-report.md` | EOT 实验报告 |
 | `hawkes-report.md` | Hawkes 过程实验报告 |
-| `monthly-anomaly-transition-spec.md` | 月距平分位数极端事件识别规范 |
+| `monthly-anomaly-transition-spec.md` | 月距平分位数极端事件识别规范（Quantile） |
 | `monthly-transition-report.md` | 月距平急转分析报告 |
 | `pwm模块说明.md` | PWM 极值估计模块概述 |
 | `EntropyCalculation.md` | 熵计算方法说明 |
-| `点过程视角下的极值阈值检验.md` | 点过程理论视角 |
-| `基于最小交叉熵原理和次序统计量的极端分位数估计.md` | 最小交叉熵方法 |
+| `点过程视角下的极值阈值检验.md` | 点过程理论视角（EOT 理论基础） |
+| `基于最小交叉熵原理和次序统计量的极端分位数估计.md` | 最小交叉熵方法（PWM Extreme 理论基础） |
 
 ## 数据文档
 
