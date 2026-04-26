@@ -22,7 +22,7 @@ def test_line_style_inherits_draw_style():
     s = LineStyle(color="tomato", marker="o")
     assert s.color == "tomato"
     assert s.marker == "o"
-    assert s.linewidth == 1.2  # default from DrawStyle
+    assert s.linewidth == 1.1  # NCL-style default from DrawStyle
 
 
 def test_scatter_style_inherits_draw_style():
@@ -68,5 +68,7 @@ def test_apply_axis_style():
 
 def test_theme_apply():
     Theme.apply()
-    assert "Unifont" in plt.rcParams["font.sans-serif"]
+    assert plt.rcParams["font.family"] == ["serif"]
+    assert "Times New Roman" in plt.rcParams["font.serif"]
+    assert "SimSun" in plt.rcParams["font.serif"]
     assert plt.rcParams["axes.unicode_minus"] is False

@@ -15,6 +15,7 @@ import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
+from lakeviz.config import DEFAULT_VIZ_CONFIG
 from lakeviz.style.base import AxKind, stamp_ax
 
 log = logging.getLogger(__name__)
@@ -71,7 +72,10 @@ def draw_global_grid(
     ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
 
     fig = ax.get_figure()
-    cbar = fig.colorbar(mesh, ax=ax, orientation="horizontal", pad=0.05, shrink=0.6, aspect=30)
+    cbar = fig.colorbar(
+        mesh, ax=ax, orientation="horizontal", pad=0.05, shrink=0.6, aspect=30,
+        drawedges=True, extendrect=True,
+    )
     cbar.set_label(cbar_label, fontsize=10)
 
     if title:
@@ -101,6 +105,6 @@ def plot_global_grid(
     )
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        fig.savefig(output_path, dpi=DEFAULT_VIZ_CONFIG.default_dpi, bbox_inches="tight")
         log.info("Saved figure to %s", output_path)
     return fig
