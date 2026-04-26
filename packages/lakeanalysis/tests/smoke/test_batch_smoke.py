@@ -30,7 +30,6 @@ def _run_algorithm_smoke(
         algorithm=algorithm,
         lake_filter=lake_filter,
         chunk_size=10_000,
-        limit_id=id_end,
     )
 
     if cleanup_algorithm_rows is not None:
@@ -91,7 +90,6 @@ def test_incremental_skip_smoke(id_range, provider, cleanup_algorithm_rows):
         algorithm="quantile",
         lake_filter=lake_filter,
         chunk_size=10_000,
-        limit_id=id_end,
     )
 
     report1 = engine.run()
@@ -124,7 +122,6 @@ def test_error_handling_smoke(id_range, provider, cleanup_algorithm_rows):
         algorithm="quantile",
         lake_filter=lake_filter,
         chunk_size=10_000,
-        limit_id=id_end,
     )
 
     report = engine.run()
@@ -175,7 +172,6 @@ def test_parquet_incremental_skip_smoke(parquet_id_range, parquet_provider, parq
         algorithm="quantile",
         lake_filter=lake_filter,
         chunk_size=10_000,
-        limit_id=id_end,
     )
 
     report1 = engine.run()

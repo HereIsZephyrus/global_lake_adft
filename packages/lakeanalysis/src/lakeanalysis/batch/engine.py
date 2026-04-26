@@ -31,14 +31,14 @@ class LakeFilter(ABC):
 
 class RangeFilter(LakeFilter):
     def __init__(self, start: int = 0, end: int | None = None) -> None:
-        self._start = start
-        self._end = end
+        self.start = start
+        self.end = end
 
     def __call__(self, hylak_ids: Iterable[int]) -> set[int]:
         ids = set(hylak_ids)
-        ids = {i for i in ids if i >= self._start}
-        if self._end is not None:
-            ids = {i for i in ids if i < self._end}
+        ids = {i for i in ids if i >= self.start}
+        if self.end is not None:
+            ids = {i for i in ids if i < self.end}
         return ids
 
 
@@ -64,7 +64,6 @@ class Engine:
         algorithm: str = "quantile",
         lake_filter: LakeFilter | None = None,
         chunk_size: int = 10_000,
-        limit_id: int | None = None,
         io_budget: int = 4,
     ) -> None:
         self._provider = provider
@@ -72,8 +71,12 @@ class Engine:
         self._algorithm = algorithm
         self._lake_filter = lake_filter
         self._chunk_size = chunk_size
-        self._limit_id = limit_id
         self._io_budget = io_budget
+
+    def _get_range(self) -> tuple[int, int | None]:
+        if self._lake_filter and isinstance(self._lake_filter, RangeFilter):
+            return self._lake_filter.start, self._lake_filter.end
+        return 0, None
 
     def run(self) -> RunReport | None:
         try:
@@ -96,8 +99,8 @@ class Engine:
         if rank == 0:
             self._provider.ensure_schema(self._algorithm)
             max_id = self._provider.fetch_max_hylak_id()
-            manager = Manager(comm, size, self._io_budget)
-            return manager.run(max_id, self._chunk_size, self._limit_id)
+            manager = Manager(comm, size, self._io_budget, self._lake_filter)
+            return manager.run(max_id, self._chunk_size)
 
         assignments = comm.bcast(None, root=0)
         worker = Worker(
@@ -111,7 +114,8 @@ class Engine:
     def _run_single(self) -> RunReport:
         self._provider.ensure_schema(self._algorithm)
         max_id = self._provider.fetch_max_hylak_id()
-        chunk_ranges = _iter_chunk_ranges(max_id, self._chunk_size, self._limit_id)
+        start, end = self._get_range()
+        chunk_ranges = _iter_chunk_ranges(max_id, self._chunk_size, start=start, end=end)
         report = RunReport(total_chunks=len(chunk_ranges))
 
         for chunk_start, chunk_end in chunk_ranges:

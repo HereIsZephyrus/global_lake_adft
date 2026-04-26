@@ -31,17 +31,20 @@ class RunReport:
 
 
 def _iter_chunk_ranges(
-    max_hylak_id: int, chunk_size: int, limit_id: int | None
+    max_hylak_id: int,
+    chunk_size: int,
+    start: int = 0,
+    end: int | None = None,
 ) -> list[tuple[int, int]]:
     upper_bound = max_hylak_id
-    if limit_id is not None:
-        upper_bound = min(upper_bound, limit_id - 1)
-    if upper_bound < 0:
+    if end is not None:
+        upper_bound = min(upper_bound, end - 1)
+    if upper_bound < 0 or upper_bound < start:
         return []
     ranges: list[tuple[int, int]] = []
-    for chunk_start in range(0, upper_bound + 1, chunk_size):
+    for chunk_start in range(start, upper_bound + 1, chunk_size):
         chunk_end = chunk_start + chunk_size
-        if limit_id is not None:
-            chunk_end = min(chunk_end, limit_id)
+        if end is not None:
+            chunk_end = min(chunk_end, end)
         ranges.append((chunk_start, chunk_end))
     return ranges

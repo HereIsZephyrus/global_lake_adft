@@ -46,25 +46,23 @@ class Worker:
             })
             return
 
-        chunk_ranges = _iter_chunk_ranges(end - 1, self._chunk_size, end)
+        chunk_ranges = _iter_chunk_ranges(end - 1, self._chunk_size, start=start, end=end)
         total_stats = {"source": 0, "skipped": 0, "success": 0, "error": 0, "chunks": 0}
 
         self._send(comm, WorkerState.PENDING, {})
 
-        for cs, ce in chunk_ranges:
+        for i, (cs, ce) in enumerate(chunk_ranges):
+            is_last = (i == len(chunk_ranges) - 1)
             comm.recv(source=0, tag=TAG_TRIGGER)
             self._send(comm, WorkerState.READING, {})
 
             lake_map = self._provider.fetch_lake_area_chunk(cs, ce)
             if not lake_map:
-                self._send(comm, WorkerState.CALCULATING, {
-                    "source": 0, "skipped": 0, "success": 0, "error": 0,
-                })
-                self._send(comm, WorkerState.PENDING, {})
-                comm.recv(source=0, tag=TAG_TRIGGER)
-                self._send(comm, WorkerState.WRITING, {})
-                self._send(comm, WorkerState.PENDING, {})
                 total_stats["chunks"] += 1
+                if is_last:
+                    self._send(comm, WorkerState.DONE, total_stats)
+                else:
+                    self._send(comm, WorkerState.PENDING, {})
                 continue
 
             frozen_map = self._provider.fetch_frozen_year_months_chunk(cs, ce)
@@ -123,9 +121,10 @@ class Worker:
                 chunk_stats["error"],
             )
 
-            self._send(comm, WorkerState.PENDING, {})
-
-        self._send(comm, WorkerState.DONE, total_stats)
+            if is_last:
+                self._send(comm, WorkerState.DONE, total_stats)
+            else:
+                self._send(comm, WorkerState.PENDING, {})
 
     def _send(self, comm, state: str, stats: dict) -> None:
         comm.send((state, stats), dest=0, tag=TAG_STATUS)

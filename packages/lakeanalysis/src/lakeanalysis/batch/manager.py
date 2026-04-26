@@ -13,15 +13,17 @@ import time
 from collections import deque
 
 from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TRIGGER_READ, TRIGGER_WRITE, WorkerState, _iter_chunk_ranges
+from .engine import RangeFilter
 
 log = logging.getLogger(__name__)
 
 
 class Manager:
-    def __init__(self, comm, size: int, io_budget: int = 4) -> None:
+    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None) -> None:
         self._comm = comm
         self._size = size
         self._io_budget = io_budget
+        self._lake_filter = lake_filter
         self._io_active = 0
         self._n_workers = size - 1
         self._worker_states: dict[int, str] = {}
@@ -34,15 +36,13 @@ class Manager:
     def report(self) -> RunReport:
         return self._report
 
-    def run(
-        self, max_hylak_id: int, chunk_size: int, limit_id: int | None
-    ) -> RunReport:
-        assignments = self._assign(max_hylak_id, chunk_size, limit_id)
+    def run(self, max_hylak_id: int, chunk_size: int) -> RunReport:
+        assignments = self._assign(max_hylak_id, chunk_size)
         self._comm.bcast(assignments, root=0)
 
         self._report.total_chunks = sum(
-            len(_iter_chunk_ranges(e - 1, chunk_size, e))
-            for (_, e) in assignments.values()
+            len(_iter_chunk_ranges(e - 1, chunk_size, start=s, end=e))
+            for (s, e) in assignments.values()
         )
 
         while len(self._done_workers) < self._n_workers:
@@ -82,27 +82,19 @@ class Manager:
             self._report.success_lakes += stats.get("success", 0)
             self._report.error_lakes += stats.get("error", 0)
             self._write_queue.append(worker)
-            log.debug(
-                "Worker %d: calculating (success=%d error=%d) io_active=%d",
-                worker,
-                stats.get("success", 0),
-                stats.get("error", 0),
-                self._io_active,
-            )
 
         elif state == WorkerState.PENDING:
             if prev == WorkerState.WRITING:
                 self._io_active -= 1
                 self._read_queue.append(worker)
-                log.debug("Worker %d: pending (after write) io_active=%d", worker, self._io_active)
             elif prev == WorkerState.CALCULATING:
-                self._write_queue.append(worker)
-                log.debug("Worker %d: pending (after calc)", worker)
+                pass
             else:
                 self._read_queue.append(worker)
-                log.debug("Worker %d: pending (initial)", worker)
 
         elif state == WorkerState.DONE:
+            if prev == WorkerState.WRITING:
+                self._io_active -= 1
             self._report.source_lakes += stats.get("source", 0)
             self._report.skipped_lakes += stats.get("skipped", 0)
             self._report.success_lakes += stats.get("success", 0)
@@ -110,11 +102,12 @@ class Manager:
             self._report.processed_chunks += stats.get("chunks", 0)
             self._done_workers.add(worker)
             log.info(
-                "Worker %d: done (success=%d error=%d chunks=%d)",
+                "Worker %d: done (success=%d error=%d chunks=%d) io_active=%d",
                 worker,
                 stats.get("success", 0),
                 stats.get("error", 0),
                 stats.get("chunks", 0),
+                self._io_active,
             )
 
     def _schedule_io(self) -> None:
@@ -128,21 +121,24 @@ class Manager:
             self._comm.send(TRIGGER_WRITE, dest=worker, tag=TAG_TRIGGER)
             self._io_active += 1
 
-    def _assign(
-        self, max_hylak_id: int, chunk_size: int, limit_id: int | None
-    ) -> dict[int, tuple[int, int]]:
-        upper = max_hylak_id
-        if limit_id is not None:
-            upper = min(upper, limit_id - 1)
-        if upper < 0:
+    def _assign(self, max_hylak_id: int, chunk_size: int) -> dict[int, tuple[int, int]]:
+        start = 0
+        end = max_hylak_id + 1
+        if self._lake_filter and isinstance(self._lake_filter, RangeFilter):
+            start = self._lake_filter.start
+            if self._lake_filter.end is not None:
+                end = min(end, self._lake_filter.end)
+
+        if end <= start:
             return {r: (0, 0) for r in range(1, self._size)}
 
-        per_worker = (upper + self._n_workers) // self._n_workers
+        total = end - start
+        per_worker = (total + self._n_workers - 1) // self._n_workers
         assignments: dict[int, tuple[int, int]] = {}
         for r in range(1, self._size):
-            start = (r - 1) * per_worker
-            end = min(r * per_worker, upper + 1)
-            assignments[r] = (start, end)
+            worker_start = start + (r - 1) * per_worker
+            worker_end = min(start + r * per_worker, end)
+            assignments[r] = (worker_start, worker_end)
 
         log.info(
             "Assigned %d workers, io_budget=%d: %s",

@@ -41,9 +41,14 @@ def main() -> None:
         min_valid_observations=args.min_valid_observations,
     )
 
+    id_start = args.id_start
+    id_end = args.id_end
+    if args.limit_id is not None:
+        id_end = args.limit_id if id_end is None else min(id_end, args.limit_id)
+
     lake_filter = None
-    if args.id_start > 0 or args.id_end is not None:
-        lake_filter = RangeFilter(start=args.id_start, end=args.id_end)
+    if id_start > 0 or id_end is not None:
+        lake_filter = RangeFilter(start=id_start, end=id_end)
 
     engine = Engine(
         provider=provider,
@@ -51,7 +56,6 @@ def main() -> None:
         algorithm="pwm_extreme",
         lake_filter=lake_filter,
         chunk_size=args.chunk_size,
-        limit_id=args.limit_id,
         io_budget=args.io_budget,
     )
 
