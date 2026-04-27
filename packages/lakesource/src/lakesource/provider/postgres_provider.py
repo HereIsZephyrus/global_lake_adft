@@ -242,6 +242,26 @@ class PostgresLakeProvider(LakeProvider):
             self._config, resolution, refresh=refresh
         )
 
+    def fetch_pwm_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        from lakesource.pwm_extreme.reader import fetch_pwm_exceedance_grid_agg
+
+        return fetch_pwm_exceedance_grid_agg(
+            self._config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
+        )
+
+    def fetch_pwm_monthly_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_exceedance_grid_agg
+
+        return fetch_pwm_monthly_exceedance_grid_agg(
+            self._config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
+        )
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------

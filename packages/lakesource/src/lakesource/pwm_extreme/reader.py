@@ -155,3 +155,135 @@ def fetch_pwm_monthly_threshold_grid_agg(
     if "month" in df.columns:
         df["month"] = df["month"].astype(int)
     return df
+
+
+def _crossent_threshold_sql_pg(p: float, direction: str) -> str:
+    u = 1.0 - p if direction == "high" else p
+    ln_arg = 1.0 - u
+    return f"""t.mean_area * (
+               (t.epsilon - (1 - t.epsilon) * LN({ln_arg}))
+               * EXP(-(t.lambda_0
+                     + t.lambda_1 * {u}
+                     + t.lambda_2 * {u} * {u}
+                     + t.lambda_3 * {u} * {u} * {u}
+                     + t.lambda_4 * {u} * {u} * {u} * {u}))
+           )"""
+
+
+def _exceedance_grid_agg_sql(tc: TableConfig, p_high: float, p_low: float) -> psql.Composed:
+    th_high = _crossent_threshold_sql_pg(p_high, "high")
+    th_low = _crossent_threshold_sql_pg(p_low, "low")
+    return psql.SQL("""
+WITH deduped_area AS (
+    SELECT DISTINCT hylak_id, year_month, water_area
+    FROM   {lake_area}
+),
+quantile_thresholds AS (
+    SELECT t.hylak_id, t.month,
+           """ + psql.SQL(th_high).sql.decode() + """ AS threshold_high,
+           """ + psql.SQL(th_low).sql.decode() + """ AS threshold_low
+    FROM   {thresholds} t
+    WHERE  t.converged IS TRUE
+),
+exceedance AS (
+    SELECT la.hylak_id,
+           SUM(CASE WHEN la.water_area >= qt.threshold_high THEN 1 ELSE 0 END) AS high_count,
+           SUM(CASE WHEN la.water_area <= qt.threshold_low  THEN 1 ELSE 0 END) AS low_count
+    FROM   deduped_area la
+    JOIN   quantile_thresholds qt
+      ON   qt.hylak_id = la.hylak_id
+      AND  qt.month = EXTRACT(MONTH FROM la.year_month)
+    GROUP BY la.hylak_id
+)
+SELECT FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT e.hylak_id)                  AS lake_count,
+       AVG(e.high_count)                            AS mean_high_exceedance,
+       AVG(e.low_count)                             AS mean_low_exceedance,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.high_count) AS median_high_exceedance,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.low_count)  AS median_low_exceedance
+FROM   exceedance e
+JOIN   {lake_info} l ON l.hylak_id = e.hylak_id
+GROUP BY 1, 2
+ORDER BY 1, 2
+""").format(
+        thresholds=psql.Identifier(tc.series_table("pwm_extreme_thresholds")),
+        lake_area=psql.Identifier(tc.series_table("lake_area")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
+
+
+def _monthly_exceedance_grid_agg_sql(tc: TableConfig, p_high: float, p_low: float) -> psql.Composed:
+    th_high = _crossent_threshold_sql_pg(p_high, "high")
+    th_low = _crossent_threshold_sql_pg(p_low, "low")
+    return psql.SQL("""
+WITH deduped_area AS (
+    SELECT DISTINCT hylak_id, year_month, water_area
+    FROM   {lake_area}
+),
+quantile_thresholds AS (
+    SELECT t.hylak_id, t.month,
+           """ + psql.SQL(th_high).sql.decode() + """ AS threshold_high,
+           """ + psql.SQL(th_low).sql.decode() + """ AS threshold_low
+    FROM   {thresholds} t
+    WHERE  t.converged IS TRUE
+)
+SELECT qt.month,
+       FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT la.hylak_id)                  AS lake_count,
+       AVG(CASE WHEN la.water_area >= qt.threshold_high THEN 1.0 ELSE 0.0 END) AS high_exceedance_rate,
+       AVG(CASE WHEN la.water_area <= qt.threshold_low  THEN 1.0 ELSE 0.0 END) AS low_exceedance_rate
+FROM   deduped_area la
+JOIN   quantile_thresholds qt
+  ON   qt.hylak_id = la.hylak_id
+  AND  qt.month = EXTRACT(MONTH FROM la.year_month)
+JOIN   {lake_info} l ON l.hylak_id = la.hylak_id
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3
+""").format(
+        thresholds=psql.Identifier(tc.series_table("pwm_extreme_thresholds")),
+        lake_area=psql.Identifier(tc.series_table("lake_area")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
+
+
+def fetch_pwm_exceedance_grid_agg(
+    config: SourceConfig,
+    resolution: float = 0.5,
+    *,
+    p_high: float = 0.05,
+    p_low: float = 0.05,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    p_tag = f"p{p_high:.4f}"
+    cache = (data_dir or _DATA_DIR) / f"exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _exceedance_grid_agg_sql(config.t, p_high, p_low),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
+
+
+def fetch_pwm_monthly_exceedance_grid_agg(
+    config: SourceConfig,
+    resolution: float = 0.5,
+    *,
+    p_high: float = 0.05,
+    p_low: float = 0.05,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    p_tag = f"p{p_high:.4f}"
+    cache = (data_dir or _DATA_DIR) / f"monthly_exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
+    df = _fetch_and_cache(
+        _monthly_exceedance_grid_agg_sql(config.t, p_high, p_low),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
+    if "month" in df.columns:
+        df["month"] = df["month"].astype(int)
+    return df
