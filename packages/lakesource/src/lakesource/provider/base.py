@@ -81,6 +81,22 @@ class LakeProvider(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
+    def fetch_grid_agg(
+        self,
+        query_name: str,
+        resolution: float = 0.5,
+        *,
+        refresh: bool = False,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Fetch a named grid aggregation query.
+
+        query_name identifies the registered aggregation (e.g. "quantile.extremes",
+        "eot.convergence", "pwm.exceedance").  kwargs are query-specific parameters.
+        """
+        ...
+
+    @abstractmethod
     def fetch_extremes_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:

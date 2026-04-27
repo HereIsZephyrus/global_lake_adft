@@ -16,6 +16,14 @@ from .base import LakeProvider
 log = logging.getLogger(__name__)
 
 
+def _ensure_queries_registered() -> None:
+    from lakesource.provider.grid_query import list_grid_queries
+    if not list_grid_queries():
+        from lakesource.quantile.grid_queries import *  # noqa: F401,F403
+        from lakesource.pwm_extreme.grid_queries import *  # noqa: F401,F403
+        from lakesource.eot.grid_queries import *  # noqa: F401,F403
+
+
 class PostgresLakeProvider(LakeProvider):
     def __init__(self, config: SourceConfig | None = None) -> None:
         self._config = config or SourceConfig()
@@ -178,14 +186,42 @@ class PostgresLakeProvider(LakeProvider):
 
         return fetch_transitions_grid_agg(self._config, resolution, refresh=refresh)
 
+    # ------------------------------------------------------------------
+    # Aggregation reads (lakeviz global maps)
+    # ------------------------------------------------------------------
+
+    def fetch_grid_agg(
+        self,
+        query_name: str,
+        resolution: float = 0.5,
+        *,
+        refresh: bool = False,
+        **kwargs,
+    ) -> pd.DataFrame:
+        from lakesource.provider.grid_query import get_grid_query
+        _ensure_queries_registered()
+        query = get_grid_query(query_name)
+        return query.fetch_postgres(self._config, resolution, refresh=refresh, **kwargs)
+
+    def fetch_extremes_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        return self.fetch_grid_agg("quantile.extremes", resolution, refresh=refresh)
+
+    def fetch_extremes_by_type_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        return self.fetch_grid_agg("quantile.extremes_by_type", resolution, refresh=refresh)
+
+    def fetch_transitions_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        return self.fetch_grid_agg("quantile.transitions", resolution, refresh=refresh)
+
     def fetch_transitions_by_type_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_transitions_by_type_grid_agg
-
-        return fetch_transitions_by_type_grid_agg(
-            self._config, resolution, refresh=refresh
-        )
+        return self.fetch_grid_agg("quantile.transitions_by_type", resolution, refresh=refresh)
 
     def fetch_eot_convergence_grid_agg(
         self,
@@ -195,10 +231,9 @@ class PostgresLakeProvider(LakeProvider):
         *,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        from lakesource.eot.reader import fetch_eot_convergence_grid_agg
-
-        return fetch_eot_convergence_grid_agg(
-            self._config, tail, threshold_quantile, resolution, refresh=refresh
+        return self.fetch_grid_agg(
+            "eot.convergence", resolution,
+            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
         )
 
     def fetch_eot_converged_grid_agg(
@@ -209,57 +244,42 @@ class PostgresLakeProvider(LakeProvider):
         *,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        from lakesource.eot.reader import fetch_eot_converged_grid_agg
-
-        return fetch_eot_converged_grid_agg(
-            self._config, tail, threshold_quantile, resolution, refresh=refresh
+        return self.fetch_grid_agg(
+            "eot.converged", resolution,
+            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
         )
 
     def fetch_pwm_convergence_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_convergence_grid_agg
-
-        return fetch_pwm_convergence_grid_agg(
-            self._config, resolution, refresh=refresh
-        )
+        return self.fetch_grid_agg("pwm.convergence", resolution, refresh=refresh)
 
     def fetch_pwm_converged_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_converged_grid_agg
-
-        return fetch_pwm_converged_grid_agg(
-            self._config, resolution, refresh=refresh
-        )
+        return self.fetch_grid_agg("pwm.converged", resolution, refresh=refresh)
 
     def fetch_pwm_monthly_threshold_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_threshold_grid_agg
-
-        return fetch_pwm_monthly_threshold_grid_agg(
-            self._config, resolution, refresh=refresh
-        )
+        return self.fetch_grid_agg("pwm.monthly_threshold", resolution, refresh=refresh)
 
     def fetch_pwm_exceedance_grid_agg(
         self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_exceedance_grid_agg
-
-        return fetch_pwm_exceedance_grid_agg(
-            self._config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
+        return self.fetch_grid_agg(
+            "pwm.exceedance", resolution,
+            refresh=refresh, p_high=p_high, p_low=p_low,
         )
 
     def fetch_pwm_monthly_exceedance_grid_agg(
         self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_exceedance_grid_agg
-
-        return fetch_pwm_monthly_exceedance_grid_agg(
-            self._config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
+        return self.fetch_grid_agg(
+            "pwm.monthly_exceedance", resolution,
+            refresh=refresh, p_high=p_high, p_low=p_low,
         )
 
     # ------------------------------------------------------------------
