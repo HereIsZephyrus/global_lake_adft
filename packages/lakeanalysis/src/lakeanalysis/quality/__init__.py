@@ -20,6 +20,13 @@ from .frozen import (
     year_month_key_to_index,
     year_month_to_key,
 )
+from .interpolation import (
+    CollinearSegment,
+    InterpolationConfig,
+    InterpolationResult,
+    detect_interpolation,
+    get_collinear_segments,
+)
 
 __all__ = [
     "FlatnessFilterConfig",
@@ -38,4 +45,9 @@ __all__ = [
     "month_index_to_year_month_key",
     "year_month_key_to_index",
     "year_month_to_key",
+    "CollinearSegment",
+    "InterpolationConfig",
+    "InterpolationResult",
+    "detect_interpolation",
+    "get_collinear_segments",
 ]

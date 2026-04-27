@@ -77,6 +77,22 @@ class ParquetLakeProvider(LakeProvider):
         df["water_area"] = df["water_area"].astype(float)
         return self._split_by_hylak_id(df)
 
+    def _frozen_from_anomaly_df(self, df: pd.DataFrame) -> dict[int, set[int]]:
+        result: dict[int, set[int]] = {}
+        if df.empty:
+            return result
+        if "year_month" in df.columns:
+            df = df.copy()
+            df["year"] = df["year_month"].dt.year.astype(int)
+            df["month"] = df["year_month"].dt.month.astype(int)
+        for hid, group in df.groupby("hylak_id"):
+            frozen = set()
+            for _, row in group.iterrows():
+                if "year" in row and "month" in row:
+                    frozen.add(int(row["year"]) * 100 + int(row["month"]))
+            result[int(hid)] = frozen
+        return result
+
     def fetch_frozen_year_months_chunk(
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, set[int]]:
@@ -87,16 +103,7 @@ class ParquetLakeProvider(LakeProvider):
             )
         except Exception:
             return {}
-        result: dict[int, set[int]] = {}
-        if df.empty:
-            return result
-        for hid, group in df.groupby("hylak_id"):
-            frozen = set()
-            for _, row in group.iterrows():
-                if "year" in row and "month" in row:
-                    frozen.add(int(row["year"]) * 100 + int(row["month"]))
-            result[int(hid)] = frozen
-        return result
+        return self._frozen_from_anomaly_df(df)
 
     def fetch_frozen_year_months_by_ids(
         self, id_list: list[int]
@@ -111,16 +118,7 @@ class ParquetLakeProvider(LakeProvider):
             )
         except Exception:
             return {}
-        result: dict[int, set[int]] = {}
-        if df.empty:
-            return result
-        for hid, group in df.groupby("hylak_id"):
-            frozen = set()
-            for _, row in group.iterrows():
-                if "year" in row and "month" in row:
-                    frozen.add(int(row["year"]) * 100 + int(row["month"]))
-            result[int(hid)] = frozen
-        return result
+        return self._frozen_from_anomaly_df(df)
 
     def fetch_max_hylak_id(self) -> int:
         try:
