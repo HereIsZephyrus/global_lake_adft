@@ -47,6 +47,9 @@ from .pwm_extreme import (
     draw_quantile_function,
     draw_threshold_summary,
 )
+from .interpolation import (
+    draw_interpolation_timeline,
+)
 
 __all__ = [
     "draw_mrl",
@@ -82,4 +85,5 @@ __all__ = [
     "draw_pearson_vs_acf",
     "draw_quantile_function",
     "draw_threshold_summary",
+    "draw_interpolation_timeline",
 ]

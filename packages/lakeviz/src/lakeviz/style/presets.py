@@ -88,6 +88,16 @@ ADFT_LINE = LineStyle(
 ADFT_D_TO_W = LineStyle(color="#8B008B", linewidth=4, zorder=3)
 ADFT_W_TO_D = LineStyle(color="#D2691E", linewidth=4, zorder=3)
 
+INTERP_BASE_LINE = LineStyle(
+    color="gray", linewidth=0.8, label="water_area", zorder=1,
+)
+INTERP_LINEAR_LINE = LineStyle(
+    color="red", linewidth=3, label="true-linear", zorder=3,
+)
+INTERP_FLAT_LINE = LineStyle(
+    color="blue", linewidth=3, label="flat", zorder=3,
+)
+
 # ---------------------------------------------------------------------------
 # Basemodel presets
 # ---------------------------------------------------------------------------
