@@ -139,9 +139,9 @@ def _post_process(
 def _post_process_parquet(
     config: SourceConfig, output_path: Path, sample_ids: set[int] | None
 ) -> None:
-    data_dir = config.data_dir
+    data_dir = config.output_dir or config.data_dir
     if data_dir is None:
-        log.warning("No data_dir configured, skipping post-processing")
+        log.warning("No output_dir or data_dir configured, skipping post-processing")
         return
 
     log.info("Post-processing comparison metrics from Parquet ...")
