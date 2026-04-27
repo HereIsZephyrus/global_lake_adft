@@ -54,6 +54,25 @@ ORDER BY 1, 2
     )
 
 
+def _monthly_threshold_grid_agg_sql(tc: TableConfig) -> psql.Composed:
+    return psql.SQL("""
+SELECT t.month,
+       FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.threshold_high) AS median_threshold_high,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.threshold_low)  AS median_threshold_low
+FROM   {thresholds} t
+JOIN   {lake_info} l ON l.hylak_id = t.hylak_id
+WHERE  t.converged IS TRUE
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3
+""").format(
+        thresholds=psql.Identifier(tc.series_table("pwm_extreme_thresholds")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
+
+
 def _fetch_and_cache(
     sql: psql.Composed,
     params: dict,
@@ -117,3 +136,22 @@ def fetch_pwm_converged_grid_agg(
         cache,
         refresh=refresh,
     )
+
+
+def fetch_pwm_monthly_threshold_grid_agg(
+    config: SourceConfig,
+    resolution: float = 0.5,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    cache = (data_dir or _DATA_DIR) / f"monthly_threshold_grid_agg_r{resolution}.parquet"
+    df = _fetch_and_cache(
+        _monthly_threshold_grid_agg_sql(config.t),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
+    if "month" in df.columns:
+        df["month"] = df["month"].astype(int)
+    return df

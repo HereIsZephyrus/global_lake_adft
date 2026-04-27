@@ -138,6 +138,12 @@ class LakeProvider(ABC):
     ) -> pd.DataFrame:
         ...
 
+    @abstractmethod
+    def fetch_pwm_monthly_threshold_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        ...
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------

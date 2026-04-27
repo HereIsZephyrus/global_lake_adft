@@ -233,6 +233,15 @@ class PostgresLakeProvider(LakeProvider):
             self._config, resolution, refresh=refresh
         )
 
+    def fetch_pwm_monthly_threshold_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_threshold_grid_agg
+
+        return fetch_pwm_monthly_threshold_grid_agg(
+            self._config, resolution, refresh=refresh
+        )
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------

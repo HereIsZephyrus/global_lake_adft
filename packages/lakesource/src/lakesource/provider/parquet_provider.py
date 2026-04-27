@@ -278,6 +278,14 @@ class ParquetLakeProvider(LakeProvider):
             )
         )
 
+    def fetch_pwm_monthly_threshold_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        cache = self._cache_path("pwm_extreme", f"monthly_threshold_grid_agg_r{resolution}.parquet")
+        return self._cached_or_compute(
+            cache, refresh, lambda: self._pwm_monthly_grid_agg(resolution)
+        )
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
@@ -433,4 +441,25 @@ class ParquetLakeProvider(LakeProvider):
         for col in ("cell_lat", "cell_lon"):
             if col in df.columns:
                 df[col] = df[col].astype(float)
+        return df
+
+    def _pwm_monthly_grid_agg(self, resolution: float) -> pd.DataFrame:
+        sql = f"""
+        SELECT t.month,
+               FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+               MEDIAN(t.threshold_high)                      AS median_threshold_high,
+               MEDIAN(t.threshold_low)                       AS median_threshold_low
+        FROM   pwm_extreme_thresholds t
+        JOIN   lake_info l ON l.hylak_id = t.hylak_id
+        WHERE  t.converged = true
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        df["month"] = df["month"].astype(int)
         return df
