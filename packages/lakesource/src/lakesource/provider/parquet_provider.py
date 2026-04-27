@@ -269,13 +269,7 @@ class ParquetLakeProvider(LakeProvider):
     ) -> pd.DataFrame:
         cache = self._cache_path("pwm_extreme", f"converged_grid_agg_r{resolution}.parquet")
         return self._cached_or_compute(
-            cache, refresh, lambda: self._pwm_grid_agg(
-                "pwm_extreme_thresholds", resolution,
-                value_col="converged",
-                value_alias="converged_count",
-                agg="SUM",
-                extra_where="AND converged = true",
-            )
+            cache, refresh, lambda: self._pwm_converged_grid_agg(resolution)
         )
 
     def fetch_pwm_monthly_threshold_grid_agg(
@@ -434,6 +428,25 @@ class ParquetLakeProvider(LakeProvider):
         JOIN   lake_info l ON l.hylak_id = t.hylak_id
         WHERE  1=1
           {extra_where}
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        return df
+
+    def _pwm_converged_grid_agg(self, resolution: float) -> pd.DataFrame:
+        sql = f"""
+        SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+               MEDIAN(t.threshold_high)                      AS median_threshold_high,
+               MEDIAN(t.threshold_low)                       AS median_threshold_low
+        FROM   pwm_extreme_thresholds t
+        JOIN   lake_info l ON l.hylak_id = t.hylak_id
+        WHERE  t.converged = true
         GROUP BY 1, 2
         ORDER BY 1, 2
         """
