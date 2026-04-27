@@ -253,6 +253,8 @@ def run(args: argparse.Namespace) -> None:
 
     _sample_and_plot(enriched, data_dir, output_dir, args.sample)
 
+    _run_filtered_comparison(enriched, output_dir, config, config_dict)
+
     log.info("完成。结果保存在 %s", output_dir)
 
 
@@ -295,6 +297,86 @@ def _save_highlight_ids(
             "保存95%%高亮ID: mean=%d, median=%d → %s",
             len(mean_ids), len(median_ids), csv_path,
         )
+
+
+def _run_filtered_comparison(
+    enriched: pd.DataFrame,
+    output_dir: Path,
+    config: AgreementConfig,
+    config_dict: dict[str, float],
+) -> None:
+    """Run comparison after excluding highlight IDs from CSV."""
+    highlight_csv = output_dir / "highlight_95pct_ids.csv"
+    if not highlight_csv.exists():
+        log.info("无 highlight_95pct_ids.csv，跳过过滤后对比")
+        return
+
+    highlight_df = pd.read_csv(highlight_csv)
+    exclude_ids = set(highlight_df["hylak_id"].astype(int).tolist())
+    if not exclude_ids:
+        log.info("highlight_95pct_ids.csv 为空，跳过过滤后对比")
+        return
+
+    filtered = enriched[~enriched["hylak_id"].astype(int).isin(exclude_ids)].copy()
+    n_excluded = len(enriched) - len(filtered)
+    log.info(
+        "排除 %d 个异常值湖泊后剩余 %d 个",
+        n_excluded, len(filtered),
+    )
+
+    if filtered.empty:
+        log.warning("过滤后无数据，跳过对比")
+        return
+
+    summary_median = summarize_comparison(
+        filtered, rs_col="rs_area_median", config=config,
+    )
+    print_summary(summary_median, "中位数（排除异常值）")
+
+    summary_mean = summarize_comparison(
+        filtered, rs_col="rs_area_mean", config=config,
+    )
+    print_summary(summary_mean, "均值（排除异常值）")
+
+    csv_path = output_dir / "area_comparison_filtered.csv"
+    filtered.to_csv(csv_path, index=False)
+    log.info("已保存过滤后CSV到 %s", csv_path)
+
+    fig_scatter_median = plot_area_scatter(
+        filtered,
+        rs_col="rs_area_median",
+        agreement_col="agreement_median",
+        title="遥感面积中位数与HydroATLAS面积对比（排除异常值）",
+        config=config_dict,
+    )
+    save(fig_scatter_median, output_dir / "area_scatter_median_filtered.png")
+
+    fig_scatter_mean = plot_area_scatter(
+        filtered,
+        rs_col="rs_area_mean",
+        agreement_col="agreement_mean",
+        title="遥感面积均值与HydroATLAS面积对比（排除异常值）",
+        config=config_dict,
+    )
+    save(fig_scatter_mean, output_dir / "area_scatter_mean_filtered.png")
+
+    fig_hist_median = plot_ratio_histogram(
+        filtered,
+        log2_ratio_col="log2_ratio_median",
+        agreement_col="agreement_median",
+        title="log₂(遥感面积中位数/HydroATLAS面积)分布（排除异常值）",
+        config=config_dict,
+    )
+    save(fig_hist_median, output_dir / "ratio_histogram_median_filtered.png")
+
+    fig_hist_mean = plot_ratio_histogram(
+        filtered,
+        log2_ratio_col="log2_ratio_mean",
+        agreement_col="agreement_mean",
+        title="log₂(遥感面积均值/HydroATLAS面积)分布（排除异常值）",
+        config=config_dict,
+    )
+    save(fig_hist_mean, output_dir / "ratio_histogram_mean_filtered.png")
 
 
 def _sample_and_plot(
