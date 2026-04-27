@@ -24,7 +24,7 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class InterpolationConfig:
-    rtol: float = 1e-9
+    rtol: float = 0.0
     atol: float = 1e-6
     min_collinear_points: int = 4
 
