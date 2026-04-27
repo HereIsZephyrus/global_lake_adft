@@ -269,13 +269,35 @@ class ParquetLakeProvider(LakeProvider):
     ) -> pd.DataFrame:
         cache = self._cache_path("pwm_extreme", f"converged_grid_agg_r{resolution}.parquet")
         return self._cached_or_compute(
-            cache, refresh, lambda: self._pwm_grid_agg(
-                "pwm_extreme_thresholds", resolution,
-                value_col="converged",
-                value_alias="converged_count",
-                agg="SUM",
-                extra_where="AND converged = true",
-            )
+            cache, refresh, lambda: self._pwm_converged_grid_agg(resolution)
+        )
+
+    def fetch_pwm_monthly_threshold_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        cache = self._cache_path("pwm_extreme", f"monthly_threshold_grid_agg_r{resolution}.parquet")
+        return self._cached_or_compute(
+            cache, refresh, lambda: self._pwm_monthly_grid_agg(resolution)
+        )
+
+    def fetch_pwm_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        p_tag = f"p{p_high:.4f}"
+        cache = self._cache_path("pwm_extreme", f"exceedance_grid_agg_{p_tag}_r{resolution}.parquet")
+        return self._cached_or_compute(
+            cache, refresh, lambda: self._pwm_exceedance_grid_agg(resolution, p_high, p_low)
+        )
+
+    def fetch_pwm_monthly_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        p_tag = f"p{p_high:.4f}"
+        cache = self._cache_path("pwm_extreme", f"monthly_exceedance_grid_agg_{p_tag}_r{resolution}.parquet")
+        return self._cached_or_compute(
+            cache, refresh, lambda: self._pwm_monthly_exceedance_grid_agg(resolution, p_high, p_low)
         )
 
     # ------------------------------------------------------------------
@@ -433,4 +455,140 @@ class ParquetLakeProvider(LakeProvider):
         for col in ("cell_lat", "cell_lon"):
             if col in df.columns:
                 df[col] = df[col].astype(float)
+        return df
+
+    def _pwm_converged_grid_agg(self, resolution: float) -> pd.DataFrame:
+        sql = f"""
+        SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+               MEDIAN(t.threshold_high)                      AS median_threshold_high,
+               MEDIAN(t.threshold_low)                       AS median_threshold_low
+        FROM   pwm_extreme_thresholds t
+        JOIN   lake_info l ON l.hylak_id = t.hylak_id
+        WHERE  t.converged = true
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        return df
+
+    def _pwm_monthly_grid_agg(self, resolution: float) -> pd.DataFrame:
+        sql = f"""
+        SELECT t.month,
+               FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT t.hylak_id)                    AS lake_count,
+               MEDIAN(t.threshold_high)                      AS median_threshold_high,
+               MEDIAN(t.threshold_low)                       AS median_threshold_low
+        FROM   pwm_extreme_thresholds t
+        JOIN   lake_info l ON l.hylak_id = t.hylak_id
+        WHERE  t.converged = true
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        df["month"] = df["month"].astype(int)
+        return df
+
+    @staticmethod
+    def _crossent_threshold_sql(p: float, direction: str) -> str:
+        u = 1.0 - p if direction == "high" else p
+        ln_arg = 1.0 - u
+        return f"""t.mean_area * (
+               (t.epsilon - (1 - t.epsilon) * LN({ln_arg}))
+               * EXP(-(t.lambda_0
+                     + t.lambda_1 * {u}
+                     + t.lambda_2 * {u} * {u}
+                     + t.lambda_3 * {u} * {u} * {u}
+                     + t.lambda_4 * {u} * {u} * {u} * {u}))
+           )"""
+
+    def _pwm_exceedance_grid_agg(
+        self, resolution: float, p_high: float, p_low: float,
+    ) -> pd.DataFrame:
+        th_high = self._crossent_threshold_sql(p_high, "high")
+        th_low = self._crossent_threshold_sql(p_low, "low")
+        sql = f"""
+        WITH deduped_area AS (
+            SELECT DISTINCT hylak_id, year_month, water_area
+            FROM lake_area
+        ),
+        quantile_thresholds AS (
+            SELECT t.hylak_id, t.month,
+                   {th_high} AS threshold_high,
+                   {th_low}  AS threshold_low
+            FROM   pwm_extreme_thresholds t
+            WHERE  t.converged = true
+        ),
+        exceedance AS (
+            SELECT la.hylak_id,
+                   SUM(CASE WHEN la.water_area >= qt.threshold_high THEN 1 ELSE 0 END) AS high_count,
+                   SUM(CASE WHEN la.water_area <= qt.threshold_low  THEN 1 ELSE 0 END) AS low_count
+            FROM   deduped_area la
+            JOIN   quantile_thresholds qt
+              ON   qt.hylak_id = la.hylak_id
+              AND  qt.month = MONTH(la.year_month)
+            GROUP BY la.hylak_id
+        )
+        SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT e.hylak_id)                 AS lake_count,
+               AVG(e.high_count)                           AS mean_high_exceedance,
+               AVG(e.low_count)                            AS mean_low_exceedance,
+               MEDIAN(e.high_count)                        AS median_high_exceedance,
+               MEDIAN(e.low_count)                         AS median_low_exceedance
+        FROM   exceedance e
+        JOIN   lake_info l ON l.hylak_id = e.hylak_id
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        return df
+
+    def _pwm_monthly_exceedance_grid_agg(
+        self, resolution: float, p_high: float, p_low: float,
+    ) -> pd.DataFrame:
+        th_high = self._crossent_threshold_sql(p_high, "high")
+        th_low = self._crossent_threshold_sql(p_low, "low")
+        sql = f"""
+        WITH deduped_area AS (
+            SELECT DISTINCT hylak_id, year_month, water_area
+            FROM lake_area
+        ),
+        quantile_thresholds AS (
+            SELECT t.hylak_id, t.month,
+                   {th_high} AS threshold_high,
+                   {th_low}  AS threshold_low
+            FROM   pwm_extreme_thresholds t
+            WHERE  t.converged = true
+        )
+        SELECT qt.month,
+               FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+               FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+               COUNT(DISTINCT la.hylak_id)                AS lake_count,
+               AVG(CASE WHEN la.water_area >= qt.threshold_high THEN 1.0 ELSE 0.0 END) AS high_exceedance_rate,
+               AVG(CASE WHEN la.water_area <= qt.threshold_low  THEN 1.0 ELSE 0.0 END) AS low_exceedance_rate
+        FROM   deduped_area la
+        JOIN   quantile_thresholds qt
+          ON   qt.hylak_id = la.hylak_id
+          AND  qt.month = MONTH(la.year_month)
+        JOIN   lake_info l ON l.hylak_id = la.hylak_id
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+        """
+        df = self._client.query_df(sql)
+        for col in ("cell_lat", "cell_lon"):
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        df["month"] = df["month"].astype(int)
         return df

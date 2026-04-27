@@ -138,6 +138,26 @@ class LakeProvider(ABC):
     ) -> pd.DataFrame:
         ...
 
+    @abstractmethod
+    def fetch_pwm_monthly_threshold_grid_agg(
+        self, resolution: float = 0.5, *, refresh: bool = False
+    ) -> pd.DataFrame:
+        ...
+
+    @abstractmethod
+    def fetch_pwm_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        ...
+
+    @abstractmethod
+    def fetch_pwm_monthly_exceedance_grid_agg(
+        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        ...
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
