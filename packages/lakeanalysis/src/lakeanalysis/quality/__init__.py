@@ -1,5 +1,14 @@
 """Lake area data quality assessment module."""
 
+from .comparison import (
+    AgreementConfig,
+    classify_agreement,
+    compute_area_ratio,
+    compute_log2_ratio,
+    compute_relative_diff,
+    enrich_comparison_df,
+    summarize_comparison,
+)
 from .compute import (
     FlatnessFilterConfig,
     classify_area_anomaly,
@@ -29,12 +38,19 @@ from .interpolation import (
 )
 
 __all__ = [
+    "AgreementConfig",
     "FlatnessFilterConfig",
+    "classify_agreement",
     "classify_area_anomaly",
+    "compute_area_ratio",
     "compute_flatness_metrics",
+    "compute_log2_ratio",
     "compute_mean_area",
     "compute_median_area",
+    "compute_relative_diff",
+    "enrich_comparison_df",
     "is_anomalous",
+    "summarize_comparison",
     "FrozenPlateauSchedule",
     "apply_frozen_plateau",
     "build_frozen_plateau_schedule",
