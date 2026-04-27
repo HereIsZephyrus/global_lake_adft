@@ -68,7 +68,5 @@ def test_apply_axis_style():
 
 def test_theme_apply():
     Theme.apply()
-    assert plt.rcParams["font.family"] == ["serif"]
-    assert "Times New Roman" in plt.rcParams["font.serif"]
-    assert "SimSun" in plt.rcParams["font.serif"]
+    assert plt.rcParams["font.family"] == ["Times New Roman", "SimSun", "DejaVu Sans"]
     assert plt.rcParams["axes.unicode_minus"] is False
