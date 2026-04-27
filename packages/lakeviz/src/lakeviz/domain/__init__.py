@@ -17,6 +17,9 @@ from .hawkes import (
     draw_kernel_matrix,
     draw_lrt_summary,
 )
+from .interpolation import (
+    draw_interpolation_timeline,
+)
 from .quantile import (
     draw_monthly_timeline,
     draw_anomaly_timeline,
@@ -65,6 +68,7 @@ __all__ = [
     "draw_intensity_decomposition",
     "draw_kernel_matrix",
     "draw_lrt_summary",
+    "draw_interpolation_timeline",
     "draw_monthly_timeline",
     "draw_anomaly_timeline",
     "draw_transition_count_summary",

@@ -2070,81 +2070,65 @@ def fetch_pwm_extreme_status_ids_in_range(
         return {int(row[0]) for row in cur.fetchall()}
 
 
-# ------------------------------------------------------------------
-# Comparison experiment tables
-# ------------------------------------------------------------------
-
-_ensure_comparison_run_status_sql = sql.SQL("""
-CREATE TABLE IF NOT EXISTS comparison_run_status (
-    hylak_id BIGINT NOT NULL,
-    chunk_start BIGINT NOT NULL,
-    chunk_end BIGINT NOT NULL,
-    workflow_version VARCHAR(64) NOT NULL,
-    status VARCHAR(16) NOT NULL,
-    quantile_status VARCHAR(16),
-    pwm_status VARCHAR(16),
-    error_message TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (hylak_id, workflow_version)
-)
-""")
-
-_upsert_comparison_run_status_sql = sql.SQL("""
-INSERT INTO comparison_run_status
-    (hylak_id, chunk_start, chunk_end, workflow_version, status,
-     quantile_status, pwm_status, error_message)
-VALUES (%(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(workflow_version)s,
-        %(status)s, %(quantile_status)s, %(pwm_status)s, %(error_message)s)
-ON CONFLICT (hylak_id, workflow_version) DO UPDATE SET
-    chunk_start = EXCLUDED.chunk_start,
-    status = EXCLUDED.status,
-    quantile_status = EXCLUDED.quantile_status,
-    pwm_status = EXCLUDED.pwm_status,
-    error_message = EXCLUDED.error_message,
-    created_at = NOW()
-""")
+def _ensure_interpolation_detect_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+    CREATE TABLE IF NOT EXISTS {table} (
+        hylak_id           INTEGER      PRIMARY KEY,
+        n_linear_segments  INTEGER      NOT NULL,
+        n_flat_segments    INTEGER      NOT NULL,
+        max_linear_len     INTEGER      NOT NULL,
+        max_flat_len       INTEGER      NOT NULL,
+        collinear_ratio    DOUBLE PRECISION NOT NULL,
+        first_linear_ym    INTEGER,
+        n_obs              INTEGER      NOT NULL,
+        computed_at        TIMESTAMPTZ DEFAULT now()
+    );
+    """).format(table=sql.Identifier(tc.series_table("interpolation_detect")))
 
 
-def ensure_comparison_tables(
+def _upsert_interpolation_detect_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+    INSERT INTO {table} (
+        hylak_id, n_linear_segments, n_flat_segments, max_linear_len,
+        max_flat_len, collinear_ratio, first_linear_ym, n_obs, computed_at
+    ) VALUES (
+        %(hylak_id)s, %(n_linear_segments)s, %(n_flat_segments)s, %(max_linear_len)s,
+        %(max_flat_len)s, %(collinear_ratio)s, %(first_linear_ym)s, %(n_obs)s, now()
+    )
+    ON CONFLICT (hylak_id) DO UPDATE SET
+        n_linear_segments = EXCLUDED.n_linear_segments,
+        n_flat_segments   = EXCLUDED.n_flat_segments,
+        max_linear_len    = EXCLUDED.max_linear_len,
+        max_flat_len      = EXCLUDED.max_flat_len,
+        collinear_ratio   = EXCLUDED.collinear_ratio,
+        first_linear_ym   = EXCLUDED.first_linear_ym,
+        n_obs             = EXCLUDED.n_obs,
+        computed_at       = now();
+    """).format(table=sql.Identifier(tc.series_table("interpolation_detect")))
+
+
+def ensure_interpolation_detect_table(
     conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
 ) -> None:
     with conn.cursor() as cur:
-        cur.execute(_ensure_comparison_run_status_sql)
+        cur.execute(_ensure_interpolation_detect_table_sql(table_config))
     conn.commit()
-    log.debug("Ensured comparison_run_status table exists")
+    log.debug("Ensured interpolation_detect table exists")
 
 
-def upsert_comparison_run_status(
+def upsert_interpolation_detect(
     conn: psycopg.Connection,
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     *,
+    table_config: TableConfig = _default_table_config,
     commit: bool = True,
 ) -> None:
     if not rows:
         return
     with conn.cursor() as cur:
-        cur.executemany(_upsert_comparison_run_status_sql, rows)
+        cur.executemany(_upsert_interpolation_detect_sql(table_config), rows)
     if commit:
         conn.commit()
-    log.info("Upserted %d comparison_run_status row(s)", len(rows))
-
-
-def fetch_comparison_status_ids_in_range(
-    conn: psycopg.Connection,
-    chunk_start: int,
-    chunk_end: int,
-    *,
-    workflow_version: str,
-) -> set[int]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT DISTINCT hylak_id
-            FROM comparison_run_status
-            WHERE hylak_id >= %s AND hylak_id < %s
-              AND workflow_version = %s
-              AND status = 'done'
-            """,
-            (chunk_start, chunk_end, workflow_version),
-        )
-        return {int(row[0]) for row in cur.fetchall()}
+    log.info("Upserted %d interpolation_detect row(s)", len(rows))
