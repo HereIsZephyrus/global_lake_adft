@@ -52,9 +52,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="results/area_comparison",
+        default="data/area_comparison",
         metavar="DIR",
-        help="输出目录 (默认: results/area_comparison).",
+        help="输出目录 (默认: data/area_comparison).",
     )
     parser.add_argument(
         "--excellent-threshold",
