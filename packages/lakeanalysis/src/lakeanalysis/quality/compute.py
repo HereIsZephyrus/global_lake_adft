@@ -107,6 +107,68 @@ def compute_flatness_metrics(
     }
 
 
+def compute_area_range(
+    df: pd.DataFrame,
+    value_column: str = "water_area",
+) -> dict[str, float]:
+    """Compute the min and max of water_area for a single lake.
+
+    Args:
+        df: DataFrame with at least a ``water_area`` column,
+            as returned by ``fetch_lake_area_chunk``.
+        value_column: Column name for the area values.
+
+    Returns:
+        Dict with ``min_area`` and ``max_area`` in the same unit as input.
+        Returns ``0.0`` for both when the series is empty.
+    """
+    values = _prepare_values(df, value_column=value_column)
+    if values.empty:
+        return {"min_area": 0.0, "max_area": 0.0}
+    return {"min_area": float(values.min()), "max_area": float(values.max())}
+
+
+def classify_outside_range(
+    atlas_area: float,
+    min_area: float,
+    max_area: float,
+) -> dict[str, bool | float]:
+    """Classify whether atlas_area falls outside the observed time-series range.
+
+    Args:
+        atlas_area: Reference area from lake_info (km²).
+        min_area: Minimum observed area from time series (km²).
+        max_area: Maximum observed area from time series (km²).
+
+    Returns:
+        Dict with classification results:
+          - is_outside_range: atlas_area is below min or above max.
+          - is_below_min: atlas_area < min_area.
+          - is_above_max: atlas_area > max_area.
+          - atlas_area: Input value echoed back.
+          - min_area: Input value echoed back.
+          - max_area: Input value echoed back.
+    """
+    is_below_min = atlas_area < min_area
+    is_above_max = atlas_area > max_area
+
+    if atlas_area <= 0:
+        is_outside_range = False
+        is_below_min = False
+        is_above_max = False
+    else:
+        is_outside_range = is_below_min or is_above_max
+
+    return {
+        "is_outside_range": is_outside_range,
+        "is_below_min": bool(is_below_min),
+        "is_above_max": bool(is_above_max),
+        "atlas_area": float(atlas_area),
+        "min_area": float(min_area),
+        "max_area": float(max_area),
+    }
+
+
 def classify_area_anomaly(
     df: pd.DataFrame,
     rs_area_median: float,

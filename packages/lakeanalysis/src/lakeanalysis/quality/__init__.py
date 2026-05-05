@@ -12,6 +12,8 @@ from .comparison import (
 from .compute import (
     FlatnessFilterConfig,
     classify_area_anomaly,
+    classify_outside_range,
+    compute_area_range,
     compute_flatness_metrics,
     compute_mean_area,
     compute_median_area,
@@ -40,8 +42,9 @@ from .interpolation import (
 __all__ = [
     "AgreementConfig",
     "FlatnessFilterConfig",
-    "classify_agreement",
     "classify_area_anomaly",
+    "classify_outside_range",
+    "compute_area_range",
     "compute_area_ratio",
     "compute_flatness_metrics",
     "compute_log2_ratio",
