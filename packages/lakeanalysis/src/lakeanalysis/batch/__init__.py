@@ -6,7 +6,6 @@ from .protocol import (
     TAG_STATUS,
     TAG_TRIGGER,
     TRIGGER_READ,
-    TRIGGER_WRITE,
     RunReport,
     WorkerState,
     _iter_chunk_ranges,
@@ -26,7 +25,6 @@ __all__ = [
     "TAG_STATUS",
     "TAG_TRIGGER",
     "TRIGGER_READ",
-    "TRIGGER_WRITE",
     "Worker",
     "WorkerState",
 ]

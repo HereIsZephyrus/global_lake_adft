@@ -2,97 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 
-
-@dataclass(frozen=True)
-class AgreementConfig:
-    """Thresholds for classifying agreement between rs_area and atlas_area.
-
-    Attributes:
-        excellent: Ratio within [1-t, 1+t] (default ±10%).
-        good: Ratio within [1/g, g] (default 2x).
-        moderate: Ratio within [1/m, m] (default 5x).
-        poor: Ratio within [1/p, p] (default 10x).
-    """
-
-    excellent: float = 0.1
-    good: float = 2.0
-    moderate: float = 5.0
-    poor: float = 10.0
-
-
-_ArrayLike = pd.Series | np.ndarray
-
-
-def compute_area_ratio(
-    rs_area: _ArrayLike,
-    atlas_area: _ArrayLike,
-) -> np.ndarray:
-    """Compute rs_area / atlas_area, returning NaN where atlas_area <= 0."""
-    rs = np.asarray(rs_area, dtype=float)
-    at = np.asarray(atlas_area, dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(at > 0, rs / at, np.nan)
-    return ratio
-
-
-def compute_relative_diff(
-    rs_area: _ArrayLike,
-    atlas_area: _ArrayLike,
-) -> np.ndarray:
-    """Compute (rs_area - atlas_area) / atlas_area, NaN where atlas_area <= 0."""
-    ratio = compute_area_ratio(rs_area, atlas_area)
-    return ratio - 1.0
-
-
-def compute_log2_ratio(
-    rs_area: _ArrayLike,
-    atlas_area: _ArrayLike,
-) -> np.ndarray:
-    """Compute log2(rs_area / atlas_area), NaN where ratio <= 0."""
-    ratio = compute_area_ratio(rs_area, atlas_area)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(ratio > 0, np.log2(ratio), np.nan)
-
-
-def classify_agreement(
-    ratio: _ArrayLike,
-    config: AgreementConfig = AgreementConfig(),
-) -> pd.Categorical:
-    """Classify each lake's area ratio into agreement levels.
-
-    Levels (in order): excellent, good, moderate, poor, extreme.
-    """
-    r = np.asarray(ratio, dtype=float)
-    labels = pd.CategoricalDtype(
-        categories=["excellent", "good", "moderate", "poor", "extreme"],
-        ordered=True,
-    )
-    result = np.full(len(r), "extreme", dtype=object)
-    result[np.isnan(r)] = "extreme"
-
-    valid = ~np.isnan(r)
-    t = config.excellent
-    mask = valid & (r >= 1 - t) & (r <= 1 + t)
-    result[mask] = "excellent"
-
-    g = config.good
-    mask = valid & (r >= 1 / g) & (r <= g) & (result == "extreme")
-    result[mask] = "good"
-
-    m = config.moderate
-    mask = valid & (r >= 1 / m) & (r <= m) & (result == "extreme")
-    result[mask] = "moderate"
-
-    p = config.poor
-    mask = valid & (r >= 1 / p) & (r <= p) & (result == "extreme")
-    result[mask] = "poor"
-
-    return pd.Categorical(result, dtype=labels)
+from .metrics import (
+    AgreementConfig,
+    classify_agreement,
+    compute_area_ratio,
+    compute_log2_ratio,
+    compute_relative_diff,
+)
 
 
 def _percentile_stats(
@@ -159,7 +78,7 @@ def summarize_comparison(
     *,
     rs_col: str = "rs_area_median",
     atlas_col: str = "atlas_area",
-    config: AgreementConfig = AgreementConfig(),
+    config: AgreementConfig | None = None,
 ) -> dict[str, float | int | dict[str, int]]:
     """Compute summary statistics for rs_area vs atlas_area comparison.
 
@@ -172,6 +91,8 @@ def summarize_comparison(
     Returns:
         Dict with summary statistics.
     """
+    if config is None:
+        config = AgreementConfig()
     valid = df[[rs_col, atlas_col]].dropna()
     valid = valid[valid[atlas_col] > 0]
     n_total = len(valid)
@@ -185,7 +106,7 @@ def summarize_comparison(
     ratio_clean = ratio[~np.isnan(ratio)]
     log2_clean = log2_r[~np.isnan(log2_r)]
 
-    n_over, n_under, n_agree = _direction_counts(ratio_clean, config.excellent)
+    n_over, n_under, n_agree = _direction_counts(ratio_clean, config.good)
 
     stats = _percentile_stats(ratio_clean, log2_clean)
     stats["n_total"] = n_total
@@ -202,13 +123,15 @@ def enrich_comparison_df(
     rs_mean_col: str = "rs_area_mean",
     rs_median_col: str = "rs_area_median",
     atlas_col: str = "atlas_area",
-    config: AgreementConfig = AgreementConfig(),
+    config: AgreementConfig | None = None,
 ) -> pd.DataFrame:
     """Add comparison columns to a DataFrame with area_quality data.
 
     Adds: ratio_mean, ratio_median, rel_diff_mean, rel_diff_median,
           log2_ratio_mean, log2_ratio_median, agreement_mean, agreement_median.
     """
+    if config is None:
+        config = AgreementConfig()
     out = df.copy()
 
     for rs_col, suffix in [(rs_mean_col, "mean"), (rs_median_col, "median")]:

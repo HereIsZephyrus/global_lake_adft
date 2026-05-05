@@ -1,11 +1,11 @@
-"""Tests for lakeanalysis.quality.compute: compute_area_range & classify_outside_range."""
+"""Tests for lakeanalysis.quality.metrics: compute_area_range & classify_outside_range."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.quality.compute import (
+from lakeanalysis.quality.metrics import (
     classify_outside_range,
     compute_area_range,
 )

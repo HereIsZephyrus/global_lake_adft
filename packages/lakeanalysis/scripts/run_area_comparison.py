@@ -21,7 +21,7 @@ import pandas as pd
 
 from lakesource.parquet.client import DuckDBClient
 from lakeanalysis.logger import Logger
-from lakeanalysis.quality.comparison import (
+from lakeanalysis.quality import (
     AgreementConfig,
     enrich_comparison_df,
     summarize_comparison,
@@ -55,13 +55,6 @@ def parse_args() -> argparse.Namespace:
         default="data/area_comparison",
         metavar="DIR",
         help="输出目录 (默认: data/area_comparison).",
-    )
-    parser.add_argument(
-        "--excellent-threshold",
-        type=float,
-        default=0.1,
-        metavar="T",
-        help="优秀一致性阈值: 比值在±T范围内 (默认: 0.1 = ±10%%).",
     )
     parser.add_argument(
         "--good-threshold",
@@ -124,7 +117,7 @@ def print_summary(summary: dict, label: str) -> None:
     log.info("=" * 60)
 
     counts = summary["n_by_agreement"]
-    for level in ["excellent", "good", "moderate", "poor", "extreme"]:
+    for level in ["good", "moderate", "poor"]:
         c = counts.get(level, 0)
         pct = c / n * 100
         log.info("  %-12s: %8d  (%5.1f%%)", level, c, pct)
@@ -160,7 +153,6 @@ def print_summary(summary: dict, label: str) -> None:
 def config_to_dict(cfg: AgreementConfig) -> dict[str, float]:
     """Convert AgreementConfig to dict for plot labels."""
     return {
-        "excellent": cfg.excellent,
         "good": cfg.good,
         "moderate": cfg.moderate,
         "poor": cfg.poor,
@@ -176,15 +168,14 @@ def run(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = AgreementConfig(
-        excellent=args.excellent_threshold,
         good=args.good_threshold,
         moderate=args.moderate_threshold,
         poor=args.poor_threshold,
     )
     log.info(
-        "一致性阈值配置: excellent=±%.2f, good=%.1fx, "
+        "一致性阈值配置: good=%.1fx, "
         "moderate=%.1fx, poor=%.1fx",
-        config.excellent, config.good, config.moderate, config.poor,
+        config.good, config.moderate, config.poor,
     )
 
     df = load_area_quality(data_dir)

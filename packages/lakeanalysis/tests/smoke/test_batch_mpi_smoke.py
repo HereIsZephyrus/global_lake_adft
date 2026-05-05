@@ -141,11 +141,11 @@ def test_mpi_chunk_range_isolation(id_range, sample_hylak_ids, cleanup_algorithm
 
 @pytest.mark.usefixtures("mpi_available")
 def test_mpi_no_deadlock_on_write(id_range, sample_hylak_ids, cleanup_algorithm_rows, series_conn):
-    """Verify Manager does not deadlock when dispatching TRIGGER_WRITE.
+    """Verify Manager does not deadlock when dispatching triggers.
 
     The old bug: Manager enqueued worker to write_queue twice (once on
     CALCULATING, once on PENDING(prev=CALCULATING)), causing a second
-    TRIGGER_WRITE that no Worker would recv, deadlocking the system.
+    trigger that no Worker would recv, deadlocking the system.
 
     This test uses io_budget=1 to force serialized IO, which maximizes
     the chance of hitting the double-enqueue path.

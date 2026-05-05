@@ -9,14 +9,12 @@ TAG_TRIGGER = 2
 TAG_DATA = 3
 
 TRIGGER_READ = "trigger_read"
-TRIGGER_WRITE = "trigger_write"
 
 
 class WorkerState:
     PENDING = "pending"
     READING = "reading"
     CALCULATING = "calculating"
-    WRITING = "writing"
     DONE = "done"
 
 

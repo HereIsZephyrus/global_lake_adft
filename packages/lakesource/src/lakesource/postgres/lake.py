@@ -1168,6 +1168,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     rs_area_mean   DOUBLE PRECISION,
     rs_area_median DOUBLE PRECISION,
     atlas_area     DOUBLE PRECISION,
+    anomaly_flags  INTEGER DEFAULT 0,
     computed_at    TIMESTAMPTZ DEFAULT now()
 );
 """).format(table=sql.Identifier(tc.series_table("area_anomalies")))
@@ -1187,12 +1188,13 @@ CREATE OR REPLACE VIEW area_processed AS
 
 def _upsert_area_anomalies_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
-INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
-VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, now())
+INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags, computed_at)
+VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, %(anomaly_flags)s, now())
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
     atlas_area     = EXCLUDED.atlas_area,
+    anomaly_flags  = EXCLUDED.anomaly_flags,
     computed_at    = now();
 """).format(
     table=sql.Identifier(tc.series_table("area_anomalies")),
@@ -1202,8 +1204,8 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 
 def _move_area_quality_to_anomalies_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
-INSERT INTO {area_anomalies} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
-SELECT q.hylak_id, q.rs_area_mean, q.rs_area_median, q.atlas_area, now()
+INSERT INTO {area_anomalies} (hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags, computed_at)
+SELECT q.hylak_id, q.rs_area_mean, q.rs_area_median, q.atlas_area, 0, now()
 FROM {area_quality} q
 WHERE q.hylak_id = ANY(%(id_list)s)
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
@@ -1363,7 +1365,7 @@ def upsert_area_anomalies(
 ) -> None:
     """Insert or update area_anomalies rows.
 
-    Each dict in rows must contain: hylak_id, rs_area_mean, rs_area_median, atlas_area.
+    Each dict in rows must contain: hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.

@@ -6,9 +6,9 @@ Steps:
   2. Split the full hylak_id space into chunks of --chunk-size (default 10 000).
   3. For each pending chunk: fetch lake_area and atlas_area from SERIES_DB,
     compute rs_area_mean and rs_area_median per lake (converted from m² to km²),
-    run flatness filters, then upsert to SERIES_DB:
+    run anomaly filters, then upsert to SERIES_DB:
       - non-anomalous  →  area_quality
-      - median-zero or flat-series anomaly  →  area_anomalies
+      - anomalous      →  area_anomalies (with anomaly_flags bitmask)
   4. Chunks already fully recorded in area_processed (UNION of both tables) are
      skipped automatically, enabling safe resume after an interrupted run.
 
@@ -39,7 +39,15 @@ from lakesource.postgres import (
     upsert_area_quality,
 )
 from lakeanalysis.logger import Logger
-from lakeanalysis.quality import FlatnessFilterConfig, classify_area_anomaly, compute_mean_area, compute_median_area
+from lakeanalysis.quality import (
+    FlatnessFilterConfig,
+    AreaRatioConfig,
+    LakeContext,
+    classify_area_anomaly,
+    compute_mean_area,
+    compute_median_area,
+    default_filters,
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +82,20 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         help="Optional rounding digits before flatness statistics.",
     )
+    parser.add_argument(
+        "--area-ratio-min",
+        type=float,
+        default=0.1,
+        metavar="R",
+        help="Area ratio filter: minimum acceptable ratio (default: 0.1).",
+    )
+    parser.add_argument(
+        "--area-ratio-max",
+        type=float,
+        default=10.0,
+        metavar="R",
+        help="Area ratio filter: maximum acceptable ratio (default: 10.0).",
+    )
     return parser.parse_args()
 
 
@@ -81,34 +103,24 @@ def run(
     limit_id: int | None = None,
     chunk_size: int = 10_000,
     flat_config: FlatnessFilterConfig | None = None,
+    ratio_config: AreaRatioConfig | None = None,
 ) -> None:
-    """Execute the area quality pipeline in resumable chunks.
-
-    Each chunk of ``chunk_size`` consecutive hylak_id values is processed
-    independently and upserted directly to SERIES_DB:
-
-    - Non-anomalous lakes  →  ``area_quality``
-    - Median-zero / flat-series anomalies  →  ``area_anomalies``
-
-    The ``area_processed`` view (UNION of both tables) is used as the checkpoint
-    table so that all processed lakes count toward chunk completion, enabling
-    safe resume after an interrupted run.
-
-    Args:
-        limit_id: If given, only lakes with hylak_id < limit_id are processed.
-        chunk_size: Number of hylak_id values per processing chunk.
-        flat_config: Flatness filter configuration.
-    """
+    """Execute the area quality pipeline in resumable chunks."""
     if flat_config is None:
         flat_config = FlatnessFilterConfig()
+    if ratio_config is None:
+        ratio_config = AreaRatioConfig()
 
     log.info(
         "Starting area quality pipeline, limit_id=%s, chunk_size=%d, "
-        "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s",
+        "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s, "
+        "area_ratio_min=%.3f, area_ratio_max=%.1f",
         limit_id,
         chunk_size,
         flat_config.dominant_ratio_threshold,
         flat_config.round_digits,
+        ratio_config.min_ratio,
+        ratio_config.max_ratio,
     )
 
     with series_db.connection_context() as conn:
@@ -116,6 +128,7 @@ def run(
         ensure_area_anomalies_table(conn)
 
     processor = ChunkedLakeProcessor(series_db, chunk_size=chunk_size, done_table="area_processed")
+    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict]]:
         with series_db.connection_context() as conn:
@@ -126,16 +139,27 @@ def run(
         anomalies: list[dict] = []
         n_median_zero = 0
         n_flat = 0
+        n_area_ratio = 0
+        n_outside_range = 0
 
         for hylak_id, df in lake_frames.items():
             rs_area_median = compute_median_area(df) / 1_000_000
             rs_area_mean = compute_mean_area(df) / 1_000_000
-            decision = classify_area_anomaly(df, rs_area_median, flat_config)
+            atlas_area = atlas_areas.get(hylak_id, 0.0)
+
+            ctx = LakeContext(
+                df=df,
+                rs_area_median=rs_area_median,
+                rs_area_mean=rs_area_mean,
+                atlas_area=atlas_area,
+            )
+            decision = classify_area_anomaly(ctx, filters)
             row = {
                 "hylak_id": hylak_id,
                 "rs_area_mean": rs_area_mean,
                 "rs_area_median": rs_area_median,
-                "atlas_area": atlas_areas.get(hylak_id, 0.0),
+                "atlas_area": atlas_area,
+                "anomaly_flags": decision["anomaly_flags"],
             }
             if bool(decision["is_anomalous"]):
                 anomalies.append(row)
@@ -143,17 +167,24 @@ def run(
                     n_median_zero += 1
                 if bool(decision["is_flat"]):
                     n_flat += 1
+                if bool(decision["is_area_ratio"]):
+                    n_area_ratio += 1
+                if bool(decision["is_outside_range"]):
+                    n_outside_range += 1
             else:
                 normal.append(row)
 
         log.debug(
-            "chunk [%d, %d): %d normal, %d anomalous (median_zero=%d, flat=%d)",
+            "chunk [%d, %d): %d normal, %d anomalous "
+            "(median_zero=%d, flat=%d, area_ratio=%d, outside_range=%d)",
             chunk_start,
             chunk_end,
             len(normal),
             len(anomalies),
             n_median_zero,
             n_flat,
+            n_area_ratio,
+            n_outside_range,
         )
         return {"normal": normal, "anomalies": anomalies}
 
@@ -174,7 +205,16 @@ def main() -> None:
         dominant_ratio_threshold=args.flat_dominant_ratio_threshold,
         round_digits=args.flat_round_digits,
     )
-    run(limit_id=args.limit_id, chunk_size=args.chunk_size, flat_config=flat_config)
+    ratio_config = AreaRatioConfig(
+        min_ratio=args.area_ratio_min,
+        max_ratio=args.area_ratio_max,
+    )
+    run(
+        limit_id=args.limit_id,
+        chunk_size=args.chunk_size,
+        flat_config=flat_config,
+        ratio_config=ratio_config,
+    )
 
 
 if __name__ == "__main__":

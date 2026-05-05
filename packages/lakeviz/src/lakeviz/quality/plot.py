@@ -14,14 +14,12 @@ from lakeviz.plot_config import setup_chinese_font
 log = logging.getLogger(__name__)
 
 _AGREEMENT_COLORS = {
-    "excellent": "#2ca02c",
-    "good": "#98df8a",
+    "good": "#2ca02c",
     "moderate": "#ffbb78",
-    "poor": "#ff7f0e",
-    "extreme": "#d62728",
+    "poor": "#d62728",
 }
 
-_DEFAULT_CONFIG = {"excellent": 0.1, "good": 2.0, "moderate": 5.0, "poor": 10.0}
+_DEFAULT_CONFIG = {"good": 2.0, "moderate": 5.0, "poor": 10.0}
 
 
 @dataclass
@@ -45,19 +43,31 @@ class _HistData:
 
 def _agreement_label(level: str, config: dict[str, float]) -> str:
     """Generate Chinese label with actual ratio range for agreement level."""
-    t = config.get("excellent", 0.1)
     g = config.get("good", 2.0)
     m = config.get("moderate", 5.0)
     p = config.get("poor", 10.0)
 
     labels = {
-        "excellent": f"±{int(t * 100)}% ({1 - t:.1f}~{1 + t:.1f})",
         "good": f"{1 / g:.1f}~{g:.0f}倍",
         "moderate": f"{1 / m:.1f}~{m:.0f}倍",
-        "poor": f"{1 / p:.1f}~{p:.0f}倍",
-        "extreme": f"<{1 / p:.1f} 或 >{p:.0f}倍",
+        "poor": f"<{1 / p:.1f} 或 >{p:.0f}倍",
     }
     return labels.get(level, level)
+
+
+_LEGACY_LEVEL_MAP = {
+    "excellent": "good",
+    "extreme": "poor",
+}
+
+
+def _normalize_agreement_col(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    """Map legacy 5-level agreement categories to current 3-level."""
+    if col not in df.columns:
+        return df
+    out = df.copy()
+    out[col] = out[col].map(lambda x: _LEGACY_LEVEL_MAP.get(x, x))
+    return out
 
 
 def _prepare_scatter(
@@ -111,6 +121,7 @@ def plot_area_scatter(
     """Scatter plot of rs_area vs atlas_area on log-log scale with 1:1 and ±2x lines."""
     setup_chinese_font()
 
+    df = _normalize_agreement_col(df, agreement_col)
     data = _prepare_scatter(df, atlas_col, rs_col, agreement_col, config)
     if data is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -183,6 +194,7 @@ def plot_ratio_histogram(
     """Histogram of log2(ratio) colored by agreement level."""
     setup_chinese_font()
 
+    df = _normalize_agreement_col(df, agreement_col)
     cfg = config if config is not None else _DEFAULT_CONFIG
     valid = df[[log2_ratio_col, agreement_col]].dropna()
     if len(valid) < 2:
@@ -492,3 +504,68 @@ def plot_area_ratio_distribution(
 
     log.debug("plot_area_ratio_distribution: n=%d", n_total)
     return fig, {"mean_95pct": mean_95pct, "median_95pct": median_95pct}
+
+
+_SET_DISPLAY_NAMES = {
+    "is_median_zero": "中位数为零",
+    "is_flat": "序列平坦",
+    "is_area_ratio": "面积偏差",
+    "is_outside_range": "记录面积越界",
+}
+
+
+def plot_anomaly_upset(
+    flags_df: pd.DataFrame,
+    *,
+    min_size: int = 0,
+    show_counts: bool = True,
+    title: str = "异常集合交集",
+) -> plt.Figure:
+    """Plot UpSet diagram of anomaly set intersections.
+
+    Args:
+        flags_df: DataFrame with columns
+            hylak_id, is_median_zero, is_flat, is_area_ratio, is_outside_range.
+        min_size: Minimum intersection size to display.
+        show_counts: Whether to annotate intersection sizes.
+        title: Figure title.
+
+    Returns:
+        matplotlib Figure with UpSet plot.
+    """
+    import upsetplot
+
+    setup_chinese_font()
+
+    set_cols = ["is_median_zero", "is_flat", "is_area_ratio", "is_outside_range"]
+    for col in set_cols:
+        if col not in flags_df.columns:
+            raise ValueError(f"flags_df missing required column: {col}")
+
+    plot_df = flags_df[set_cols].copy()
+    for col in set_cols:
+        plot_df[col] = plot_df[col].astype(bool)
+
+    counts = upsetplot.from_indicators(plot_df, set_cols)
+    counts = counts[counts >= min_size]
+
+    display_names = {col: _SET_DISPLAY_NAMES.get(col, col) for col in set_cols}
+
+    fig = plt.figure(figsize=(10, 6))
+    upsetplot.plot(
+        counts,
+        fig=fig,
+        show_counts=show_counts,
+        sort_by="cardinality",
+    )
+
+    for text in fig.findobj(lambda obj: hasattr(obj, "get_text")):
+        t = text.get_text()
+        for col, name in display_names.items():
+            if t == col:
+                text.set_text(name)
+
+    fig.suptitle(title, fontsize=13)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    log.debug("plot_anomaly_upset: n=%d", len(flags_df))
+    return fig

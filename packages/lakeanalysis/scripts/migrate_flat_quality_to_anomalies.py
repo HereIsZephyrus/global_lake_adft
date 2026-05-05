@@ -31,7 +31,14 @@ from lakesource.postgres import (
     series_db,
 )
 from lakeanalysis.logger import Logger
-from lakeanalysis.quality import FlatnessFilterConfig, classify_area_anomaly, compute_median_area
+from lakeanalysis.quality import (
+    FlatnessFilterConfig,
+    LakeContext,
+    classify_area_anomaly,
+    compute_median_area,
+    compute_mean_area,
+    default_filters,
+)
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +135,8 @@ def run(
         _write_candidates(output_path, candidate_set)
         log.info("Initialized output file: %s", output_path)
 
+    filters = default_filters(flat_config=flat_config)
+
     all_chunks = list(processor.iter_all_chunks(limit_id=limit_id))
     for idx, (chunk_start, chunk_end) in enumerate(all_chunks, start=1):
         with series_db.connection_context() as conn:
@@ -147,12 +156,20 @@ def run(
 
         for hylak_id, df in lake_frames.items():
             rs_area_median = compute_median_area(df) / 1_000_000
-            decision = classify_area_anomaly(df, rs_area_median, flat_config)
+            rs_area_mean = compute_mean_area(df) / 1_000_000
+            atlas_area = 0.0
+            ctx = LakeContext(
+                df=df,
+                rs_area_median=rs_area_median,
+                rs_area_mean=rs_area_mean,
+                atlas_area=atlas_area,
+            )
+            decision = classify_area_anomaly(ctx, filters)
             if not bool(decision["is_flat"]):
                 continue
             candidates.append(int(hylak_id))
             candidate_set.add(int(hylak_id))
-            if bool(decision["is_flat_dominant"]):
+            if bool(decision["is_flat"]):
                 dominant_hits += 1
 
         if output_path is not None:

@@ -70,7 +70,7 @@ def lake_range_df(parquet_dir, area_quality_df):
 
 def test_compute_area_range_on_real_data(parquet_dir, area_quality_df):
     from lakesource.parquet.client import DuckDBClient
-    from lakeanalysis.quality import compute_area_range
+    from lakeanalysis.quality.metrics import compute_area_range
 
     client = DuckDBClient(data_dir=parquet_dir)
     sample_ids = area_quality_df["hylak_id"].astype(int).head(5).tolist()
@@ -93,7 +93,7 @@ def test_compute_area_range_on_real_data(parquet_dir, area_quality_df):
 
 
 def test_classify_outside_range_on_real_data(area_quality_df, lake_range_df):
-    from lakeanalysis.quality import classify_outside_range
+    from lakeanalysis.quality.metrics import classify_outside_range
 
     merged = area_quality_df.merge(lake_range_df, on="hylak_id", how="inner")
     assert len(merged) > 0, "No matching lakes between area_quality and lake_area"
@@ -124,9 +124,9 @@ def test_outside_range_vs_agreement_overlap(area_quality_df, lake_range_df):
     from lakeanalysis.quality import (
         AgreementConfig,
         classify_agreement,
-        classify_outside_range,
         compute_area_ratio,
     )
+    from lakeanalysis.quality.metrics import classify_outside_range
 
     merged = area_quality_df.merge(lake_range_df, on="hylak_id", how="inner")
     assert len(merged) > 0
@@ -136,7 +136,7 @@ def test_outside_range_vs_agreement_overlap(area_quality_df, lake_range_df):
     agreement = classify_agreement(ratio, config)
 
     outside_set = set()
-    poor_plus_set = set()
+    poor_set = set()
     moderate_plus_set = set()
 
     for idx, row in merged.iterrows():
@@ -149,14 +149,14 @@ def test_outside_range_vs_agreement_overlap(area_quality_df, lake_range_df):
             outside_set.add(idx)
 
         level = agreement[idx]
-        if level in ("poor", "extreme"):
-            poor_plus_set.add(idx)
-        if level in ("moderate", "poor", "extreme"):
+        if level == "poor":
+            poor_set.add(idx)
+        if level in ("moderate", "poor"):
             moderate_plus_set.add(idx)
 
     total = len(merged)
     a = outside_set
-    b_poor = poor_plus_set
+    b_poor = poor_set
     b_mod = moderate_plus_set
 
     print(f"\n{'='*60}")

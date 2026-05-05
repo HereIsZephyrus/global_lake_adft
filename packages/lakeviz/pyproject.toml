@@ -19,6 +19,8 @@ dependencies = [
     "geopandas>=0.14",
     "cartopy>=0.22",
     "matplotlib>=3.5",
+    "upsetplot>=0.9",
+    "cmaps>=2.0",
 ]
 
 [dependency-groups]

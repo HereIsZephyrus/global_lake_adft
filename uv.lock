@@ -187,6 +187,20 @@ wheels = [
 ]
 
 [[package]]
+name = "cmaps"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2f/c8/15cb109031c1520caa02730eae83f760e15ed39aad1bc7932e6b6a42cf5d/cmaps-2.0.1.tar.gz", hash = "sha256:6344fe9874281ce869af63c318c07632e73021019334d204617fcd3f28d55fa7", size = 231816, upload-time = "2023-06-06T13:39:59.041Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/a4/d760d7c708af55bb7d626d5d52c5e06c87b18cafffb9d5409e293de31196/cmaps-2.0.1-py3-none-any.whl", hash = "sha256:84e2ca4fd8f20fde59740396b4722236d85754c5441a5974b3f86786cba2f45e", size = 298756, upload-time = "2023-06-06T13:39:55.208Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -797,12 +811,14 @@ version = "0.1.0"
 source = { editable = "packages/lakeviz" }
 dependencies = [
     { name = "cartopy" },
+    { name = "cmaps" },
     { name = "geopandas" },
     { name = "lakesource" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "scipy" },
+    { name = "upsetplot" },
 ]
 
 [package.dev-dependencies]
@@ -814,12 +830,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cartopy", specifier = ">=0.22" },
+    { name = "cmaps", specifier = ">=2.0" },
     { name = "geopandas", specifier = ">=0.14" },
     { name = "lakesource", editable = "packages/lakesource" },
     { name = "matplotlib", specifier = ">=3.5" },
     { name = "numpy", specifier = ">=1.24,<2.3" },
     { name = "pandas", specifier = ">=2.0,<3" },
     { name = "scipy", specifier = ">=1.11" },
+    { name = "upsetplot", specifier = ">=0.9" },
 ]
 
 [package.metadata.requires-dev]
@@ -1752,3 +1770,13 @@ sdist = { url = "https://files.pythonhosted.org/packages/5e/a7/c202b344c5ca7daf3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/b0/003792df09decd6849a5e39c28b513c06e84436a54440380862b5aeff25d/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1", size = 348521, upload-time = "2025-12-13T17:45:33.889Z" },
 ]
+
+[[package]]
+name = "upsetplot"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "pandas" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/63/a5a1628898729bcfb67ea785a152e424d78e0f57dfbba46213a652532d6a/UpSetPlot-0.9.0.tar.gz", hash = "sha256:95b76ac38c624c9dfb1eca1de1a37e30e07e83678b1c57839c943184247b8592", size = 23797, upload-time = "2023-12-31T01:07:59.185Z" }
