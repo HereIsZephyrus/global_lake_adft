@@ -507,10 +507,9 @@ def plot_area_ratio_distribution(
 
 
 _SET_DISPLAY_NAMES = {
-    "is_median_zero": "中位数为零",
-    "is_flat": "序列平坦",
-    "is_area_ratio": "面积偏差",
-    "is_outside_range": "记录面积越界",
+    "is_median_zero": "面积为0",
+    "is_flat_or_pv": "序列异常",
+    "is_area_mismatch": "面积偏差",
 }
 
 
@@ -525,7 +524,7 @@ def plot_anomaly_upset(
 
     Args:
         flags_df: DataFrame with columns
-            hylak_id, is_median_zero, is_flat, is_area_ratio, is_outside_range.
+            hylak_id, is_median_zero, is_flat_or_pv, is_area_mismatch.
         min_size: Minimum intersection size to display.
         show_counts: Whether to annotate intersection sizes.
         title: Figure title.
@@ -537,7 +536,7 @@ def plot_anomaly_upset(
 
     setup_chinese_font()
 
-    set_cols = ["is_median_zero", "is_flat", "is_area_ratio", "is_outside_range"]
+    set_cols = list(_SET_DISPLAY_NAMES.keys())
     for col in set_cols:
         if col not in flags_df.columns:
             raise ValueError(f"flags_df missing required column: {col}")
@@ -546,10 +545,12 @@ def plot_anomaly_upset(
     for col in set_cols:
         plot_df[col] = plot_df[col].astype(bool)
 
-    counts = upsetplot.from_indicators(set_cols, data=plot_df)
-    counts = counts[counts >= min_size]
+    rename_map = {col: _SET_DISPLAY_NAMES[col] for col in set_cols}
+    plot_df = plot_df.rename(columns=rename_map)
+    display_cols = list(rename_map.values())
 
-    display_names = {col: _SET_DISPLAY_NAMES.get(col, col) for col in set_cols}
+    counts = upsetplot.from_indicators(display_cols, data=plot_df)
+    counts = counts[counts >= min_size]
 
     fig = plt.figure(figsize=(10, 6))
     upsetplot.plot(
@@ -558,12 +559,6 @@ def plot_anomaly_upset(
         show_counts=show_counts,
         sort_by="cardinality",
     )
-
-    for text in fig.findobj(lambda obj: hasattr(obj, "get_text")):
-        t = text.get_text()
-        for col, name in display_names.items():
-            if t == col:
-                text.set_text(name)
 
     fig.suptitle(title, fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])

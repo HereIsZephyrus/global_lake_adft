@@ -14,14 +14,13 @@ from lakeviz.quality.plot import plot_anomaly_upset
 def _make_flags_df(n_per_combo: int = 5) -> pd.DataFrame:
     rows = []
     combos = [
-        {"is_median_zero": False, "is_flat": False, "is_area_ratio": False, "is_outside_range": False},
-        {"is_median_zero": True,  "is_flat": False, "is_area_ratio": False, "is_outside_range": False},
-        {"is_median_zero": False, "is_flat": True,  "is_area_ratio": False, "is_outside_range": False},
-        {"is_median_zero": False, "is_flat": False, "is_area_ratio": True,  "is_outside_range": False},
-        {"is_median_zero": False, "is_flat": False, "is_area_ratio": False, "is_outside_range": True},
-        {"is_median_zero": True,  "is_flat": True,  "is_area_ratio": False, "is_outside_range": False},
-        {"is_median_zero": False, "is_flat": True,  "is_area_ratio": True,  "is_outside_range": True},
-        {"is_median_zero": True,  "is_flat": True,  "is_area_ratio": True,  "is_outside_range": True},
+        {"is_median_zero": False, "is_flat_or_pv": False, "is_area_mismatch": False},
+        {"is_median_zero": True,  "is_flat_or_pv": False, "is_area_mismatch": False},
+        {"is_median_zero": False, "is_flat_or_pv": True,  "is_area_mismatch": False},
+        {"is_median_zero": False, "is_flat_or_pv": False, "is_area_mismatch": True},
+        {"is_median_zero": True,  "is_flat_or_pv": True,  "is_area_mismatch": False},
+        {"is_median_zero": False, "is_flat_or_pv": True,  "is_area_mismatch": True},
+        {"is_median_zero": True,  "is_flat_or_pv": True,  "is_area_mismatch": True},
     ]
     hid = 1
     for combo in combos:
