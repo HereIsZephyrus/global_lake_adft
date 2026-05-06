@@ -2,23 +2,46 @@
 
 ``draw_global_grid`` operates on a single Axes (geographic projection).
 ``plot_global_grid`` is the backward-compatible convenience wrapper.
+
+Colorbar style follows NCL conventions (vertical, drawedges, extendrect,
+extendfrac='auto', manual ticks, labelsize=10).
+
+When ``add_cbar=False``, the function returns a dict with ``mesh``, ``norm``,
+``bounds``, ``vmin``, ``vmax``, and ``log_scale`` so that callers can build
+shared colorbars in panel layouts.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.ticker as mticker
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from lakeviz.config import DEFAULT_VIZ_CONFIG
 from lakeviz.style.base import AxKind, stamp_ax
+from lakeviz.style.presets import resolve_cmap
 
 log = logging.getLogger(__name__)
+
+
+def _discrete_norm(
+    vmin: float, vmax: float, n_levels: int, log_scale: bool,
+) -> tuple[mcolors.BoundaryNorm, np.ndarray]:
+    if log_scale and vmin > 0:
+        bounds = np.logspace(
+            np.log10(vmin), np.log10(vmax), n_levels + 1,
+        )
+    else:
+        bounds = np.linspace(vmin, vmax, n_levels + 1)
+    norm = mcolors.BoundaryNorm(bounds, ncolors=n_levels)
+    return norm, bounds
 
 
 def draw_global_grid(
@@ -28,18 +51,27 @@ def draw_global_grid(
     values: np.ndarray,
     *,
     title: str = "",
-    cmap: str = "YlOrRd",
+    cmap: str = "sequential_warm",
     log_scale: bool = True,
     vmin: float | None = None,
     vmax: float | None = None,
     cbar_label: str = "",
-) -> None:
-    """Draw a global grid map on *ax* using pcolormesh.
+    cbar_orientation: str = "vertical",
+    n_levels: int = 5,
+    add_cbar: bool = True,
+) -> dict[str, Any] | None:
+    """Draw a global grid map on *ax* using pcolormesh (NCL-style colorbar).
 
     The Axes must already have a Cartopy projection (e.g. Robinson).
     This function stamps ``ax._ax_kind = AxKind.GEOGRAPHIC``.
+
+    When ``add_cbar=False``, no colorbar is drawn and a dict with keys
+    ``mesh``, ``norm``, ``bounds``, ``vmin``, ``vmax``, ``log_scale`` is
+    returned for external colorbar composition.
     """
     stamp_ax(ax, AxKind.GEOGRAPHIC)
+
+    resolved_cmap = resolve_cmap(cmap)
 
     ax.add_feature(cfeature.OCEAN, facecolor="#e8f4f8", edgecolor="none")
     ax.add_feature(cfeature.LAND, facecolor="#f0f0f0", edgecolor="none")
@@ -51,35 +83,73 @@ def draw_global_grid(
         ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
         if title:
             ax.set_title(title, fontsize=14)
-        return
+        return None
 
-    _vmin = vmin if vmin is not None else valid[valid > 0].min() if (valid > 0).any() else 0.1
-    _vmax = vmax if vmax is not None else valid.max()
+    _vmin = (
+        vmin if vmin is not None
+        else float(valid[valid > 0].min()) if (valid > 0).any() else 0.1
+    )
+    _vmax = vmax if vmax is not None else float(valid.max())
 
-    if log_scale and _vmin > 0:
-        norm = mcolors.LogNorm(vmin=_vmin, vmax=_vmax)
-    else:
-        norm = mcolors.Normalize(vmin=_vmin, vmax=_vmax)
+    norm, bounds = _discrete_norm(_vmin, _vmax, n_levels, log_scale)
 
     mesh = ax.pcolormesh(
         lons, lats, values,
         transform=ccrs.PlateCarree(),
         norm=norm,
-        cmap=cmap,
+        cmap=resolved_cmap,
         shading="auto",
     )
 
     ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
 
-    fig = ax.get_figure()
-    cbar = fig.colorbar(
-        mesh, ax=ax, orientation="horizontal", pad=0.05, shrink=0.6, aspect=30,
-        drawedges=True, extendrect=True,
-    )
-    cbar.set_label(cbar_label, fontsize=10)
-
     if title:
         ax.set_title(title, fontsize=14)
+
+    meta: dict[str, Any] = {
+        "mesh": mesh,
+        "norm": norm,
+        "bounds": bounds,
+        "vmin": _vmin,
+        "vmax": _vmax,
+        "log_scale": log_scale,
+    }
+
+    if not add_cbar:
+        return meta
+
+    ticks = bounds
+
+    cbar_kwargs = {
+        "orientation": cbar_orientation,
+        "shrink": 0.8,
+        "extendrect": True,
+        "extendfrac": "auto",
+        "drawedges": True,
+        "ticks": ticks,
+    }
+    if cbar_orientation == "vertical":
+        cbar_kwargs["pad"] = 0.05
+    else:
+        cbar_kwargs["pad"] = 0.11
+        cbar_kwargs["aspect"] = 30
+
+    fig = ax.get_figure()
+    cbar = fig.colorbar(mesh, ax=ax, **cbar_kwargs)
+    cbar.ax.tick_params(labelsize=10)
+
+    if log_scale and _vmin > 0:
+        cbar.ax.yaxis.set_major_formatter(
+            mticker.LogFormatterSciNotation(labelOnlyBase=False),
+        )
+
+    if cbar_label:
+        if cbar_orientation == "vertical":
+            cbar.ax.set_ylabel(cbar_label, fontsize=10)
+        else:
+            cbar.ax.set_xlabel(cbar_label, fontsize=10)
+
+    return meta
 
 
 def plot_global_grid(
@@ -87,7 +157,7 @@ def plot_global_grid(
     lats: np.ndarray,
     values: np.ndarray,
     title: str = "",
-    cmap: str = "YlOrRd",
+    cmap: str = "sequential_warm",
     log_scale: bool = True,
     vmin: float | None = None,
     vmax: float | None = None,
@@ -95,7 +165,7 @@ def plot_global_grid(
     output_path: Path | None = None,
 ) -> plt.Figure:
     fig, ax = plt.subplots(
-        figsize=(16, 8),
+        figsize=(14, 7),
         subplot_kw={"projection": ccrs.Robinson()},
     )
     draw_global_grid(

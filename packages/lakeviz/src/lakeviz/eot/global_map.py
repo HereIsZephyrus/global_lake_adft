@@ -8,12 +8,20 @@ from ..config import GlobalGridConfig
 from ..grid_map_factory import make_grid_map
 
 
-def _fetch_eot_convergence_grid_agg(provider, resolution, *, refresh=False, tail="", threshold_quantile=0.95):
-    return provider.fetch_eot_convergence_grid_agg(tail, threshold_quantile, resolution, refresh=refresh)
+def _fetch_eot_convergence_grid_agg(
+    provider, resolution, *, refresh=False, tail="", threshold_quantile=0.95,
+):
+    return provider.fetch_eot_convergence_grid_agg(
+        tail, threshold_quantile, resolution, refresh=refresh,
+    )
 
 
-def _fetch_eot_converged_grid_agg(provider, resolution, *, refresh=False, tail="", threshold_quantile=0.95):
-    return provider.fetch_eot_converged_grid_agg(tail, threshold_quantile, resolution, refresh=refresh)
+def _fetch_eot_converged_grid_agg(
+    provider, resolution, *, refresh=False, tail="", threshold_quantile=0.95,
+):
+    return provider.fetch_eot_converged_grid_agg(
+        tail, threshold_quantile, resolution, refresh=refresh,
+    )
 
 
 def plot_eot_convergence_map(
@@ -29,7 +37,7 @@ def plot_eot_convergence_map(
         _fetch_eot_convergence_grid_agg,
         "convergence_rate",
         title=f"EOT 收敛率 — {tail} tail, {q_tag}",
-        cmap="RdYlGn",
+        cmap="sequential_cool",
         log_scale=False,
         vmin=0,
         vmax=1,
@@ -54,7 +62,7 @@ def plot_eot_xi_map(
         _fetch_eot_converged_grid_agg,
         "median_xi",
         title=f"EOT 中位数 ξ — {tail} tail, {q_tag}",
-        cmap="RdBu_r",
+        cmap="sequential_cool",
         log_scale=False,
         cbar_label="中位数 ξ",
         sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",

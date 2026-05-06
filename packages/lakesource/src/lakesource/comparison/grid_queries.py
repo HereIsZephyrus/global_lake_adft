@@ -45,20 +45,17 @@ class _ComparisonExceedanceQuery:
     def fetch_parquet(
         self, client: Any, cache_dir: Path, resolution: float,
         *, refresh: bool = False, sample_ids: set[int] | None = None,
-        comparison_dir: Path | None = None, data_dir: Path | None = None,
         **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "comparison" / f"exceedance_grid_agg_r{resolution}.parquet"
-        
-        comp_dir = comparison_dir or data_dir
-        if comp_dir is None:
-            raise ValueError("comparison_dir or data_dir is required")
-        
-        sample_filter = ""
+
+        q_sample_filter = ""
+        pwm_sample_filter = ""
         if sample_ids is not None:
             id_list = ",".join(map(str, sample_ids))
-            sample_filter = f"AND q.hylak_id IN ({id_list})"
-        
+            q_sample_filter = f"AND q.hylak_id IN ({id_list})"
+            pwm_sample_filter = f"AND la.hylak_id IN ({id_list})"
+
         return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
             client.query_df(f"""
             WITH quantile_agg AS (
@@ -68,9 +65,9 @@ class _ComparisonExceedanceQuery:
                        SUM(CASE WHEN q.extreme_label = 'extreme_high' THEN 1 ELSE 0 END) AS q_high_count,
                        SUM(CASE WHEN q.extreme_label = 'extreme_low'  THEN 1 ELSE 0 END) AS q_low_count,
                        COUNT(*)                                       AS q_total_months
-                FROM read_parquet('{comp_dir}/comparison_labels.parquet') q
+                FROM comparison_labels q
                 JOIN lake_info l ON l.hylak_id = q.hylak_id
-                WHERE 1=1 {sample_filter}
+                WHERE 1=1 {q_sample_filter}
                 GROUP BY 1, 2
             ),
             pwm_agg AS (
@@ -81,10 +78,10 @@ class _ComparisonExceedanceQuery:
                        SUM(CASE WHEN la.water_area < t.threshold_low  THEN 1 ELSE 0 END) AS pwm_low_count,
                        COUNT(*)                                     AS pwm_total_months
                 FROM lake_area la
-                JOIN read_parquet('{comp_dir}/comparison_thresholds.parquet') t
+                JOIN comparison_thresholds t
                   ON t.hylak_id = la.hylak_id AND t.month = MONTH(la.year_month)
                 JOIN lake_info l ON l.hylak_id = la.hylak_id
-                WHERE t.converged = true {sample_filter}
+                WHERE t.converged = true {pwm_sample_filter}
                 GROUP BY 1, 2
             )
             SELECT qa.cell_lat,

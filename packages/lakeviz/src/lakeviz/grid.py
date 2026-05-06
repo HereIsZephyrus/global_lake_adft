@@ -159,6 +159,51 @@ def build_grid_stats(
     return gpd.GeoDataFrame(rows, crs="EPSG:4326")
 
 
+def zonal_mean(
+    agg_df: pd.DataFrame,
+    value_cols: list[str],
+    resolution: float = 0.5,
+    lat_band_size: float = 5.0,
+) -> pd.DataFrame:
+    """Compute lake-count-weighted zonal means from grid aggregation data.
+
+    Groups grid cells into latitude bands and computes weighted averages
+    using ``lake_count`` as weights.
+
+    Args:
+        agg_df: DataFrame with columns [cell_lat, cell_lon, lake_count, ...value_cols].
+        value_cols: Columns to compute weighted means for.
+        resolution: Grid cell size (used only for documentation clarity).
+        lat_band_size: Width of latitude bands in degrees.
+
+    Returns:
+        DataFrame with columns [lat_band, lake_count, ...value_cols] where
+        value_cols contain lake-count-weighted means per latitude band.
+    """
+    if agg_df.empty:
+        return pd.DataFrame(columns=["lat_band", "lake_count"] + value_cols)
+
+    df = agg_df.copy()
+    df["lat_band"] = (np.floor(df["cell_lat"] / lat_band_size) * lat_band_size).astype(int)
+
+    records = []
+    for band, group in df.groupby("lat_band"):
+        w = group["lake_count"].to_numpy(dtype=float)
+        total_w = w.sum()
+        if total_w == 0:
+            continue
+        row: dict = {"lat_band": band, "lake_count": int(total_w)}
+        for col in value_cols:
+            if col in group.columns:
+                vals = group[col].to_numpy(dtype=float)
+                row[col] = float(np.average(vals, weights=w))
+            else:
+                row[col] = np.nan
+        records.append(row)
+
+    return pd.DataFrame(records)
+
+
 def agg_to_grid_matrix(
     agg_df: pd.DataFrame,
     value_col: str,

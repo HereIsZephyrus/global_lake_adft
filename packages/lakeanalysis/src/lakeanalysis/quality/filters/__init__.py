@@ -12,12 +12,14 @@ FLAG_MEDIAN_ZERO = 1
 FLAG_FLAT = 2
 FLAG_AREA_RATIO = 4
 FLAG_OUTSIDE_RANGE = 8
+FLAG_PV = 16
 
 FLAG_NAMES: dict[int, str] = {
     FLAG_MEDIAN_ZERO: "median_zero",
     FLAG_FLAT: "flat",
     FLAG_AREA_RATIO: "area_ratio",
     FLAG_OUTSIDE_RANGE: "outside_range",
+    FLAG_PV: "pv",
 }
 
 
@@ -41,6 +43,7 @@ class LakeContext:
     """Single-lake data bundle passed to every filter."""
 
     df: pd.DataFrame
+    df_no_frozen: pd.DataFrame
     rs_area_median: float
     rs_area_mean: float
     atlas_area: float

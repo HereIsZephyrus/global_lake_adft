@@ -10,6 +10,7 @@ from .filters import (
     FLAG_FLAT,
     FLAG_AREA_RATIO,
     FLAG_OUTSIDE_RANGE,
+    FLAG_PV,
     FLAG_NAMES,
     decode_anomaly_flags,
     encode_anomaly_flags,
@@ -18,6 +19,7 @@ from .filters.median_zero import MedianZeroFilter
 from .filters.flatness import FlatnessFilter, FlatnessFilterConfig
 from .filters.area_ratio import AreaRatioFilter, AreaRatioConfig
 from .filters.outside_range import OutsideRangeFilter
+from .filters.penalized_volatility import PenalizedVolatilityFilter, PenalizedVolatilityConfig
 
 
 _FLAG_BITS: dict[str, int] = {
@@ -25,6 +27,7 @@ _FLAG_BITS: dict[str, int] = {
     "flat": FLAG_FLAT,
     "area_ratio": FLAG_AREA_RATIO,
     "outside_range": FLAG_OUTSIDE_RANGE,
+    "pv": FLAG_PV,
 }
 
 
@@ -58,6 +61,7 @@ def classify_area_anomaly(
 def default_filters(
     flat_config: FlatnessFilterConfig | None = None,
     ratio_config: AreaRatioConfig | None = None,
+    pv_config: PenalizedVolatilityConfig | None = None,
 ) -> list[AnomalyFilter]:
     """Construct the default filter chain."""
     return [
@@ -65,4 +69,5 @@ def default_filters(
         FlatnessFilter(flat_config),
         AreaRatioFilter(ratio_config),
         OutsideRangeFilter(),
+        PenalizedVolatilityFilter(pv_config),
     ]

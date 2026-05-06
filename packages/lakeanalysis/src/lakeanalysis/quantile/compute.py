@@ -26,7 +26,7 @@ def validate_monthly_series(series_df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("month must be in 1..12")
 
     if df.duplicated(["year", "month"]).any():
-        raise ValueError("Duplicate year/month observations are not allowed")
+        df = df.drop_duplicates(subset=["year", "month"], keep="first")
 
     df = df.sort_values(["year", "month"]).reset_index(drop=True)
     df["year_month_key"] = df["year"] * 100 + df["month"]

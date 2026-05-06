@@ -1,0 +1,70 @@
+"""Tests for lakeviz.quality.plot: plot_anomaly_upset."""
+
+from __future__ import annotations
+
+import matplotlib
+matplotlib.use("Agg")
+
+import pandas as pd
+import pytest
+
+from lakeviz.quality.plot import plot_anomaly_upset
+
+
+def _make_flags_df(n_per_combo: int = 5) -> pd.DataFrame:
+    rows = []
+    combos = [
+        {"is_median_zero": False, "is_flat": False, "is_area_ratio": False, "is_outside_range": False},
+        {"is_median_zero": True,  "is_flat": False, "is_area_ratio": False, "is_outside_range": False},
+        {"is_median_zero": False, "is_flat": True,  "is_area_ratio": False, "is_outside_range": False},
+        {"is_median_zero": False, "is_flat": False, "is_area_ratio": True,  "is_outside_range": False},
+        {"is_median_zero": False, "is_flat": False, "is_area_ratio": False, "is_outside_range": True},
+        {"is_median_zero": True,  "is_flat": True,  "is_area_ratio": False, "is_outside_range": False},
+        {"is_median_zero": False, "is_flat": True,  "is_area_ratio": True,  "is_outside_range": True},
+        {"is_median_zero": True,  "is_flat": True,  "is_area_ratio": True,  "is_outside_range": True},
+    ]
+    hid = 1
+    for combo in combos:
+        for _ in range(n_per_combo):
+            row = {"hylak_id": hid, **combo}
+            rows.append(row)
+            hid += 1
+    return pd.DataFrame(rows)
+
+
+def test_plot_anomaly_upset_returns_figure():
+    df = _make_flags_df()
+    fig = plot_anomaly_upset(df)
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_anomaly_upset_missing_column():
+    df = pd.DataFrame({"hylak_id": [1], "is_median_zero": [True]})
+    with pytest.raises(ValueError, match="missing required column"):
+        plot_anomaly_upset(df)
+
+
+def test_plot_anomaly_upset_min_size():
+    df = _make_flags_df(n_per_combo=2)
+    fig = plot_anomaly_upset(df, min_size=3)
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_anomaly_upset_no_counts():
+    df = _make_flags_df()
+    fig = plot_anomaly_upset(df, show_counts=False)
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_anomaly_upset_custom_title():
+    df = _make_flags_df()
+    fig = plot_anomaly_upset(df, title="Custom Title")
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)

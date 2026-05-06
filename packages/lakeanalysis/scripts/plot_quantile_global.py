@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 from lakesource.config import SourceConfig
 from lakesource.env import load_env
+from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
 from lakeviz.plot_config import setup_chinese_font
 from lakeviz.quantile import (
@@ -44,7 +45,8 @@ def main() -> None:
     setup_chinese_font()
 
     source = SourceConfig()
-    grid_config = GlobalGridConfig(source=source, resolution=args.resolution, output_dir=args.output_dir)
+    provider = create_provider(source)
+    grid_config = GlobalGridConfig(provider=provider, resolution=args.resolution, output_dir=args.output_dir)
 
     plot_fns = [
         ("extremes_density", lambda: plot_extremes_density_map(grid_config, refresh=args.refresh)),

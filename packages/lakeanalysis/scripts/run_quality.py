@@ -4,11 +4,11 @@ Steps:
   1. Ensure area_quality, area_anomalies tables and area_processed view exist
      in SERIES_DB.
   2. Split the full hylak_id space into chunks of --chunk-size (default 10 000).
-  3. For each pending chunk: fetch lake_area and atlas_area from SERIES_DB,
-    compute rs_area_mean and rs_area_median per lake (converted from m² to km²),
-    run anomaly filters, then upsert to SERIES_DB:
-      - non-anomalous  →  area_quality
-      - anomalous      →  area_anomalies (with anomaly_flags bitmask)
+  3. For each pending chunk: fetch lake_area, atlas_area, and frozen months from
+     SERIES_DB, compute rs_area_mean and rs_area_median per lake (converted from
+     m² to km²) from defrozen data, run anomaly filters, then upsert to SERIES_DB:
+       - non-anomalous  →  area_quality
+       - anomalous      →  area_anomalies (with anomaly_flags bitmask)
   4. Chunks already fully recorded in area_processed (UNION of both tables) are
      skipped automatically, enabling safe resume after an interrupted run.
 
@@ -42,12 +42,16 @@ from lakeanalysis.logger import Logger
 from lakeanalysis.quality import (
     FlatnessFilterConfig,
     AreaRatioConfig,
+    PenalizedVolatilityConfig,
     LakeContext,
     classify_area_anomaly,
     compute_mean_area,
     compute_median_area,
     default_filters,
+    filter_frozen_rows,
 )
+from lakesource.provider import create_provider
+from lakesource.config import SourceConfig
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.8,
         metavar="R",
-        help="Flatness filter 1: dominant value frequency ratio threshold.",
+        help="Flatness filter: dominant value frequency ratio threshold.",
     )
     parser.add_argument(
         "--flat-round-digits",
@@ -96,6 +100,20 @@ def parse_args() -> argparse.Namespace:
         metavar="R",
         help="Area ratio filter: maximum acceptable ratio (default: 10.0).",
     )
+    parser.add_argument(
+        "--pv-threshold",
+        type=float,
+        default=0.002,
+        metavar="R",
+        help="Penalized volatility filter: PV <= threshold flags anomaly (default: 0.002).",
+    )
+    parser.add_argument(
+        "--pv-dominant-ratio-max",
+        type=float,
+        default=1.0,
+        metavar="R",
+        help="Penalized volatility filter: DR >= max flags anomaly (default: 1.0).",
+    )
     return parser.parse_args()
 
 
@@ -104,36 +122,45 @@ def run(
     chunk_size: int = 10_000,
     flat_config: FlatnessFilterConfig | None = None,
     ratio_config: AreaRatioConfig | None = None,
+    pv_config: PenalizedVolatilityConfig | None = None,
 ) -> None:
     """Execute the area quality pipeline in resumable chunks."""
     if flat_config is None:
         flat_config = FlatnessFilterConfig()
     if ratio_config is None:
         ratio_config = AreaRatioConfig()
+    if pv_config is None:
+        pv_config = PenalizedVolatilityConfig()
 
     log.info(
         "Starting area quality pipeline, limit_id=%s, chunk_size=%d, "
         "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s, "
-        "area_ratio_min=%.3f, area_ratio_max=%.1f",
+        "area_ratio_min=%.3f, area_ratio_max=%.1f, "
+        "pv_threshold=%.4f, pv_dominant_ratio_max=%.2f",
         limit_id,
         chunk_size,
         flat_config.dominant_ratio_threshold,
         flat_config.round_digits,
         ratio_config.min_ratio,
         ratio_config.max_ratio,
+        pv_config.pv_threshold,
+        pv_config.dominant_ratio_max,
     )
 
     with series_db.connection_context() as conn:
         ensure_area_quality_table(conn)
         ensure_area_anomalies_table(conn)
 
+    provider = create_provider(SourceConfig())
     processor = ChunkedLakeProcessor(series_db, chunk_size=chunk_size, done_table="area_processed")
-    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config)
+    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict]]:
         with series_db.connection_context() as conn:
             lake_frames = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
             atlas_areas = fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
+
+        frozen_map = provider.fetch_frozen_year_months_chunk(chunk_start, chunk_end)
 
         normal: list[dict] = []
         anomalies: list[dict] = []
@@ -141,14 +168,19 @@ def run(
         n_flat = 0
         n_area_ratio = 0
         n_outside_range = 0
+        n_pv = 0
 
         for hylak_id, df in lake_frames.items():
-            rs_area_median = compute_median_area(df) / 1_000_000
-            rs_area_mean = compute_mean_area(df) / 1_000_000
+            frozen_ym = frozen_map.get(hylak_id, None)
+            df_no_frozen = filter_frozen_rows(df, frozen_ym)
+
+            rs_area_median = compute_median_area(df_no_frozen) / 1_000_000
+            rs_area_mean = compute_mean_area(df_no_frozen) / 1_000_000
             atlas_area = atlas_areas.get(hylak_id, 0.0)
 
             ctx = LakeContext(
                 df=df,
+                df_no_frozen=df_no_frozen,
                 rs_area_median=rs_area_median,
                 rs_area_mean=rs_area_mean,
                 atlas_area=atlas_area,
@@ -171,12 +203,14 @@ def run(
                     n_area_ratio += 1
                 if bool(decision["is_outside_range"]):
                     n_outside_range += 1
+                if bool(decision["is_pv"]):
+                    n_pv += 1
             else:
                 normal.append(row)
 
         log.debug(
             "chunk [%d, %d): %d normal, %d anomalous "
-            "(median_zero=%d, flat=%d, area_ratio=%d, outside_range=%d)",
+            "(median_zero=%d, flat=%d, area_ratio=%d, outside_range=%d, pv=%d)",
             chunk_start,
             chunk_end,
             len(normal),
@@ -185,6 +219,7 @@ def run(
             n_flat,
             n_area_ratio,
             n_outside_range,
+            n_pv,
         )
         return {"normal": normal, "anomalies": anomalies}
 
@@ -209,11 +244,16 @@ def main() -> None:
         min_ratio=args.area_ratio_min,
         max_ratio=args.area_ratio_max,
     )
+    pv_config = PenalizedVolatilityConfig(
+        pv_threshold=args.pv_threshold,
+        dominant_ratio_max=args.pv_dominant_ratio_max,
+    )
     run(
         limit_id=args.limit_id,
         chunk_size=args.chunk_size,
         flat_config=flat_config,
         ratio_config=ratio_config,
+        pv_config=pv_config,
     )
 
 

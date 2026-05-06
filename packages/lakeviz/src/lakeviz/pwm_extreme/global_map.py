@@ -27,19 +27,27 @@ def _fetch_pwm_monthly_threshold_grid_agg(provider, resolution, *, refresh=False
     return provider.fetch_pwm_monthly_threshold_grid_agg(resolution, refresh=refresh)
 
 
-def _fetch_pwm_exceedance_grid_agg(provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False):
-    return provider.fetch_pwm_exceedance_grid_agg(resolution, p_high=p_high, p_low=p_low, refresh=refresh)
+def _fetch_pwm_exceedance_grid_agg(
+    provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False,
+):
+    return provider.fetch_pwm_exceedance_grid_agg(
+        resolution, p_high=p_high, p_low=p_low, refresh=refresh,
+    )
 
 
-def _fetch_pwm_monthly_exceedance_grid_agg(provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False):
-    return provider.fetch_pwm_monthly_exceedance_grid_agg(resolution, p_high=p_high, p_low=p_low, refresh=refresh)
+def _fetch_pwm_monthly_exceedance_grid_agg(
+    provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False,
+):
+    return provider.fetch_pwm_monthly_exceedance_grid_agg(
+        resolution, p_high=p_high, p_low=p_low, refresh=refresh,
+    )
 
 
 plot_pwm_convergence_map = make_grid_map(
     _fetch_pwm_convergence_grid_agg,
     "convergence_rate",
     title="PWM 极端分位数收敛率",
-    cmap="RdYlGn",
+    cmap="sequential_cool",
     log_scale=False,
     vmin=0,
     vmax=1,
@@ -129,13 +137,13 @@ def plot_pwm_monthly_threshold_maps(
             out_path = out_dir / f"month_{month:02d}.png"
 
             fig, ax = plt.subplots(
-                figsize=(16, 8),
+                figsize=(14, 7),
                 subplot_kw={"projection": ccrs.Robinson()},
             )
             draw_global_grid(
                 ax, lons, lats, values,
                 title=f"PWM 极端分位数{threshold_label} ({_MONTH_NAMES[month]})",
-                cmap="YlOrRd",
+                cmap="sequential_warm",
                 log_scale=True,
                 vmin=vmin,
                 vmax=vmax,
@@ -200,13 +208,13 @@ def plot_pwm_exceedance_maps(
             out_path = out_dir / filename
 
             fig, ax = plt.subplots(
-                figsize=(16, 8),
+                figsize=(14, 7),
                 subplot_kw={"projection": ccrs.Robinson()},
             )
             draw_global_grid(
                 ax, lons, lats, values,
                 title=f"PWM {label} (p={p})",
-                cmap="YlOrRd",
+                cmap="sequential_warm",
                 log_scale=True,
                 cbar_label=label,
             )
@@ -276,13 +284,13 @@ def plot_pwm_monthly_exceedance_maps(
                 out_path = out_dir / f"month_{month:02d}.png"
 
                 fig, ax = plt.subplots(
-                    figsize=(16, 8),
+                    figsize=(14, 7),
                     subplot_kw={"projection": ccrs.Robinson()},
                 )
                 draw_global_grid(
                     ax, lons, lats, values,
                     title=f"PWM {rate_label} (p={p}, {_MONTH_NAMES[month]})",
-                    cmap="YlOrRd",
+                    cmap="sequential_warm",
                     log_scale=False,
                     vmin=0,
                     vmax=1,

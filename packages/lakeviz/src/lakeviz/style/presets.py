@@ -25,12 +25,39 @@ if TYPE_CHECKING:
 # NCL-style colormap presets (matplotlib equivalents)
 # ---------------------------------------------------------------------------
 NCL_CMAPS = {
-    "diverging": "coolwarm",
-    "diverging_alt": "RdBu_r",
-    "sequential": "plasma",
-    "temperature": "YlOrRd",
-    "rainbow_alt": "viridis",
+    "diverging": "BlueWhiteOrangeRed",
+    "diverging_alt": "BlAqGrWh2YeOrReVi22",
+    "sequential": "BlAqGrYeOrRe",
+    "temperature": "BlAqGrYeOrRe",
+    "rainbow_alt": "gui_default",
 }
+
+SEQUENTIAL_COOL = ["#ffffcc", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"]
+SEQUENTIAL_WARM = ["#ffffb2", "#fecc5c", "#fd8d3c", "#f03b20", "#bd0026"]
+
+
+def _make_cmap(colors: list[str], name: str):
+    import matplotlib.colors as mcolors
+    return mcolors.LinearSegmentedColormap.from_list(name, colors, N=len(colors))
+
+
+def resolve_cmap(name: str):
+    """Return a matplotlib Colormap, resolving built-in and NCL names."""
+    import matplotlib.pyplot as plt
+    _builtins = {
+        "sequential_cool": SEQUENTIAL_COOL,
+        "sequential_warm": SEQUENTIAL_WARM,
+    }
+    if name in _builtins:
+        return _make_cmap(_builtins[name], name)
+    try:
+        import cmaps as _cmaps
+        cm = getattr(_cmaps, name, None)
+        if cm is not None:
+            return cm
+    except ImportError:
+        pass
+    return plt.get_cmap(name)
 
 
 # ---------------------------------------------------------------------------

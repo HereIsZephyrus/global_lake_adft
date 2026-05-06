@@ -49,13 +49,11 @@ SELECT la.hylak_id,
        EXTRACT(MONTH FROM la.year_month)::int AS month,
        la.water_area
 FROM {lake_area} la
-JOIN {area_quality} aq ON aq.hylak_id = la.hylak_id
 WHERE la.hylak_id >= %(chunk_start)s AND la.hylak_id < %(chunk_end)s
 ORDER BY la.hylak_id, la.year_month
 """).format(
-    lake_area=sql.Identifier(tc.series_table("lake_area")),
-    area_quality=sql.Identifier(tc.series_table("area_quality")),
-)
+        lake_area=sql.Identifier(tc.series_table("lake_area")),
+    )
 
 
 def _ensure_entropy_table_sql(tc: TableConfig) -> sql.Composed:
@@ -1318,17 +1316,39 @@ def upsert_area_quality(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Insert or update area_quality rows.
+    """Insert or update area_quality rows using COPY + INSERT SELECT.
 
-    Each dict in rows must contain: hylak_id, rs_area, atlas_area.
+    Each dict in rows must contain: hylak_id, rs_area_mean, rs_area_median, atlas_area.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.
         rows: List of dicts, one per hylak_id.
         table_config: Table name configuration.
     """
+    if not rows:
+        return
+    table = table_config.series_table("area_quality")
     with conn.cursor() as cur:
-        cur.executemany(_upsert_area_quality_sql(table_config), rows)
+        cur.execute(sql.SQL(
+            "CREATE TEMP TABLE _tmp_aq (hylak_id INTEGER, rs_area_mean DOUBLE PRECISION, "
+            "rs_area_median DOUBLE PRECISION, atlas_area DOUBLE PRECISION) ON COMMIT DROP"
+        ))
+        with cur.copy("COPY _tmp_aq (hylak_id, rs_area_mean, rs_area_median, atlas_area) FROM STDIN") as copy:
+            for r in rows:
+                copy.write_row([
+                    r["hylak_id"], r["rs_area_mean"],
+                    r["rs_area_median"], r["atlas_area"],
+                ])
+        cur.execute(sql.SQL(
+            "INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at) "
+            "SELECT t.hylak_id, t.rs_area_mean, t.rs_area_median, t.atlas_area, now() "
+            "FROM _tmp_aq t "
+            "ON CONFLICT (hylak_id) DO UPDATE SET "
+            "rs_area_mean = EXCLUDED.rs_area_mean, "
+            "rs_area_median = EXCLUDED.rs_area_median, "
+            "atlas_area = EXCLUDED.atlas_area, "
+            "computed_at = now()"
+        ).format(table=sql.Identifier(table)))
     conn.commit()
     log.info("Upserted %d area_quality row(s)", len(rows))
 
@@ -1363,7 +1383,7 @@ def upsert_area_anomalies(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Insert or update area_anomalies rows.
+    """Insert or update area_anomalies rows using COPY + INSERT SELECT.
 
     Each dict in rows must contain: hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags.
 
@@ -1372,8 +1392,32 @@ def upsert_area_anomalies(
         rows: List of dicts, one per anomalous hylak_id.
         table_config: Table name configuration.
     """
+    if not rows:
+        return
+    table = table_config.series_table("area_anomalies")
     with conn.cursor() as cur:
-        cur.executemany(_upsert_area_anomalies_sql(table_config), rows)
+        cur.execute(sql.SQL(
+            "CREATE TEMP TABLE _tmp_aa (hylak_id INTEGER, rs_area_mean DOUBLE PRECISION, "
+            "rs_area_median DOUBLE PRECISION, atlas_area DOUBLE PRECISION, "
+            "anomaly_flags INTEGER) ON COMMIT DROP"
+        ))
+        with cur.copy("COPY _tmp_aa (hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags) FROM STDIN") as copy:
+            for r in rows:
+                copy.write_row([
+                    r["hylak_id"], r["rs_area_mean"], r["rs_area_median"],
+                    r["atlas_area"], r["anomaly_flags"],
+                ])
+        cur.execute(sql.SQL(
+            "INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags, computed_at) "
+            "SELECT t.hylak_id, t.rs_area_mean, t.rs_area_median, t.atlas_area, t.anomaly_flags, now() "
+            "FROM _tmp_aa t "
+            "ON CONFLICT (hylak_id) DO UPDATE SET "
+            "rs_area_mean = EXCLUDED.rs_area_mean, "
+            "rs_area_median = EXCLUDED.rs_area_median, "
+            "atlas_area = EXCLUDED.atlas_area, "
+            "anomaly_flags = EXCLUDED.anomaly_flags, "
+            "computed_at = now()"
+        ).format(table=sql.Identifier(table)))
     conn.commit()
     log.info("Upserted %d area_anomalies row(s)", len(rows))
 

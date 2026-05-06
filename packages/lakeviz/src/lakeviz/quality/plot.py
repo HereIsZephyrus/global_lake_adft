@@ -542,11 +542,11 @@ def plot_anomaly_upset(
         if col not in flags_df.columns:
             raise ValueError(f"flags_df missing required column: {col}")
 
-    plot_df = flags_df[set_cols].copy()
+    plot_df = flags_df.copy()
     for col in set_cols:
         plot_df[col] = plot_df[col].astype(bool)
 
-    counts = upsetplot.from_indicators(plot_df, set_cols)
+    counts = upsetplot.from_indicators(set_cols, data=plot_df)
     counts = counts[counts >= min_size]
 
     display_names = {col: _SET_DISPLAY_NAMES.get(col, col) for col in set_cols}

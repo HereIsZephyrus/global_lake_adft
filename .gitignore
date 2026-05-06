@@ -222,6 +222,12 @@ results/
 logs/
 sampled/
 
+# LSF scripts
+lsf/
+
+# Session files
+session-*.md
+
 # agent
 AGENTS.md
 CLAUDE.md

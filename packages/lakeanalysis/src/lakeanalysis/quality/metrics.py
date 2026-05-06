@@ -68,6 +68,60 @@ def compute_flatness_metrics(
     }
 
 
+def compute_penalized_volatility(
+    values: pd.Series,
+) -> dict[str, float]:
+    """Compute penalized volatility metrics from a defrozen value series.
+
+    Args:
+        values: water_area series with frozen months already removed,
+            sorted chronologically.
+
+    Returns keys:
+      - n_obs: number of observations
+      - dominant_ratio: frequency of most common value / n_obs
+      - std_pct_change: std of month-over-month pct_change
+      - n_zero_delta: count of consecutive months with same area
+      - penalized_volatility: std_pct_change / sqrt(n_zero_delta)
+          (or std_pct_change when n_zero_delta == 0)
+    """
+    values = pd.to_numeric(values, errors="coerce").dropna().reset_index(drop=True)
+    n_obs = len(values)
+    if n_obs < 2:
+        return {
+            "n_obs": float(n_obs),
+            "dominant_ratio": 1.0 if n_obs == 1 else 0.0,
+            "std_pct_change": 0.0,
+            "n_zero_delta": 0.0,
+            "penalized_volatility": 0.0,
+        }
+
+    value_counts = values.value_counts(dropna=False)
+    dominant_ratio = float(value_counts.iloc[0]) / float(n_obs)
+
+    prev = values.shift(1).iloc[1:]
+    curr = values.iloc[1:]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pct_change = np.where(prev > 0, (curr - prev) / prev, np.nan)
+    pct_change = pct_change[~np.isnan(pct_change)]
+
+    std_pct_change = float(np.std(pct_change)) if len(pct_change) > 0 else 0.0
+    n_zero_delta = int((curr.values == prev.values).sum())
+
+    if n_zero_delta > 0:
+        pv = std_pct_change / np.sqrt(n_zero_delta)
+    else:
+        pv = std_pct_change
+
+    return {
+        "n_obs": float(n_obs),
+        "dominant_ratio": dominant_ratio,
+        "std_pct_change": std_pct_change,
+        "n_zero_delta": float(n_zero_delta),
+        "penalized_volatility": float(pv),
+    }
+
+
 def compute_area_range(
     df: pd.DataFrame,
     value_column: str = "water_area",

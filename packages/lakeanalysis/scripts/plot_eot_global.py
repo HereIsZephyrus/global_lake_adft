@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from lakesource.config import SourceConfig
 from lakesource.eot.reader import fetch_available_quantiles
 from lakesource.env import load_env
+from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
 from lakeviz.eot import (
     plot_eot_convergence_map,
@@ -49,7 +50,8 @@ def main() -> None:
     setup_chinese_font()
 
     source = SourceConfig()
-    grid_config = GlobalGridConfig(source=source, resolution=args.resolution, output_dir=args.output_dir)
+    provider = create_provider(source)
+    grid_config = GlobalGridConfig(provider=provider, resolution=args.resolution, output_dir=args.output_dir)
 
     combos = fetch_available_quantiles(source)
     if combos.empty:

@@ -24,7 +24,7 @@ def make_grid_map(
     value_col: str,
     *,
     title: str,
-    cmap: str = "YlOrRd",
+    cmap: str = "sequential_warm",
     log_scale: bool = True,
     vmin: float | None = None,
     vmax: float | None = None,
@@ -88,7 +88,10 @@ def make_grid_map(
 
         if value_col == "mean_per_lake":
             agg = agg.copy()
-            agg["mean_per_lake"] = agg["event_count"].astype(float) / agg["lake_count"].astype(float)
+            agg["mean_per_lake"] = (
+                agg["event_count"].astype(float)
+                / agg["lake_count"].astype(float)
+            )
 
         lons, lats, values = agg_to_grid_matrix(agg, value_col, config.resolution)
 
@@ -99,7 +102,7 @@ def make_grid_map(
         import matplotlib.pyplot as plt
         import cartopy.crs as ccrs
 
-        fig, ax = plt.subplots(figsize=(16, 8), subplot_kw={"projection": ccrs.Robinson()})
+        fig, ax = plt.subplots(figsize=(14, 7), subplot_kw={"projection": ccrs.Robinson()})
         draw_global_grid(
             ax, lons, lats, values,
             title=title, cmap=cmap, log_scale=log_scale,

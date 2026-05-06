@@ -105,18 +105,23 @@ class ChunkedLakeProcessor:
         Returns:
             True when done_count >= source_count (including empty source ranges).
         """
-        count_done_sql = psql.SQL(
-            "SELECT COUNT(*) FROM {} WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s"
-        ).format(psql.Identifier(self._done_table))
+        is_pending_sql = psql.SQL(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM {source} s "
+            "  WHERE s.hylak_id >= %(chunk_start)s AND s.hylak_id < %(chunk_end)s "
+            "  AND NOT EXISTS ("
+            "    SELECT 1 FROM {done} d WHERE d.hylak_id = s.hylak_id"
+            "  )"
+            ")"
+        ).format(
+            source=psql.Identifier(self._table_config.series_table("lake_info")),
+            done=psql.Identifier(self._done_table),
+        )
         params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
         with conn.cursor() as cur:
-            cur.execute(self._count_source_in_range_sql(), params)
-            source_count: int = cur.fetchone()[0]
-            if source_count == 0:
-                return True
-            cur.execute(count_done_sql, params)
-            done_count: int = cur.fetchone()[0]
-        return done_count >= source_count
+            cur.execute(is_pending_sql, params)
+            has_pending: bool = cur.fetchone()[0]
+        return not has_pending
 
     def iter_all_chunks(
         self, limit_id: int | None = None

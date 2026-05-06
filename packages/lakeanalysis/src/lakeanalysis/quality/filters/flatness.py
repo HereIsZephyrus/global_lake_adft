@@ -31,7 +31,7 @@ class FlatnessFilter:
 
     def classify(self, ctx: LakeContext) -> AnomalyFlag:
         metrics = compute_flatness_metrics(
-            ctx.df,
+            ctx.df_no_frozen,
             value_column="water_area",
             round_digits=self._config.round_digits,
         )

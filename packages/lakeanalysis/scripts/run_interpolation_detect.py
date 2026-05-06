@@ -93,6 +93,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip writing to PostgreSQL (only write parquet).",
     )
+    parser.add_argument(
+        "--output-suffix",
+        type=str,
+        default="",
+        metavar="SUFFIX",
+        help="Append suffix to output parquet filename (e.g. '_00' for sharded runs).",
+    )
     return parser.parse_args()
 
 
@@ -104,6 +111,7 @@ def run(
     id_end: int | None = None,
     min_collinear_points: int = 4,
     no_db: bool = False,
+    output_suffix: str = "",
 ) -> pd.DataFrame:
     config = InterpolationConfig(min_collinear_points=min_collinear_points)
 
@@ -204,7 +212,7 @@ def run(
 
     output_dir = data_dir / "interpolation"
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / "interpolation_detect.parquet"
+    out_path = output_dir / f"interpolation_detect{output_suffix}.parquet"
     result_df.to_parquet(out_path, index=False)
     log.info("Wrote %d rows to %s", len(result_df), out_path)
 
@@ -237,6 +245,7 @@ def main() -> None:
         id_end=args.id_end,
         min_collinear_points=args.min_collinear_points,
         no_db=args.no_db,
+        output_suffix=args.output_suffix,
     )
 
 

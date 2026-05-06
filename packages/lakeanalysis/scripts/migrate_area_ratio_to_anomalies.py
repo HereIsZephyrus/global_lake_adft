@@ -156,6 +156,7 @@ def run(
 
         ctx = LakeContext(
             df=None,
+            df_no_frozen=None,
             rs_area_median=rs_median,
             rs_area_mean=rs_mean,
             atlas_area=atlas,

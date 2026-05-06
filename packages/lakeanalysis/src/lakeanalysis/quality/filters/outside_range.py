@@ -10,7 +10,7 @@ class OutsideRangeFilter:
     name = "outside_range"
 
     def classify(self, ctx: LakeContext) -> AnomalyFlag:
-        range_metrics = compute_area_range(ctx.df)
+        range_metrics = compute_area_range(ctx.df_no_frozen)
         min_area = range_metrics["min_area"]
         max_area = range_metrics["max_area"]
         atlas = ctx.atlas_area
