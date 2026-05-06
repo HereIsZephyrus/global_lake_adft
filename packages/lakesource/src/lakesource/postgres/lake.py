@@ -122,6 +122,23 @@ ORDER BY hylak_id
 """).format(table=sql.Identifier(tc.series_table("af_nearest")))
 
 
+def _fetch_impact_pairs_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT a.hylak_id, a.nearest_id, a.topo_level
+FROM {af_nearest} a
+LEFT JOIN {anomalies} ax ON a.hylak_id = ax.hylak_id
+LEFT JOIN {anomalies} an ON a.nearest_id = an.hylak_id
+WHERE a.topo_level > 8
+  AND a.nearest_id IS NOT NULL
+  AND ax.hylak_id IS NULL
+  AND an.hylak_id IS NULL
+ORDER BY a.hylak_id
+""").format(
+        af_nearest=sql.Identifier(tc.series_table("af_nearest")),
+        anomalies=sql.Identifier(tc.series_table("area_anomalies")),
+    )
+
+
 def _fetch_lake_area_by_ids_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id,
@@ -892,6 +909,56 @@ def fetch_af_nearest_high_topo(
     return result
 
 
+def fetch_impact_pairs(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> list[dict]:
+    """Fetch quality-filtered af_nearest pairs (topo_level > 8, no anomalous lakes).
+
+    Excludes pairs where either lake appears in area_anomalies, pushing the
+    filter down to SQL instead of loading all anomaly IDs into Python.
+
+    Args:
+        conn: Open connection to SERIES_DB.
+        table_config: Table name configuration.
+
+    Returns:
+        List of dicts with keys hylak_id, nearest_id, topo_level.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_fetch_impact_pairs_sql(table_config))
+        rows = cur.fetchall()
+    result = [
+        {"hylak_id": int(r[0]), "nearest_id": int(r[1]), "topo_level": int(r[2])}
+        for r in rows
+    ]
+    log.info("Fetched impact pairs (topo_level>8, quality-filtered): %d pairs", len(result))
+    return result
+
+
+def fetch_anomaly_hylak_ids(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> set[int]:
+    """Fetch all hylak_id values from area_anomalies.
+
+    Args:
+        conn: Open connection to SERIES_DB.
+        table_config: Table name configuration.
+
+    Returns:
+        Set of hylak_id integers flagged as anomalous.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_fetch_anomaly_hylak_ids_sql(table_config))
+        rows = cur.fetchall()
+    result = {int(r[0]) for r in rows}
+    log.info("Fetched anomaly hylak_ids: %d lakes", len(result))
+    return result
+
+
 def fetch_lake_area_by_ids(
     conn: psycopg.Connection,
     id_list: list[int],
@@ -1220,6 +1287,12 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     table=sql.Identifier(tc.series_table("area_anomalies")),
     conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
 )
+
+
+def _fetch_anomaly_hylak_ids_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT hylak_id FROM {table}
+""").format(table=sql.Identifier(tc.series_table("area_anomalies")))
 
 
 def _move_area_quality_to_anomalies_sql(tc: TableConfig) -> sql.Composed:

@@ -88,6 +88,8 @@ def __getattr__(name: str):
         "fetch_frozen_year_months_chunk",
         "fetch_linear_trend_by_ids",
         "fetch_af_nearest_high_topo",
+        "fetch_anomaly_hylak_ids",
+        "fetch_impact_pairs",
         "fetch_max_area_quality_hylak_id",
         "fetch_quantile_status_ids_in_range",
         "fetch_pwm_extreme_status_ids_in_range",

@@ -27,7 +27,7 @@ from lakeanalysis.logger import Logger
 log = logging.getLogger(__name__)
 
 from lakesource.postgres import series_db
-from lakeanalysis.pfaf import compute_nearest_naturals, ensure_af_nearest_table, upsert_af_nearest
+from lakeanalysis.artificial.pfaf import compute_nearest_naturals, ensure_af_nearest_table, upsert_af_nearest
 
 
 def parse_args() -> argparse.Namespace:

@@ -145,6 +145,13 @@ ENTROPY_ANOMALY_NEG = BarStyle(color="tomato")
 SIMILARITY_SCATTER = ScatterStyle(alpha=0.4, s=10, rasterized=True)
 
 # ---------------------------------------------------------------------------
+# Impact (artificial vs natural) presets
+# ---------------------------------------------------------------------------
+IMPACT_ARTIFICIAL = LineStyle(color="#E74C3C", linewidth=1.0, label="人工湖")
+IMPACT_NATURAL = LineStyle(color="#27AE60", linewidth=1.0, label="自然湖")
+IMPACT_ANOMALY = ScatterStyle(color="#E74C3C", marker="x", s=40, zorder=4, label="异常事件")
+
+# ---------------------------------------------------------------------------
 # Global theme
 # ---------------------------------------------------------------------------
 class Theme:

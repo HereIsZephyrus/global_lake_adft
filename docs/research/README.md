@@ -29,7 +29,7 @@
 |------|------|
 | `water-balance-data-downloads.md` | 水量平衡数据下载说明 |
 | `双频同化方案.md` | 双频同化方案 |
-| `pfaf模块说明.md` | Pfafstetter 编码模块 |
+| `artificial模块说明.md` | 人工湖分析模块（pfaf 配对 + impact 影响评估） |
 
 ## 论文摘录
 
@@ -41,7 +41,7 @@
 
 ## What Belongs Here
 
-- EOT、Hawkes、entropy、pfaf 等方法说明
+- EOT、Hawkes、entropy、artificial 等方法说明
 - 分析方案、同化方案与研究笔记
 - 论文摘录、阅读记录和算法推导
 

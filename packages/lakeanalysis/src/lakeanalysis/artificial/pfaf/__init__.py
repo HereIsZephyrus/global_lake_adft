@@ -1,3 +1,5 @@
+"""Pfafstetter basin pairing and nearest-natural-lake search."""
+
 from .lookup import (
     fetch_lake_centroids,
     fetch_lake_centroids_chunk,

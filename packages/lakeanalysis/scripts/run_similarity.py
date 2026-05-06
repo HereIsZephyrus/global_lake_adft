@@ -25,8 +25,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from lakesource.postgres import series_db
 from lakeanalysis.logger import Logger
-from lakeanalysis.similarity.compute import compute_pair_similarity
-from lakeanalysis.similarity.fetch import load_pairs_and_areas
+from lakeanalysis.artificial.similarity.compute import compute_pair_similarity
+from lakeanalysis.artificial.fetch import load_pairs_and_areas
 from lakeviz.plot_config import setup_chinese_font
 from lakeviz.similarity import (
     plot_acf_cosine_distribution,
