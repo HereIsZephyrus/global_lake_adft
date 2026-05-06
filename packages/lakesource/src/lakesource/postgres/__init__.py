@@ -6,7 +6,7 @@ so that importing this package does not fail when psycopg is not installed.
 """
 
 __all__ = [
-    "ChunkedLakeProcessor",
+    "ChunkedLakeProcessor",  # deprecated: use Engine + LakeProvider
     "DBClient",
     "atlas_db",
     "check_extensions",
@@ -64,7 +64,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "ChunkedLakeProcessor":
+    if name == "ChunkedLakeProcessor":  # deprecated: use Engine + LakeProvider
         from .chunked import ChunkedLakeProcessor
         return ChunkedLakeProcessor
     if name in ("DBClient", "atlas_db", "series_db"):

@@ -1,5 +1,11 @@
 """Chunked lake-ID processing with checkpoint/resume support.
 
+.. deprecated::
+    Use ``Engine`` + ``LakeProvider`` instead.  ``LakeProvider.fetch_done_ids``
+    provides per-lake-ID checkpoint granularity (vs. whole-chunk skip here) and
+    supports both PostgreSQL and Parquet backends.  ``Engine._run_single``
+    subsumes the chunk-iteration + done-check + persist loop.
+
 Provides ``ChunkedLakeProcessor``, which splits the full hylak_id space into
 fixed-size integer ranges and tracks progress via a configurable ``done_table``
 row counts in SERIES_DB.  A chunk is considered done when every ``lake_info``
@@ -27,6 +33,11 @@ _default_table_config = TableConfig.default()
 
 class ChunkedLakeProcessor:
     """Process lake records in fixed-size hylak_id chunks with checkpoint/resume support.
+
+    .. deprecated::
+        Use ``Engine`` + ``LakeProvider`` instead.  The ``Engine`` class in
+        ``lakeanalysis.batch.engine`` provides the same chunk-iteration and
+        checkpoint logic with finer per-ID granularity and backend independence.
 
     Checkpoint detection compares row counts in ``done_table`` against ``lake_info``
     for each chunk's ID range.  A chunk is skipped when its done-count equals

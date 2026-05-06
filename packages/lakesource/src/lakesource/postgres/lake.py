@@ -1363,8 +1363,8 @@ def ensure_area_anomalies_table(
     ``area_anomalies`` stores lakes whose rs_area_median is 0.
     ``area_processed`` is a view that unions ``area_quality`` and
     ``area_anomalies`` on hylak_id, used by ``ChunkedLakeProcessor``
-    as the checkpoint table so that all lakes (normal and anomalous)
-    are counted toward chunk completion.
+    (deprecated: use Engine + LakeProvider) as the checkpoint table so that
+    all lakes (normal and anomalous) are counted toward chunk completion.
 
     Args:
         conn: An open psycopg connection to SERIES_DB.

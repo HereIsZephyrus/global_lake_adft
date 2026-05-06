@@ -23,7 +23,7 @@ import logging
 from pathlib import Path
 
 from lakesource.postgres import (
-    ChunkedLakeProcessor,
+    ChunkedLakeProcessor,  # deprecated: use Engine + LakeProvider
     ensure_area_anomalies_table,
     ensure_area_quality_table,
     fetch_lake_area_chunk,

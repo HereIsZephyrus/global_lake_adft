@@ -178,7 +178,8 @@ def lookup_pfaf_ids(
     Fetches all matching centroids from SERIES_DB in one query, then
     delegates the two-pass spatial join to ``lookup_pfaf_chunk``.  For
     large datasets (> ~100 k lakes) prefer the chunked pipeline via
-    ``ChunkedLakeProcessor`` in ``dbconnect.chunked``.
+    ``ChunkedLakeProcessor`` (deprecated: use Engine + LakeProvider)
+    in ``dbconnect.chunked``.
 
     Args:
         atlas_conn: An open psycopg connection to ALTAS_DB (PostGIS).
