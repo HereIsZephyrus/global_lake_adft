@@ -29,10 +29,11 @@ import argparse
 import logging
 
 from lakesource.postgres import (
-    ChunkedLakeProcessor,
+    ChunkedLakeProcessor,  # deprecated: use Engine + LakeProvider
     ensure_area_anomalies_table,
     ensure_area_quality_table,
     fetch_atlas_area_chunk,
+    fetch_frozen_year_months_chunk,
     fetch_lake_area_chunk,
     series_db,
     upsert_area_anomalies,
@@ -43,6 +44,7 @@ from lakeanalysis.quality import (
     FlatnessFilterConfig,
     AreaRatioConfig,
     PenalizedVolatilityConfig,
+    OutsideRangeConfig,
     LakeContext,
     classify_area_anomaly,
     compute_mean_area,
@@ -50,8 +52,6 @@ from lakeanalysis.quality import (
     default_filters,
     filter_frozen_rows,
 )
-from lakesource.provider import create_provider
-from lakesource.config import SourceConfig
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +114,18 @@ def parse_args() -> argparse.Namespace:
         metavar="R",
         help="Penalized volatility filter: DR >= max flags anomaly (default: 1.0).",
     )
+    parser.add_argument(
+        "--outside-range-tolerance",
+        type=float,
+        default=0.5,
+        metavar="R",
+        help="Outside range filter: fractional tolerance beyond observed range (default: 0.5).",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Truncate area_quality and area_anomalies before running (reprocess all chunks).",
+    )
     return parser.parse_args()
 
 
@@ -123,6 +135,8 @@ def run(
     flat_config: FlatnessFilterConfig | None = None,
     ratio_config: AreaRatioConfig | None = None,
     pv_config: PenalizedVolatilityConfig | None = None,
+    outside_range_config: OutsideRangeConfig | None = None,
+    reset: bool = False,
 ) -> None:
     """Execute the area quality pipeline in resumable chunks."""
     if flat_config is None:
@@ -131,36 +145,46 @@ def run(
         ratio_config = AreaRatioConfig()
     if pv_config is None:
         pv_config = PenalizedVolatilityConfig()
+    if outside_range_config is None:
+        outside_range_config = OutsideRangeConfig()
 
     log.info(
-        "Starting area quality pipeline, limit_id=%s, chunk_size=%d, "
+        "Starting area quality pipeline, limit_id=%s, chunk_size=%d, reset=%s, "
         "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s, "
         "area_ratio_min=%.3f, area_ratio_max=%.1f, "
-        "pv_threshold=%.4f, pv_dominant_ratio_max=%.2f",
+        "pv_threshold=%.4f, pv_dominant_ratio_max=%.2f, "
+        "outside_range_tolerance=%.2f",
         limit_id,
         chunk_size,
+        reset,
         flat_config.dominant_ratio_threshold,
         flat_config.round_digits,
         ratio_config.min_ratio,
         ratio_config.max_ratio,
         pv_config.pv_threshold,
         pv_config.dominant_ratio_max,
+        outside_range_config.tolerance,
     )
 
     with series_db.connection_context() as conn:
         ensure_area_quality_table(conn)
         ensure_area_anomalies_table(conn)
 
-    provider = create_provider(SourceConfig())
+    if reset:
+        with series_db.connection_context() as conn:
+            with conn.cursor() as cur:
+                cur.execute("TRUNCATE area_quality, area_anomalies")
+            conn.commit()
+        log.info("Truncated area_quality and area_anomalies (reset mode)")
+
     processor = ChunkedLakeProcessor(series_db, chunk_size=chunk_size, done_table="area_processed")
-    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config)
+    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config, outside_range_config=outside_range_config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict]]:
         with series_db.connection_context() as conn:
             lake_frames = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
             atlas_areas = fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
-
-        frozen_map = provider.fetch_frozen_year_months_chunk(chunk_start, chunk_end)
+            frozen_map = fetch_frozen_year_months_chunk(conn, chunk_start, chunk_end)
 
         normal: list[dict] = []
         anomalies: list[dict] = []
@@ -248,12 +272,17 @@ def main() -> None:
         pv_threshold=args.pv_threshold,
         dominant_ratio_max=args.pv_dominant_ratio_max,
     )
+    outside_range_config = OutsideRangeConfig(
+        tolerance=args.outside_range_tolerance,
+    )
     run(
         limit_id=args.limit_id,
         chunk_size=args.chunk_size,
         flat_config=flat_config,
         ratio_config=ratio_config,
         pv_config=pv_config,
+        outside_range_config=outside_range_config,
+        reset=args.reset,
     )
 
 

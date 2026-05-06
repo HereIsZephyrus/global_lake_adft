@@ -5,6 +5,7 @@ from .classify import (
     FlatnessFilterConfig,
     LakeContext,
     PenalizedVolatilityConfig,
+    OutsideRangeConfig,
     classify_area_anomaly,
     default_filters,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "LakeContext",
     "CollinearSegment",
     "PenalizedVolatilityConfig",
+    "OutsideRangeConfig",
     "apply_frozen_plateau",
     "build_frozen_plateau_schedule",
     "classify_agreement",

@@ -18,7 +18,7 @@ from .filters import (
 from .filters.median_zero import MedianZeroFilter
 from .filters.flatness import FlatnessFilter, FlatnessFilterConfig
 from .filters.area_ratio import AreaRatioFilter, AreaRatioConfig
-from .filters.outside_range import OutsideRangeFilter
+from .filters.outside_range import OutsideRangeFilter, OutsideRangeConfig
 from .filters.penalized_volatility import PenalizedVolatilityFilter, PenalizedVolatilityConfig
 
 
@@ -62,12 +62,13 @@ def default_filters(
     flat_config: FlatnessFilterConfig | None = None,
     ratio_config: AreaRatioConfig | None = None,
     pv_config: PenalizedVolatilityConfig | None = None,
+    outside_range_config: OutsideRangeConfig | None = None,
 ) -> list[AnomalyFilter]:
     """Construct the default filter chain."""
     return [
         MedianZeroFilter(),
         FlatnessFilter(flat_config),
         AreaRatioFilter(ratio_config),
-        OutsideRangeFilter(),
+        OutsideRangeFilter(outside_range_config),
         PenalizedVolatilityFilter(pv_config),
     ]

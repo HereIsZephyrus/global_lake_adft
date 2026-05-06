@@ -1045,6 +1045,28 @@ def fetch_frozen_year_months_by_ids(
     return result
 
 
+def fetch_frozen_year_months_chunk(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> dict[int, set[int]]:
+    """Fetch YYYYMM keys flagged as frozen for a hylak_id range [chunk_start, chunk_end)."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_fetch_frozen_year_months_chunk_sql(table_config), params)
+        rows = cur.fetchall()
+    result: dict[int, set[int]] = {}
+    for hylak_id, year_month_key in rows:
+        hid = int(hylak_id)
+        if hid not in result:
+            result[hid] = set()
+        result[hid].add(int(year_month_key))
+    log.debug("Fetched frozen anomaly months for %d lake(s) in chunk [%d, %d)", len(result), chunk_start, chunk_end)
+    return result
+
+
 def ensure_entropy_table(
     conn: psycopg.Connection,
     *,
