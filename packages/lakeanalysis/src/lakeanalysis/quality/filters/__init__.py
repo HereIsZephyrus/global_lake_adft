@@ -9,13 +9,14 @@ import pandas as pd
 
 
 FLAG_MEDIAN_ZERO = 1
+FLAG_ZERO_QUANTILE = 1
 FLAG_FLAT = 2
 FLAG_AREA_RATIO = 4
 FLAG_OUTSIDE_RANGE = 8
 FLAG_PV = 16
 
 FLAG_NAMES: dict[int, str] = {
-    FLAG_MEDIAN_ZERO: "median_zero",
+    FLAG_ZERO_QUANTILE: "zero_quantile",
     FLAG_FLAT: "flat",
     FLAG_AREA_RATIO: "area_ratio",
     FLAG_OUTSIDE_RANGE: "outside_range",
@@ -46,6 +47,7 @@ class LakeContext:
     df_no_frozen: pd.DataFrame
     rs_area_median: float
     rs_area_mean: float
+    rs_area_quantile: float
     atlas_area: float
 
 

@@ -42,6 +42,7 @@ from lakesource.postgres import (
 from lakeanalysis.logger import Logger
 from lakeanalysis.quality import (
     FlatnessFilterConfig,
+    ZeroQuantileConfig,
     AreaRatioConfig,
     PenalizedVolatilityConfig,
     OutsideRangeConfig,
@@ -49,6 +50,7 @@ from lakeanalysis.quality import (
     classify_area_anomaly,
     compute_mean_area,
     compute_median_area,
+    compute_quantile_area,
     default_filters,
     filter_frozen_rows,
 )
@@ -71,6 +73,13 @@ def parse_args() -> argparse.Namespace:
         default=10_000,
         metavar="N",
         help="Number of hylak_id values processed per chunk (default: 10000).",
+    )
+    parser.add_argument(
+        "--zero-quantile",
+        type=float,
+        default=0.80,
+        metavar="Q",
+        help="Zero-quantile filter: quantile position (0-1) at which zero area is flagged (default: 0.75).",
     )
     parser.add_argument(
         "--flat-dominant-ratio-threshold",
@@ -103,16 +112,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pv-threshold",
         type=float,
-        default=0.002,
+        default=0.001,
         metavar="R",
-        help="Penalized volatility filter: PV <= threshold flags anomaly (default: 0.002).",
-    )
-    parser.add_argument(
-        "--pv-dominant-ratio-max",
-        type=float,
-        default=1.0,
-        metavar="R",
-        help="Penalized volatility filter: DR >= max flags anomaly (default: 1.0).",
+        help="H×CV filter: penalized_volatility <= threshold flags anomaly (default: 0.001).",
     )
     parser.add_argument(
         "--outside-range-tolerance",
@@ -132,6 +134,7 @@ def parse_args() -> argparse.Namespace:
 def run(
     limit_id: int | None = None,
     chunk_size: int = 10_000,
+    zero_quantile: float = 0.80,
     flat_config: FlatnessFilterConfig | None = None,
     ratio_config: AreaRatioConfig | None = None,
     pv_config: PenalizedVolatilityConfig | None = None,
@@ -139,6 +142,7 @@ def run(
     reset: bool = False,
 ) -> None:
     """Execute the area quality pipeline in resumable chunks."""
+    zero_quantile_config = ZeroQuantileConfig(quantile=zero_quantile)
     if flat_config is None:
         flat_config = FlatnessFilterConfig()
     if ratio_config is None:
@@ -150,6 +154,7 @@ def run(
 
     log.info(
         "Starting area quality pipeline, limit_id=%s, chunk_size=%d, reset=%s, "
+        "zero_quantile=%.2f, "
         "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s, "
         "area_ratio_min=%.3f, area_ratio_max=%.1f, "
         "pv_threshold=%.4f, pv_dominant_ratio_max=%.2f, "
@@ -157,6 +162,7 @@ def run(
         limit_id,
         chunk_size,
         reset,
+        zero_quantile,
         flat_config.dominant_ratio_threshold,
         flat_config.round_digits,
         ratio_config.min_ratio,
@@ -178,7 +184,7 @@ def run(
         log.info("Truncated area_quality and area_anomalies (reset mode)")
 
     processor = ChunkedLakeProcessor(series_db, chunk_size=chunk_size, done_table="area_processed")
-    filters = default_filters(flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config, outside_range_config=outside_range_config)
+    filters = default_filters(zero_quantile_config=zero_quantile_config, flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config, outside_range_config=outside_range_config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict]]:
         with series_db.connection_context() as conn:
@@ -188,7 +194,7 @@ def run(
 
         normal: list[dict] = []
         anomalies: list[dict] = []
-        n_median_zero = 0
+        n_zero_quantile = 0
         n_flat = 0
         n_area_ratio = 0
         n_outside_range = 0
@@ -200,6 +206,7 @@ def run(
 
             rs_area_median = compute_median_area(df_no_frozen) / 1_000_000
             rs_area_mean = compute_mean_area(df_no_frozen) / 1_000_000
+            rs_area_quantile = compute_quantile_area(df_no_frozen, quantile=zero_quantile) / 1_000_000
             atlas_area = atlas_areas.get(hylak_id, 0.0)
 
             ctx = LakeContext(
@@ -207,6 +214,7 @@ def run(
                 df_no_frozen=df_no_frozen,
                 rs_area_median=rs_area_median,
                 rs_area_mean=rs_area_mean,
+                rs_area_quantile=rs_area_quantile,
                 atlas_area=atlas_area,
             )
             decision = classify_area_anomaly(ctx, filters)
@@ -219,8 +227,8 @@ def run(
             }
             if bool(decision["is_anomalous"]):
                 anomalies.append(row)
-                if bool(decision["is_median_zero"]):
-                    n_median_zero += 1
+                if bool(decision["is_zero_quantile"]):
+                    n_zero_quantile += 1
                 if bool(decision["is_flat"]):
                     n_flat += 1
                 if bool(decision["is_area_ratio"]):
@@ -234,12 +242,12 @@ def run(
 
         log.debug(
             "chunk [%d, %d): %d normal, %d anomalous "
-            "(median_zero=%d, flat=%d, area_ratio=%d, outside_range=%d, pv=%d)",
+            "(zero_quantile=%d, flat=%d, area_ratio=%d, outside_range=%d, pv=%d)",
             chunk_start,
             chunk_end,
             len(normal),
             len(anomalies),
-            n_median_zero,
+            n_zero_quantile,
             n_flat,
             n_area_ratio,
             n_outside_range,
@@ -270,7 +278,6 @@ def main() -> None:
     )
     pv_config = PenalizedVolatilityConfig(
         pv_threshold=args.pv_threshold,
-        dominant_ratio_max=args.pv_dominant_ratio_max,
     )
     outside_range_config = OutsideRangeConfig(
         tolerance=args.outside_range_tolerance,
@@ -278,6 +285,7 @@ def main() -> None:
     run(
         limit_id=args.limit_id,
         chunk_size=args.chunk_size,
+        zero_quantile=args.zero_quantile,
         flat_config=flat_config,
         ratio_config=ratio_config,
         pv_config=pv_config,
