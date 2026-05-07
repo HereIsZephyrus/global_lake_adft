@@ -91,6 +91,40 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     )
 
 
+RUN_STATUS_DONE = "done"
+RUN_STATUS_ERROR = "error"
+
+
+def _ensure_quality_run_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id         INTEGER      NOT NULL,
+    chunk_start      INTEGER,
+    chunk_end        INTEGER,
+    status           VARCHAR(16)  NOT NULL,
+    error_message    TEXT,
+    computed_at      TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id)
+);
+""").format(table=sql.Identifier(tc.series_table("quality_run_status")))
+
+
+def _upsert_quality_run_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (hylak_id, chunk_start, chunk_end, status, error_message, computed_at)
+VALUES (%(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now())
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+""").format(
+        table=sql.Identifier(tc.series_table("quality_run_status")),
+        conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+    )
+
+
 def _fetch_anomaly_hylak_ids_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id FROM {table}
@@ -255,6 +289,48 @@ def upsert_area_anomalies(
     log.info("Upserted %d area_anomalies row(s)", len(rows))
 
 
+def ensure_quality_run_status_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_ensure_quality_run_status_table_sql(table_config))
+    conn.commit()
+    log.debug("Ensured quality_run_status table exists")
+
+
+def upsert_quality_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_quality_run_status_sql(table_config), rows)
+    conn.commit()
+    log.info("Upserted %d quality_run_status row(s)", len(rows))
+
+
+def make_quality_run_status_row(
+    hylak_id: int,
+    status: str,
+    *,
+    chunk_start: int = 0,
+    chunk_end: int = 0,
+    error_message: str | None = None,
+) -> dict:
+    return {
+        "hylak_id": hylak_id,
+        "chunk_start": chunk_start,
+        "chunk_end": chunk_end,
+        "status": status,
+        "error_message": error_message,
+    }
+
+
 def move_area_quality_to_anomalies(
     conn: psycopg.Connection,
     id_list: list[int],
@@ -317,3 +393,126 @@ def count_area_quality_hylak_ids_in_range(
         cur.execute(_count_area_quality_in_range_sql(table_config), params)
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
+
+
+def _ensure_area_shift_labels_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id                      INTEGER PRIMARY KEY,
+    shift_label                   TEXT NOT NULL,
+    udmax                         DOUBLE PRECISION,
+    udmax_p_value                 DOUBLE PRECISION,
+    udmax_break_index             INTEGER,
+    wdmax                         DOUBLE PRECISION,
+    wdmax_p_value                 DOUBLE PRECISION,
+    wdmax_break_index             INTEGER,
+    used_deseasoned               BOOLEAN,
+    seasonality_dominance_ratio   DOUBLE PRECISION,
+    computed_at                   TIMESTAMPTZ DEFAULT now()
+);
+""").format(table=sql.Identifier(tc.series_table("area_shift_labels")))
+
+
+def _upsert_area_shift_labels_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (hylak_id, shift_label, udmax, udmax_p_value, udmax_break_index,
+                     wdmax, wdmax_p_value, wdmax_break_index, used_deseasoned,
+                     seasonality_dominance_ratio, computed_at)
+VALUES (%(hylak_id)s, %(shift_label)s, %(udmax)s, %(udmax_p_value)s, %(udmax_break_index)s,
+        %(wdmax)s, %(wdmax_p_value)s, %(wdmax_break_index)s, %(used_deseasoned)s,
+        %(seasonality_dominance_ratio)s, now())
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    shift_label                   = EXCLUDED.shift_label,
+    udmax                         = EXCLUDED.udmax,
+    udmax_p_value                 = EXCLUDED.udmax_p_value,
+    udmax_break_index             = EXCLUDED.udmax_break_index,
+    wdmax                         = EXCLUDED.wdmax,
+    wdmax_p_value                 = EXCLUDED.wdmax_p_value,
+    wdmax_break_index             = EXCLUDED.wdmax_break_index,
+    used_deseasoned               = EXCLUDED.used_deseasoned,
+    seasonality_dominance_ratio   = EXCLUDED.seasonality_dominance_ratio,
+    computed_at                   = now();
+""").format(
+        table=sql.Identifier(tc.series_table("area_shift_labels")),
+        conflict_cols=sql.SQL(", ").join(sql.Identifier(c) for c in ("hylak_id",)),
+    )
+
+
+def _truncate_area_shift_labels_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("TRUNCATE {table}").format(
+        table=sql.Identifier(tc.series_table("area_shift_labels"))
+    )
+
+
+def ensure_area_shift_labels_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_ensure_area_shift_labels_table_sql(table_config))
+    conn.commit()
+    log.debug("Ensured area_shift_labels table exists")
+
+
+def upsert_area_shift_labels(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    if not rows:
+        return
+    table = table_config.series_table("area_shift_labels")
+    with conn.cursor() as cur:
+        cur.execute(sql.SQL(
+            "CREATE TEMP TABLE _tmp_asl (hylak_id INTEGER, shift_label TEXT, "
+            "udmax DOUBLE PRECISION, udmax_p_value DOUBLE PRECISION, "
+            "udmax_break_index INTEGER, wdmax DOUBLE PRECISION, "
+            "wdmax_p_value DOUBLE PRECISION, wdmax_break_index INTEGER, "
+            "used_deseasoned BOOLEAN, seasonality_dominance_ratio DOUBLE PRECISION) "
+            "ON COMMIT DROP"
+        ))
+        with cur.copy("COPY _tmp_asl (hylak_id, shift_label, udmax, udmax_p_value, "
+                      "udmax_break_index, wdmax, wdmax_p_value, wdmax_break_index, "
+                      "used_deseasoned, seasonality_dominance_ratio) FROM STDIN") as copy:
+            for r in rows:
+                copy.write_row([
+                    r["hylak_id"], r["shift_label"],
+                    r.get("udmax"), r.get("udmax_p_value"), r.get("udmax_break_index"),
+                    r.get("wdmax"), r.get("wdmax_p_value"), r.get("wdmax_break_index"),
+                    r.get("used_deseasoned"), r.get("seasonality_dominance_ratio"),
+                ])
+        cur.execute(sql.SQL(
+            "INSERT INTO {table} (hylak_id, shift_label, udmax, udmax_p_value, "
+            "udmax_break_index, wdmax, wdmax_p_value, wdmax_break_index, "
+            "used_deseasoned, seasonality_dominance_ratio, computed_at) "
+            "SELECT t.hylak_id, t.shift_label, t.udmax, t.udmax_p_value, "
+            "t.udmax_break_index, t.wdmax, t.wdmax_p_value, t.wdmax_break_index, "
+            "t.used_deseasoned, t.seasonality_dominance_ratio, now() "
+            "FROM _tmp_asl t "
+            "ON CONFLICT (hylak_id) DO UPDATE SET "
+            "shift_label = EXCLUDED.shift_label, "
+            "udmax = EXCLUDED.udmax, "
+            "udmax_p_value = EXCLUDED.udmax_p_value, "
+            "udmax_break_index = EXCLUDED.udmax_break_index, "
+            "wdmax = EXCLUDED.wdmax, "
+            "wdmax_p_value = EXCLUDED.wdmax_p_value, "
+            "wdmax_break_index = EXCLUDED.wdmax_break_index, "
+            "used_deseasoned = EXCLUDED.used_deseasoned, "
+            "seasonality_dominance_ratio = EXCLUDED.seasonality_dominance_ratio, "
+            "computed_at = now()"
+        ).format(table=sql.Identifier(table)))
+    conn.commit()
+    log.info("Upserted %d area_shift_labels row(s)", len(rows))
+
+
+def truncate_area_shift_labels(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_truncate_area_shift_labels_sql(table_config))
+    conn.commit()
+    log.info("Truncated area_shift_labels table")

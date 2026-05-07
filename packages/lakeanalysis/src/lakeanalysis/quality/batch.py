@@ -8,6 +8,11 @@ from typing import Any
 from lakeanalysis.batch.engine import Calculator, LakeTask
 from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakesource.provider.base import LakeProvider
+from lakesource.postgres.area_quality import (
+    RUN_STATUS_DONE,
+    RUN_STATUS_ERROR,
+    make_quality_run_status_row,
+)
 
 from . import (
     AreaRatioConfig,
@@ -102,7 +107,7 @@ class QualityBatchWriter(BatchWriter):
         self._initialized = False
 
     def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        for table_name in ("area_quality", "area_anomalies"):
+        for table_name in ("area_quality", "area_anomalies", "quality_run_status"):
             rows = rows_by_table.get(table_name, [])
             if rows:
                 self._provider.upsert_rows(table_name, rows)
@@ -113,9 +118,11 @@ class QualityBatchWriter(BatchWriter):
             return
         self._provider.ensure_table("area_quality")
         self._provider.ensure_table("area_anomalies")
+        self._provider.ensure_table("quality_run_status")
         if self._reset:
             self._provider.truncate_table("area_quality")
             self._provider.truncate_table("area_anomalies")
+            self._provider.truncate_table("quality_run_status")
         self._initialized = True
 
 
@@ -152,14 +159,32 @@ class QualityCalculator(Calculator):
 
     def result_to_rows(self, result: dict[str, Any]) -> dict[str, list[dict]]:
         table_name = "area_anomalies" if result["is_anomalous"] else "area_quality"
-        return {table_name: [result["row"]]}
+        return {
+            table_name: [result["row"]],
+            "quality_run_status": [
+                make_quality_run_status_row(
+                    hylak_id=result["row"]["hylak_id"],
+                    status=RUN_STATUS_DONE,
+                    chunk_start=0,
+                    chunk_end=0,
+                )
+            ],
+        }
 
     def error_to_rows(
         self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
     ) -> dict[str, list[dict]]:
-        raise RuntimeError(
-            f"quality calculation failed for hylak_id={hylak_id} in [{chunk_start}, {chunk_end}): {error}"
-        ) from error
+        return {
+            "quality_run_status": [
+                make_quality_run_status_row(
+                    hylak_id=hylak_id,
+                    status=RUN_STATUS_ERROR,
+                    chunk_start=chunk_start,
+                    chunk_end=chunk_end,
+                    error_message=str(error),
+                )
+            ],
+        }
 
 
 def build_quality_context(
