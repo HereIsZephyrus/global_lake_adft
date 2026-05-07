@@ -8,7 +8,10 @@ matplotlib.use("Agg")
 import pandas as pd
 import pytest
 
+from lakeviz.artificial import plot_delta_cv_distribution
 from lakeviz.quality.plot import plot_anomaly_upset
+from lakeviz.quality import plot_area_scatter
+from lakeviz.quantile import plot_anomaly_timeline
 
 
 def _make_flags_df(n_per_combo: int = 5) -> pd.DataFrame:
@@ -66,6 +69,35 @@ def test_plot_anomaly_upset_no_counts():
 def test_plot_anomaly_upset_custom_title():
     df = _make_flags_df()
     fig = plot_anomaly_upset(df, title="Custom Title")
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_anomaly_timeline_empty_labels_df():
+    fig = plot_anomaly_timeline(pd.DataFrame(columns=["year", "month", "anomaly", "q_low", "q_high", "extreme_label"]))
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_area_scatter_smoke():
+    df = pd.DataFrame(
+        {
+            "atlas_area": [1.0, 2.0, 4.0],
+            "rs_area_median": [1.1, 1.8, 4.2],
+            "agreement_median": ["good", "moderate", "poor"],
+        }
+    )
+    fig = plot_area_scatter(df)
+    assert fig is not None
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_plot_delta_cv_distribution_smoke():
+    df = pd.DataFrame({"delta_cv": [0.1, -0.2, 0.4]})
+    fig = plot_delta_cv_distribution(df)
     assert fig is not None
     import matplotlib.pyplot as plt
     plt.close(fig)

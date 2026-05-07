@@ -34,7 +34,7 @@ def draw_pearson_distribution(
         return
     draw_histogram(ax, values, style=hist_style)
     mean_val = float(values.mean())
-    draw_axhline(ax, mean_val, style=ReferenceLineStyle(color="red", linestyle="--", label=f"平均值 = {mean_val:.3f}"))
+    draw_axvline(ax, mean_val, style=ReferenceLineStyle(color="red", linestyle="--", label=f"平均值 = {mean_val:.3f}"))
     ax.set_xlim(-1.05, 1.05)
     apply_axis_style(ax, axis_style)
     ax.legend()
@@ -53,7 +53,7 @@ def draw_acf_cosine_distribution(
         return
     draw_histogram(ax, values, style=hist_style)
     mean_val = float(values.mean())
-    draw_axhline(ax, mean_val, style=ReferenceLineStyle(color="red", linestyle="--", label=f"平均值 = {mean_val:.3f}"))
+    draw_axvline(ax, mean_val, style=ReferenceLineStyle(color="red", linestyle="--", label=f"平均值 = {mean_val:.3f}"))
     ax.set_xlim(-1.05, 1.05)
     apply_axis_style(ax, axis_style)
     ax.legend()

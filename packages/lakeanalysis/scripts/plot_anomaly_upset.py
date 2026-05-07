@@ -27,7 +27,7 @@ from lakesource.env import load_env
 from lakeanalysis.logger import Logger
 from lakeanalysis.quality.filters import decode_anomaly_flags
 from lakeviz.layout import save
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ def run(args: argparse.Namespace) -> None:
 
     load_env()
     source = SourceConfig()
-    setup_chinese_font()
+    Theme.apply()
 
     if source.backend.value == "postgres":
         log.info("Using postgres backend")

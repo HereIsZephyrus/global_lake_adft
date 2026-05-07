@@ -12,7 +12,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 from lakesource.quantile.schema import QuantileResult
 
@@ -239,7 +239,7 @@ def save_summary_plots_from_cache(cache_root: Path, output_root: Path) -> dict[s
     count_path = output_root / "transition_count_summary.png"
     seasonality_path = output_root / "transition_seasonality.png"
 
-    setup_chinese_font()
+    Theme.apply()
 
     fig = plot_transition_count_summary_from_cache(counts_df)
     fig.savefig(count_path, dpi=300, bbox_inches="tight")

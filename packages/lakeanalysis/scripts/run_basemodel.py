@@ -28,7 +28,7 @@ from lakeanalysis.basemodel import (
 from lakesource.postgres import fetch_lake_area, fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot.preprocess import MonthlyTimeSeries
 from lakeanalysis.logger import Logger
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ def _run_single(args: argparse.Namespace, selector: BasisSelector) -> dict:
     fit_frame.to_csv(output_dir / "fit_series.csv", index=False)
 
     if args.plot:
-        setup_chinese_font()
+        Theme.apply()
         _save_plot(
             plot_candidate_scores(
                 selection_result.candidate_records,

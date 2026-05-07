@@ -155,7 +155,7 @@ def show_entropy_plots(data_dir: Path, limit_id: int | None) -> None:
         plot_trend_summary,
         remove_amplitude_outliers,
     )
-    from lakeviz.plot_config import setup_chinese_font
+    from lakeviz.style.presets import Theme
 
     summary_df = load_entropy_summary(data_dir, limit_id)
     if summary_df.empty:
@@ -167,7 +167,7 @@ def show_entropy_plots(data_dir: Path, limit_id: int | None) -> None:
     summary_no_amp_outliers = remove_amplitude_outliers(summary_df)
     write_amplitude_entropy_csv(data_dir, summary_no_amp_outliers)
 
-    setup_chinese_font()
+    Theme.apply()
     plot_dir = data_dir / "plot"
     plot_dir.mkdir(parents=True, exist_ok=True)
 

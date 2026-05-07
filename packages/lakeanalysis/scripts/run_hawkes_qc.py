@@ -29,7 +29,7 @@ from lakesource.postgres import (
     fetch_hawkes_transition_monthly,
     series_db,
 )
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def plot_rates_by_quantile(summary: pd.DataFrame, out_dir: Path) -> None:
     if summary.empty:
         log.warning("Empty summary; skip plot_rates_by_quantile")
         return
-    setup_chinese_font()
+    Theme.apply()
     x = np.arange(len(summary))
     w = 0.35
     _, ax = plt.subplots(figsize=(8, 4))
@@ -124,7 +124,7 @@ def plot_results_distributions(df: pd.DataFrame, out_dir: Path) -> None:
     if df.empty:
         log.warning("Empty hawkes_results sample; skip plot_results_distributions")
         return
-    setup_chinese_font()
+    Theme.apply()
     _, axes = plt.subplots(1, 2, figsize=(10, 4))
     ne = df["n_events"].dropna()
     if not ne.empty:
@@ -149,7 +149,7 @@ def plot_lrt_scatter(df: pd.DataFrame, out_dir: Path) -> None:
     if sub.empty:
         log.warning("No LRT p pairs; skip plot_lrt_scatter")
         return
-    setup_chinese_font()
+    Theme.apply()
     _, ax = plt.subplots(figsize=(5.5, 5.5))
     px = np.clip(sub["lrt_p_d_to_w"].astype(float), 1e-16, 1.0)
     py = np.clip(sub["lrt_p_w_to_d"].astype(float), 1e-16, 1.0)
@@ -169,7 +169,7 @@ def plot_lrt_reject_by_test(lrt_summary: pd.DataFrame, out_dir: Path) -> None:
     if lrt_summary.empty:
         log.warning("Empty LRT summary; skip plot_lrt_reject_by_test")
         return
-    setup_chinese_font()
+    Theme.apply()
     _, ax = plt.subplots(figsize=(max(6, 0.4 * len(lrt_summary)), 4))
     names = lrt_summary["test_name"].astype(str).tolist()
     rates = lrt_summary["reject_null_rate"].astype(float).tolist()
@@ -186,7 +186,7 @@ def plot_transition_significant_rate(
     """Fraction significant per direction (if monthly table has data)."""
     if monthly.empty or "significant" not in monthly.columns:
         return
-    setup_chinese_font()
+    Theme.apply()
     g = monthly.groupby("direction", dropna=False)["significant"].mean().reset_index()
     g.columns = ["direction", "significant_rate"]
     _, ax = plt.subplots(figsize=(5, 4))
