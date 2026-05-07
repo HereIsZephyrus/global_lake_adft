@@ -8,6 +8,7 @@ from .metrics import (
     compute_pct_change_std,
     compute_range_ratio,
 )
+from .runner import ImpactRunConfig, load_impact_csv, run_impact, show_impact_plots
 
 __all__ = [
     "compute_cv",
@@ -18,4 +19,8 @@ __all__ = [
     "compute_pct_change_std",
     "compute_range_ratio",
     "detect_zscore_events",
+    "ImpactRunConfig",
+    "load_impact_csv",
+    "run_impact",
+    "show_impact_plots",
 ]

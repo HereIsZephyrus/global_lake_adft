@@ -19,15 +19,9 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
-import logging
-from pathlib import Path
 
+from lakeanalysis.artificial.pfaf.nearest_runner import NearestRunConfig, run_nearest
 from lakeanalysis.logger import Logger
-
-log = logging.getLogger(__name__)
-
-from lakesource.postgres import series_db
-from lakeanalysis.artificial.pfaf import compute_nearest_naturals, ensure_af_nearest_table, upsert_af_nearest
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,47 +48,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run(limit_id: int | None = None, max_area_ratio: float = 2.0) -> list[dict]:
-    """Execute the nearest-natural-lake pipeline.
-
-    Args:
-        limit_id: If given, only type>1 lakes with hylak_id < limit_id are
-            searched (type-1 index always loads the full dataset).
-        max_area_ratio: Maximum ratio between matched lake areas.  Defaults
-            to 10.0.  Pass ``float("inf")`` to disable the area constraint.
-
-    Returns:
-        List of result dicts written to af_nearest.
-    """
-    log.info(
-        "Starting nearest-natural pipeline, limit_id=%s, max_area_ratio=%.1f",
-        limit_id if limit_id is not None else "none",
-        max_area_ratio,
-    )
-
-    with series_db.connection_context() as conn:
-        ensure_af_nearest_table(conn)
-        rows = compute_nearest_naturals(conn, limit_id=limit_id, max_area_ratio=max_area_ratio)
-
-    matched = sum(1 for r in rows if r["nearest_id"] is not None)
-    log.info(
-        "Search done: %d/%d type>1 lakes matched a natural lake",
-        matched,
-        len(rows),
-    )
-
-    with series_db.connection_context() as conn:
-        log.info("Upserting %d row(s) into af_nearest...", len(rows))
-        upsert_af_nearest(conn, rows)
-
-    log.info("Pipeline complete.")
-    return rows
-
-
 def main() -> None:
     args = parse_args()
     Logger("run_nearest")
-    run(limit_id=args.limit_id, max_area_ratio=args.max_area_ratio)
+    run_nearest(
+        NearestRunConfig(
+            limit_id=args.limit_id,
+            max_area_ratio=args.max_area_ratio,
+        )
+    )
 
 
 if __name__ == "__main__":

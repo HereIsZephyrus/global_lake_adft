@@ -65,6 +65,13 @@ from .metrics import (
     is_anomalous,
 )
 from .runner import QualityRunConfig, run_quality
+from .interpolation_runner import InterpolationRunConfig, run_interpolation_detect
+from .maintenance_runner import (
+    RecheckZeroQuantileConfig,
+    RecomputePvConfig,
+    run_recheck_zero_quantile,
+    run_recompute_pv,
+)
 
 __all__ = [
     "AgreementConfig",
@@ -81,6 +88,7 @@ __all__ = [
     "FLAG_NAMES",
     "FlatnessFilterConfig",
     "FrozenPlateauSchedule",
+    "InterpolationRunConfig",
     "InterpolationConfig",
     "InterpolationResult",
     "LakeContext",
@@ -88,6 +96,8 @@ __all__ = [
     "PenalizedVolatilityConfig",
     "OutsideRangeConfig",
     "QualityRunConfig",
+    "RecheckZeroQuantileConfig",
+    "RecomputePvConfig",
     "ZeroQuantileConfig",
     "ZeroQuantileFilter",
     "ShiftConfig",
@@ -117,7 +127,10 @@ __all__ = [
     "get_collinear_segments",
     "is_anomalous",
     "month_index_to_year_month_key",
+    "run_interpolation_detect",
     "run_quality",
+    "run_recheck_zero_quantile",
+    "run_recompute_pv",
     "summarize_comparison",
     "year_month_key_to_index",
     "year_month_to_key",

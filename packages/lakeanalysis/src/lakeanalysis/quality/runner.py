@@ -75,7 +75,7 @@ def _log_run_config(config: QualityRunConfig) -> None:
     )
 
 
-def _build_filters(config: QualityRunConfig) -> list:
+def build_quality_filters(config: QualityRunConfig) -> list:
     return default_filters(
         zero_quantile_config=ZeroQuantileConfig(quantile=config.zero_quantile),
         flat_config=config.flat_config,
@@ -125,14 +125,12 @@ def _empty_chunk_counts() -> dict[str, int]:
     }
 
 
-def _classify_lake(
-    hylak_id: int,
+def build_quality_context(
     df: object,
     atlas_area: float,
     frozen_ym: int | None,
     zero_quantile: float,
-    filters: Sequence,
-) -> tuple[dict[str, int | float], bool, dict[str, int]]:
+) -> tuple[LakeContext, dict[str, int | float]]:
     df_no_frozen = filter_frozen_rows(df, frozen_ym)
 
     rs_area_median = compute_median_area(df_no_frozen) / 1_000_000
@@ -147,12 +145,32 @@ def _classify_lake(
         rs_area_quantile=rs_area_quantile,
         atlas_area=atlas_area,
     )
-    decision = classify_area_anomaly(ctx, list(filters))
-    row = {
-        "hylak_id": hylak_id,
+    metrics = {
         "rs_area_mean": rs_area_mean,
         "rs_area_median": rs_area_median,
         "atlas_area": atlas_area,
+    }
+    return ctx, metrics
+
+
+def classify_quality_lake(
+    hylak_id: int,
+    df: object,
+    atlas_area: float,
+    frozen_ym: int | None,
+    zero_quantile: float,
+    filters: Sequence,
+) -> tuple[dict[str, int | float], bool, dict[str, int]]:
+    ctx, metrics = build_quality_context(
+        df=df,
+        atlas_area=atlas_area,
+        frozen_ym=frozen_ym,
+        zero_quantile=zero_quantile,
+    )
+    decision = classify_area_anomaly(ctx, list(filters))
+    row = {
+        "hylak_id": hylak_id,
+        **metrics,
         "anomaly_flags": decision["anomaly_flags"],
     }
 
@@ -172,7 +190,7 @@ def run_quality(config: QualityRunConfig) -> None:
         _reset_area_quality_tables()
 
     processor = ChunkedLakeProcessor(series_db, chunk_size=config.chunk_size, done_table="area_processed")
-    filters = _build_filters(config)
+    filters = build_quality_filters(config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict[str, int | float]]]:
         with series_db.connection_context() as conn:
@@ -185,7 +203,7 @@ def run_quality(config: QualityRunConfig) -> None:
         counts = _empty_chunk_counts()
 
         for hylak_id, df in lake_frames.items():
-            row, is_anomalous, lake_counts = _classify_lake(
+            row, is_anomalous, lake_counts = classify_quality_lake(
                 hylak_id=hylak_id,
                 df=df,
                 atlas_area=atlas_areas.get(hylak_id, 0.0),
