@@ -1,19 +1,14 @@
-"""PostgresLakeProvider: full read/write implementation via psycopg."""
+"""PostgresLakeProvider: backend reads and grid aggregations via psycopg."""
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import pandas as pd
-import psycopg
 
 from lakesource.config import SourceConfig
-from lakesource.table_config import TableConfig
 
 from .base import LakeProvider
-
-log = logging.getLogger(__name__)
 
 
 def _ensure_queries_registered() -> None:
@@ -107,81 +102,6 @@ class PostgresLakeProvider(LakeProvider):
                 simplify_tolerance_meters=simplify_tolerance_meters,
             )
 
-    # ------------------------------------------------------------------
-    # Algorithm-specific reads
-    # ------------------------------------------------------------------
-
-    def fetch_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> set[int]:
-        with self._conn() as conn:
-            if algorithm == "quantile":
-                from lakesource.postgres import fetch_quantile_status_ids_in_range
-
-                return fetch_quantile_status_ids_in_range(
-                    conn, chunk_start, chunk_end,
-                    workflow_version=self._config.workflow_version,
-                )
-            if algorithm == "pwm_extreme":
-                from lakesource.postgres import fetch_pwm_extreme_status_ids_in_range
-
-                return fetch_pwm_extreme_status_ids_in_range(
-                    conn, chunk_start, chunk_end,
-                    workflow_version=self._config.workflow_version,
-                )
-            if algorithm == "eot":
-                return self._fetch_eot_done_ids(conn, chunk_start, chunk_end)
-            if algorithm == "comparison":
-                from lakesource.postgres import fetch_comparison_status_ids_in_range
-
-                return fetch_comparison_status_ids_in_range(
-                    conn, chunk_start, chunk_end,
-                    workflow_version=self._config.workflow_version,
-                )
-            if algorithm == "quality":
-                from lakesource.postgres import fetch_quality_done_hylak_ids_in_range
-
-                return fetch_quality_done_hylak_ids_in_range(conn, chunk_start, chunk_end)
-        return set()
-
-    def count_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> int:
-        with self._conn() as conn:
-            if algorithm == "quantile":
-                from lakesource.postgres import count_quantile_status_in_range
-
-                return count_quantile_status_in_range(
-                    conn, chunk_start, chunk_end,
-                    workflow_version=self._config.workflow_version,
-                )
-            if algorithm == "pwm_extreme":
-                from lakesource.postgres import count_pwm_extreme_status_in_range
-
-                return count_pwm_extreme_status_in_range(
-                    conn, chunk_start, chunk_end,
-                    workflow_version=self._config.workflow_version,
-                )
-            if algorithm == "quality":
-                return len(self.fetch_done_ids(algorithm, chunk_start, chunk_end))
-        return 0
-
-    def _fetch_eot_done_ids(
-        self, conn: psycopg.Connection, chunk_start: int, chunk_end: int
-    ) -> set[int]:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT DISTINCT hylak_id
-                FROM eot_run_status
-                WHERE hylak_id >= %s AND hylak_id < %s
-                  AND workflow_version = %s
-                  AND status = 'done'
-                """,
-                (chunk_start, chunk_end, self._config.workflow_version),
-            )
-            return {int(row[0]) for row in cur.fetchall()}
-
     def fetch_grid_agg(
         self,
         query_name: str,
@@ -194,109 +114,6 @@ class PostgresLakeProvider(LakeProvider):
         _ensure_queries_registered()
         query = get_grid_query(query_name)
         return query.fetch_postgres(self._config, resolution, refresh=refresh, **kwargs)
-
-    # ------------------------------------------------------------------
-    # Writes
-    # ------------------------------------------------------------------
-
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        if not any(rows_by_table.values()):
-            return
-        with self._conn() as conn:
-            try:
-                for table_name, rows in rows_by_table.items():
-                    if not rows:
-                        continue
-                    fn = self._get_upsert_fn(table_name)
-                    if fn is None:
-                        log.warning("No upsert function for table %s", table_name)
-                        continue
-                    fn(conn, rows, commit=False)
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-
-    @staticmethod
-    def _get_upsert_fn(table_name: str):
-        _FNS = {
-            "quantile_labels": "upsert_quantile_labels",
-            "quantile_extremes": "upsert_quantile_extremes",
-            "quantile_abrupt_transitions": "upsert_quantile_abrupt_transitions",
-            "quantile_run_status": "upsert_quantile_run_status",
-            "pwm_extreme_thresholds": "upsert_pwm_extreme_thresholds",
-            "pwm_extreme_run_status": "upsert_pwm_extreme_run_status",
-            "eot_results": "upsert_eot_results",
-            "eot_extremes": "upsert_eot_extremes",
-            "eot_run_status": "upsert_eot_run_status",
-            "comparison_run_status": "upsert_comparison_run_status",
-            "area_entropy_cv": "upsert_area_entropy_cv",
-            "area_quality": "upsert_area_quality",
-            "area_anomalies": "upsert_area_anomalies",
-        }
-        fn_name = _FNS.get(table_name)
-        if fn_name is None:
-            return None
-        from lakesource.postgres import lake
-
-        return getattr(lake, fn_name)
-
-    # ------------------------------------------------------------------
-    # Schema management
-    # ------------------------------------------------------------------
-
-    def ensure_schema(self, algorithm: str) -> None:
-        with self._conn() as conn:
-            if algorithm == "quantile":
-                from lakesource.postgres import ensure_quantile_tables
-
-                ensure_quantile_tables(conn)
-            elif algorithm == "pwm_extreme":
-                from lakesource.postgres import ensure_pwm_extreme_tables
-
-                ensure_pwm_extreme_tables(conn)
-            elif algorithm == "eot":
-                from lakesource.postgres import ensure_eot_results_table
-
-                ensure_eot_results_table(conn)
-                self._ensure_eot_run_status(conn)
-            elif algorithm == "comparison":
-                from lakesource.comparison import ensure_comparison_tables
-
-                ensure_comparison_tables(conn)
-                from lakesource.postgres import ensure_quantile_tables, ensure_pwm_extreme_tables
-
-                ensure_quantile_tables(conn)
-                ensure_pwm_extreme_tables(conn)
-            elif algorithm == "quality":
-                from lakesource.postgres import (
-                    ensure_area_anomalies_table,
-                    ensure_area_quality_table,
-                )
-
-                ensure_area_quality_table(conn)
-                ensure_area_anomalies_table(conn)
-            elif algorithm == "area_entropy_cv":
-                from lakesource.postgres import ensure_area_entropy_cv_table
-
-                ensure_area_entropy_cv_table(conn)
-
-    @staticmethod
-    def _ensure_eot_run_status(conn: psycopg.Connection) -> None:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS eot_run_status (
-                    hylak_id BIGINT NOT NULL,
-                    chunk_start BIGINT NOT NULL,
-                    chunk_end BIGINT NOT NULL,
-                    workflow_version VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    PRIMARY KEY (hylak_id, workflow_version)
-                )
-            """)
-        conn.commit()
 
     # ------------------------------------------------------------------
     # Utility

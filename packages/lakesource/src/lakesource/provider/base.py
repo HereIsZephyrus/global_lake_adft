@@ -1,4 +1,4 @@
-"""LakeProvider ABC: unified read/write interface for lake data access."""
+"""LakeProvider ABC: backend-oriented lake data access contract."""
 
 from __future__ import annotations
 
@@ -15,10 +15,8 @@ class LakeProvider(ABC):
         - PostgresLakeProvider: psycopg-based, full read/write
         - ParquetLakeProvider: DuckDB-based, read-only
 
-    The interface covers three consumer groups:
-        1. lakeanalysis batch: core reads + writes + schema management
-        2. lakeviz global maps: aggregation reads (grid maps)
-        3. export scripts: core reads for dumping to parquet
+    The interface covers shared backend reads plus visualization/export access.
+    Batch-specific workflow semantics live in lakeanalysis.batch.io.
     """
 
     # ------------------------------------------------------------------
@@ -58,22 +56,6 @@ class LakeProvider(ABC):
         *,
         simplify_tolerance_meters: float | None = None,
     ) -> pd.DataFrame:
-        ...
-
-    # ------------------------------------------------------------------
-    # Algorithm-specific reads (done-id checking)
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def fetch_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> set[int]:
-        ...
-
-    @abstractmethod
-    def count_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> int:
         ...
 
     # ------------------------------------------------------------------
@@ -186,22 +168,6 @@ class LakeProvider(ABC):
             p_high=p_high,
             p_low=p_low,
         )
-
-    # ------------------------------------------------------------------
-    # Writes
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        ...
-
-    # ------------------------------------------------------------------
-    # Schema management
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def ensure_schema(self, algorithm: str) -> None:
-        ...
 
     # ------------------------------------------------------------------
     # Utility
