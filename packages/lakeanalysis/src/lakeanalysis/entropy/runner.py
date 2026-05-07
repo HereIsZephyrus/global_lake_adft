@@ -9,14 +9,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from lakesource.postgres import (
-    ChunkedLakeProcessor,
-    ensure_entropy_table,
-    fetch_lake_area_chunk,
-    fetch_seasonal_amplitude_chunk,
-    series_db,
-    upsert_entropy,
-)
+from lakesource.config import SourceConfig
+from lakesource.provider.factory import create_provider
 
 from .compute import compute_annual_ae, compute_overall_ae, compute_trend
 
@@ -43,20 +37,29 @@ def run_entropy(config: EntropyRunConfig) -> None:
         config.chunk_size,
     )
 
+    provider = create_provider(SourceConfig())
     config.data_dir.mkdir(parents=True, exist_ok=True)
 
-    with series_db.connection_context() as conn:
-        ensure_entropy_table(conn)
+    provider.ensure_table("entropy")
 
-    processor = ChunkedLakeProcessor(series_db, chunk_size=config.chunk_size, done_table="entropy")
+    max_id = provider.fetch_max_hylak_id()
+    if config.limit_id is not None:
+        max_id = min(max_id, config.limit_id - 1)
 
-    def process_chunk(chunk_start: int, chunk_end: int) -> list[dict[str, int | float | str | bool | None]]:
-        with series_db.connection_context() as conn:
-            lake_frames = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
-            amplitudes = fetch_seasonal_amplitude_chunk(conn, chunk_start, chunk_end)
+    chunk_ranges = [
+        (start, min(start + config.chunk_size, max_id + 1))
+        for start in range(0, max_id + 1, config.chunk_size)
+    ]
+
+    for chunk_start, chunk_end in chunk_ranges:
+        done_ids = provider.fetch_done_ids("entropy", chunk_start, chunk_end)
+        lake_frames = provider.fetch_lake_area_chunk(chunk_start, chunk_end)
+        amplitudes = provider.fetch_seasonal_amplitude_chunk(chunk_start, chunk_end)
 
         rows: list[dict[str, int | float | str | bool | None]] = []
         for hylak_id, df in lake_frames.items():
+            if hylak_id in done_ids:
+                continue
             ae_overall = compute_overall_ae(df)
             annual_df = compute_annual_ae(df)
             trend = compute_trend(annual_df)
@@ -77,13 +80,7 @@ def run_entropy(config: EntropyRunConfig) -> None:
         out_path = chunk_path(config.data_dir, chunk_start, chunk_end)
         pd.DataFrame(rows).to_parquet(out_path, index=False)
         log.debug("Persisted %d rows to %s", len(rows), out_path.name)
-        return rows
-
-    def upsert_chunk(rows: list[dict[str, int | float | str | bool | None]]) -> None:
-        with series_db.connection_context() as conn:
-            upsert_entropy(conn, rows)
-
-    processor.run(process_fn=process_chunk, upsert_fn=upsert_chunk, limit_id=config.limit_id)
+        provider.upsert_rows("entropy", rows)
 
     if config.show_plot:
         show_entropy_plots(config.data_dir, limit_id=config.limit_id)
@@ -101,21 +98,20 @@ def run_update_amplitude_only(data_dir: Path, show_plot: bool = False) -> None:
             show_entropy_plots(data_dir, limit_id=None)
         return
 
+    provider = create_provider(SourceConfig())
     for path in paths:
         _, start_str, end_str = path.stem.split("_", 2)
         chunk_start = int(start_str)
         chunk_end = int(end_str)
 
-        with series_db.connection_context() as conn:
-            amplitudes = fetch_seasonal_amplitude_chunk(conn, chunk_start, chunk_end)
+        amplitudes = provider.fetch_seasonal_amplitude_chunk(chunk_start, chunk_end)
 
         df = pd.read_parquet(path)
         df["mean_seasonal_amplitude"] = df["hylak_id"].map(amplitudes)
         df.to_parquet(path, index=False)
         log.debug("Updated amplitude in %s", path.name)
 
-        with series_db.connection_context() as conn:
-            upsert_entropy(conn, df.to_dict("records"))
+        provider.upsert_rows("entropy", df.to_dict("records"))
 
     log.info("Updated amplitude for %d chunk(s)", len(paths))
     if show_plot:

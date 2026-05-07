@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from lakesource.postgres import ChunkedLakeProcessor, atlas_db, series_db
+from lakesource.config import SourceConfig
+from lakesource.provider.factory import create_provider
 
-from .lookup import fetch_lake_centroids_chunk, lookup_pfaf_chunk
-from .store import ensure_lake_pfaf_table, upsert_lake_pfaf
+from .lookup import lookup_pfaf_chunk
 
 log = logging.getLogger(__name__)
 
@@ -27,19 +27,20 @@ def run_pfaf(config: PfafRunConfig) -> None:
         config.chunk_size,
     )
 
-    with series_db.connection_context() as series_conn:
-        ensure_lake_pfaf_table(series_conn)
-
-    processor = ChunkedLakeProcessor(series_db, chunk_size=config.chunk_size)
-
-    def process_chunk(chunk_start: int, chunk_end: int) -> dict[int, int | None]:
-        with series_db.connection_context() as s_conn:
-            centroids = fetch_lake_centroids_chunk(s_conn, chunk_start, chunk_end)
-        with atlas_db.connection_context() as a_conn:
-            return lookup_pfaf_chunk(a_conn, centroids)
-
-    def upsert_chunk(mapping: dict[int, int | None]) -> None:
-        with series_db.connection_context() as s_conn:
-            upsert_lake_pfaf(s_conn, mapping)
-
-    processor.run(process_fn=process_chunk, upsert_fn=upsert_chunk, limit_id=config.limit_id)
+    provider = create_provider(SourceConfig())
+    provider.ensure_table("lake_pfaf")
+    max_id = provider.fetch_max_hylak_id()
+    if config.limit_id is not None:
+        max_id = min(max_id, config.limit_id - 1)
+    for chunk_start in range(0, max_id + 1, config.chunk_size):
+        chunk_end = min(chunk_start + config.chunk_size, max_id + 1)
+        done_ids = provider.fetch_done_ids("lake_pfaf", chunk_start, chunk_end)
+        centroids = [
+            item for item in provider.fetch_lake_centroids_chunk(chunk_start, chunk_end)
+            if item[0] not in done_ids
+        ]
+        rows = [
+            {"hylak_id": hylak_id, "pfaf_id": pfaf_id}
+            for hylak_id, pfaf_id in provider.lookup_pfaf_chunk(centroids).items()
+        ]
+        provider.upsert_rows("lake_pfaf", rows)
