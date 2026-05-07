@@ -84,7 +84,7 @@ class ChunkedLakeProcessor:
 
     def _count_source_in_range_sql(self) -> psql.Composed:
         return psql.SQL(
-            "SELECT COUNT(*) FROM {} WHERE hylak_id >= %(chunk_start)s AND hylak_id < %(chunk_end)s"
+            "SELECT COUNT(*) FROM {} WHERE hylak_id >= %(chunk_start)s::bigint AND hylak_id < %(chunk_end)s::bigint"
         ).format(psql.Identifier(self._table_config.series_table("lake_info")))
 
     def _max_hylak_id(self, conn: psycopg.Connection) -> int | None:
@@ -119,7 +119,7 @@ class ChunkedLakeProcessor:
         is_pending_sql = psql.SQL(
             "SELECT EXISTS ("
             "  SELECT 1 FROM {source} s "
-            "  WHERE s.hylak_id >= %(chunk_start)s AND s.hylak_id < %(chunk_end)s "
+            "  WHERE s.hylak_id >= %(chunk_start)s::bigint AND s.hylak_id < %(chunk_end)s::bigint "
             "  AND NOT EXISTS ("
             "    SELECT 1 FROM {done} d WHERE d.hylak_id = s.hylak_id"
             "  )"
