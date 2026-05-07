@@ -37,6 +37,7 @@ from lakeanalysis.quality import (
     classify_area_anomaly,
     compute_median_area,
     compute_mean_area,
+    compute_quantile_area,
     default_filters,
 )
 
@@ -157,12 +158,14 @@ def run(
         for hylak_id, df in lake_frames.items():
             rs_area_median = compute_median_area(df) / 1_000_000
             rs_area_mean = compute_mean_area(df) / 1_000_000
+            rs_area_quantile = compute_quantile_area(df) / 1_000_000
             atlas_area = 0.0
             ctx = LakeContext(
                 df=df,
                 df_no_frozen=df,
                 rs_area_median=rs_area_median,
                 rs_area_mean=rs_area_mean,
+                rs_area_quantile=rs_area_quantile,
                 atlas_area=atlas_area,
             )
             decision = classify_area_anomaly(ctx, filters)

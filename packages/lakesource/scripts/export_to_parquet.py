@@ -46,6 +46,7 @@ MONTHLY_TABLES = {
 }
 
 LARGE_TABLES = {
+    "area_anomalies",
     "area_quality",
     "lake_info",
     "lake_area",
@@ -57,6 +58,7 @@ DEFAULT_TABLES = [
     "lake_info",
     "anomaly",
     "area_quality",
+    "area_anomalies",
     "af_nearest",
 ]
 

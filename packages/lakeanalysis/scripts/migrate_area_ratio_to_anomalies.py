@@ -159,6 +159,7 @@ def run(
             df_no_frozen=None,
             rs_area_median=rs_median,
             rs_area_mean=rs_mean,
+            rs_area_quantile=rs_median,
             atlas_area=atlas,
         )
         ratio_filter = filters[2]  # AreaRatioFilter

@@ -318,6 +318,7 @@ class PostgresLakeProvider(LakeProvider):
             "eot_extremes": "upsert_eot_extremes",
             "eot_run_status": "upsert_eot_run_status",
             "comparison_run_status": "upsert_comparison_run_status",
+            "area_entropy_cv": "upsert_area_entropy_cv",
         }
         fn_name = _FNS.get(table_name)
         if fn_name is None:
@@ -353,6 +354,10 @@ class PostgresLakeProvider(LakeProvider):
 
                 ensure_quantile_tables(conn)
                 ensure_pwm_extreme_tables(conn)
+            elif algorithm == "area_entropy_cv":
+                from lakesource.postgres import ensure_area_entropy_cv_table
+
+                ensure_area_entropy_cv_table(conn)
 
     @staticmethod
     def _ensure_eot_run_status(conn: psycopg.Connection) -> None:
