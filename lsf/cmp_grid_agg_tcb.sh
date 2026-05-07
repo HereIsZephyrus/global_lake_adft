@@ -22,12 +22,10 @@ echo "Python: $(which python)"
 
 export PYTHONPATH="$PROJECT_DIR/packages/lakesource/src:$PROJECT_DIR/packages/lakeanalysis/src:$PROJECT_DIR/packages/lakeviz/src:$PYTHONPATH"
 export DATA_BACKEND=parquet
-export PARQUET_DATA_DIR=/data/users/guxh01/2026_tcb/lake/lake_data
+export PARQUET_DATA_DIR=/data/users/guxh01/2026_tcb/lake/lake_data/parquet
 
 python packages/lakeviz/scripts/comparison_grid_agg.py \
-    --comparison-dir /data/users/guxh01/2026_tcb/lake/lake_data/comparison \
     --sample-file data/comparison/sample_lakes.parquet \
-    --output-dir /data/users/guxh01/2026_tcb/lake/lake_data/comparison \
     --resolution 0.5
 
 echo "End: $(date)"

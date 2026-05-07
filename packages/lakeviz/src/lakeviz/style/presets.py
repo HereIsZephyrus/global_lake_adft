@@ -172,5 +172,6 @@ class Theme:
         if cfg is None:
             from lakeviz.config import DEFAULT_VIZ_CONFIG
             cfg = DEFAULT_VIZ_CONFIG
-        plt.rcParams["font.family"] = [cfg.font_en, cfg.font_cjk, "DejaVu Sans"]
+        plt.rcParams["font.family"] = "sans-serif"
+        plt.rcParams["font.sans-serif"] = [cfg.font_cjk, cfg.font_en, "DejaVu Sans"]
         plt.rcParams["axes.unicode_minus"] = False
