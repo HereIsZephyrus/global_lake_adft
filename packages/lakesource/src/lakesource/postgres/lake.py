@@ -791,11 +791,11 @@ ORDER BY la.hylak_id
 )
 
 
-def _fetch_max_area_quality_hylak_id_sql(tc: TableConfig) -> sql.Composed:
+def _fetch_max_lake_info_hylak_id_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT MAX(hylak_id)
 FROM {table}
-""").format(table=sql.Identifier(tc.series_table("area_quality")))
+""").format(table=sql.Identifier(tc.series_table("lake_area")))
 
 
 def fetch_lake_area(
@@ -957,6 +957,21 @@ def fetch_anomaly_hylak_ids(
     result = {int(r[0]) for r in rows}
     log.info("Fetched anomaly hylak_ids: %d lakes", len(result))
     return result
+
+
+def fetch_quality_done_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> set[int]:
+    """Fetch all quality-processed lake ids in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_fetch_quality_done_hylak_ids_in_range_sql(table_config), params)
+        rows = cur.fetchall()
+    return {int(row[0]) for row in rows}
 
 
 def fetch_lake_area_by_ids(
@@ -1859,16 +1874,46 @@ def fetch_quantile_status_ids_in_range(
     return {int(row[0]) for row in rows}
 
 
-def fetch_max_area_quality_hylak_id(
+def fetch_max_lake_info_hylak_id(
     conn: psycopg.Connection,
     *,
     table_config: TableConfig = _default_table_config,
 ) -> int | None:
-    """Return the maximum hylak_id present in area_quality."""
+    """Return the maximum hylak_id present in lake_info."""
     with conn.cursor() as cur:
-        cur.execute(_fetch_max_area_quality_hylak_id_sql(table_config))
+        cur.execute(_fetch_max_lake_info_hylak_id_sql(table_config))
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else None
+
+
+def count_source_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> int:
+    """Count source lake ids from lake_info in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_count_source_hylak_ids_in_range_sql(table_config), params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def fetch_source_hylak_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> set[int]:
+    """Fetch source lake ids from lake_info in a hylak_id range."""
+    params = {"chunk_start": chunk_start, "chunk_end": chunk_end}
+    with conn.cursor() as cur:
+        cur.execute(_fetch_source_hylak_ids_in_range_sql(table_config), params)
+        rows = cur.fetchall()
+    return {int(row[0]) for row in rows}
 
 
 _SAFE_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -2206,6 +2251,47 @@ def fetch_pwm_extreme_status_ids_in_range(
     with conn.cursor() as cur:
         cur.execute(
             _fetch_pwm_extreme_status_ids_in_range_sql(table_config),
+            {"chunk_start": chunk_start, "chunk_end": chunk_end, "workflow_version": workflow_version},
+        )
+        return {int(row[0]) for row in cur.fetchall()}
+
+
+def ensure_comparison_tables(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_ensure_comparison_run_status_table_sql(table_config))
+    conn.commit()
+
+
+def upsert_comparison_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_comparison_run_status_sql(table_config), rows)
+    if commit:
+        conn.commit()
+
+
+def fetch_comparison_status_ids_in_range(
+    conn: psycopg.Connection,
+    chunk_start: int,
+    chunk_end: int,
+    *,
+    workflow_version: str,
+    table_config: TableConfig = _default_table_config,
+) -> set[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            _fetch_comparison_status_ids_in_range_sql(table_config),
             {"chunk_start": chunk_start, "chunk_end": chunk_end, "workflow_version": workflow_version},
         )
         return {int(row[0]) for row in cur.fetchall()}

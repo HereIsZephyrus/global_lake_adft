@@ -8,11 +8,11 @@ import pandas as pd
 import psycopg
 
 from lakesource.postgres.lake import (
-    count_area_quality_hylak_ids_in_range,
+    count_source_hylak_ids_in_range,
     count_quantile_status_in_range,
-    fetch_area_quality_hylak_ids_in_range,
-    fetch_max_area_quality_hylak_id,
+    fetch_max_lake_info_hylak_id,
     fetch_quantile_status_ids_in_range,
+    fetch_source_hylak_ids_in_range,
     upsert_quantile_abrupt_transitions as upsert_quantile_abrupt_transitions_in_db,
     upsert_quantile_extremes as upsert_quantile_extremes_in_db,
     upsert_quantile_labels as upsert_quantile_labels_in_db,
@@ -125,7 +125,7 @@ def count_source_lakes_in_chunk(
     chunk_start: int,
     chunk_end: int,
 ) -> int:
-    return count_area_quality_hylak_ids_in_range(conn, chunk_start, chunk_end)
+    return count_source_hylak_ids_in_range(conn, chunk_start, chunk_end)
 
 
 def count_processed_lakes_in_chunk(
@@ -148,7 +148,7 @@ def fetch_source_hylak_ids_in_chunk(
     chunk_start: int,
     chunk_end: int,
 ) -> set[int]:
-    return fetch_area_quality_hylak_ids_in_range(conn, chunk_start, chunk_end)
+    return fetch_source_hylak_ids_in_range(conn, chunk_start, chunk_end)
 
 
 def fetch_processed_hylak_ids_in_chunk(
@@ -167,7 +167,7 @@ def fetch_processed_hylak_ids_in_chunk(
 
 
 def fetch_max_hylak_id(conn: psycopg.Connection) -> int:
-    max_hylak_id = fetch_max_area_quality_hylak_id(conn)
+    max_hylak_id = fetch_max_lake_info_hylak_id(conn)
     return 0 if max_hylak_id is None else int(max_hylak_id)
 
 

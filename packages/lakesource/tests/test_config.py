@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from lakesource.config import Backend, SourceConfig
+from lakesource.env import ensure_env_loaded
 
 
 def test_default_backend_is_postgres():
@@ -44,3 +45,11 @@ def test_year_filters_set():
     config = SourceConfig(year_start=2010, year_end=2020)
     assert config.year_start == 2010
     assert config.year_end == 2020
+
+
+def test_ensure_env_loaded_is_idempotent(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("DB_HOST=example.test\n", encoding="utf-8")
+
+    ensure_env_loaded(dotenv_path=env_path)
+    ensure_env_loaded(dotenv_path=env_path)

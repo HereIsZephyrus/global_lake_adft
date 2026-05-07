@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
@@ -14,6 +15,22 @@ from lakesource.table_config import TableConfig
 from .base import LakeProvider
 
 log = logging.getLogger(__name__)
+
+_APPEND_ONLY_TABLES = {
+    "quantile_labels",
+    "quantile_extremes",
+    "quantile_abrupt_transitions",
+    "quantile_run_status",
+    "pwm_extreme_thresholds",
+    "pwm_extreme_run_status",
+    "eot_results",
+    "eot_extremes",
+    "eot_run_status",
+    "comparison_run_status",
+    "area_entropy_cv",
+    "area_quality",
+    "area_anomalies",
+}
 
 
 def _ensure_queries_registered() -> None:
@@ -49,7 +66,6 @@ class ParquetLakeProvider(LakeProvider):
                    MONTH(la.year_month) AS month,
                    la.water_area
             FROM lake_area la
-            JOIN area_quality aq ON aq.hylak_id = la.hylak_id
             WHERE la.hylak_id >= ? AND la.hylak_id < ?
             ORDER BY la.hylak_id, la.year_month
             """,
@@ -73,7 +89,6 @@ class ParquetLakeProvider(LakeProvider):
                    MONTH(la.year_month) AS month,
                    la.water_area
             FROM lake_area la
-            JOIN area_quality aq ON aq.hylak_id = la.hylak_id
             WHERE la.hylak_id IN ({placeholders})
             ORDER BY la.hylak_id, la.year_month
             """,
@@ -129,9 +144,44 @@ class ParquetLakeProvider(LakeProvider):
             return {}
         return self._frozen_from_anomaly_df(df)
 
+    def fetch_atlas_area_chunk(
+        self, chunk_start: int, chunk_end: int
+    ) -> dict[int, float]:
+        try:
+            df = self._client.query_df(
+                "SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id >= ? AND hylak_id < ?",
+                parameters=[chunk_start, chunk_end],
+            )
+        except Exception:
+            return {}
+        if df.empty:
+            return {}
+        return {
+            int(row.hylak_id): float(row.lake_area) if row.lake_area is not None else 0.0
+            for row in df.itertuples(index=False)
+        }
+
+    def fetch_atlas_area_by_ids(self, id_list: list[int]) -> dict[int, float]:
+        if not id_list:
+            return {}
+        placeholders = ",".join("?" for _ in id_list)
+        try:
+            df = self._client.query_df(
+                f"SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id IN ({placeholders})",
+                parameters=id_list,
+            )
+        except Exception:
+            return {}
+        if df.empty:
+            return {}
+        return {
+            int(row.hylak_id): float(row.lake_area) if row.lake_area is not None else 0.0
+            for row in df.itertuples(index=False)
+        }
+
     def fetch_max_hylak_id(self) -> int:
         try:
-            df = self._client.query_df("SELECT MAX(hylak_id) AS max_id FROM area_quality")
+            df = self._client.query_df("SELECT MAX(hylak_id) AS max_id FROM lake_info")
             val = df.iloc[0, 0]
             return int(val) if val is not None else 0
         except Exception:
@@ -154,6 +204,25 @@ class ParquetLakeProvider(LakeProvider):
     def fetch_done_ids(
         self, algorithm: str, chunk_start: int, chunk_end: int
     ) -> set[int]:
+        if algorithm == "quality":
+            done_ids: set[int] = set()
+            try:
+                quality_df = self._client.query_df(
+                    "SELECT DISTINCT hylak_id FROM area_quality WHERE hylak_id >= ? AND hylak_id < ?",
+                    parameters=[chunk_start, chunk_end],
+                )
+                done_ids |= set(quality_df["hylak_id"].astype(int))
+            except Exception:
+                pass
+            try:
+                anomaly_df = self._client.query_df(
+                    "SELECT DISTINCT hylak_id FROM area_anomalies WHERE hylak_id >= ? AND hylak_id < ?",
+                    parameters=[chunk_start, chunk_end],
+                )
+                done_ids |= set(anomaly_df["hylak_id"].astype(int))
+            except Exception:
+                pass
+            return done_ids
         status_table = f"{algorithm}_run_status"
         try:
             df = self._client.query_df(
@@ -168,6 +237,8 @@ class ParquetLakeProvider(LakeProvider):
     def count_done_ids(
         self, algorithm: str, chunk_start: int, chunk_end: int
     ) -> int:
+        if algorithm == "quality":
+            return len(self.fetch_done_ids(algorithm, chunk_start, chunk_end))
         status_table = f"{algorithm}_run_status"
         try:
             df = self._client.query_df(
@@ -178,92 +249,6 @@ class ParquetLakeProvider(LakeProvider):
             return int(df.iloc[0, 0])
         except Exception:
             return 0
-
-    # ------------------------------------------------------------------
-    # Aggregation reads (lakeviz global maps)
-    # ------------------------------------------------------------------
-
-    def fetch_extremes_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        cache = self._cache_path("quantile", f"extremes_grid_agg_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._grid_agg(
-                "quantile_extremes", resolution
-            )
-        )
-
-    def fetch_extremes_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        cache = self._cache_path("quantile", f"extremes_by_type_grid_agg_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._grid_agg(
-                "quantile_extremes", resolution, group_cols=["event_type"]
-            )
-        )
-
-    def fetch_transitions_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        cache = self._cache_path("quantile", f"transitions_grid_agg_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._grid_agg(
-                "quantile_abrupt_transitions", resolution
-            )
-        )
-
-    def fetch_transitions_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        cache = self._cache_path("quantile", f"transitions_by_type_grid_agg_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._grid_agg(
-                "quantile_abrupt_transitions", resolution, group_cols=["transition_type"]
-            )
-        )
-
-    def fetch_eot_convergence_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        q_tag = f"{tail}_q{threshold_quantile:.4f}"
-        cache = self._cache_path("eot", f"eot_convergence_{q_tag}_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._eot_grid_agg(
-                "eot_results", resolution, tail, threshold_quantile,
-                value_col="CASE WHEN converged THEN 1.0 ELSE 0.0 END",
-                value_alias="convergence_rate",
-            )
-        )
-
-    def fetch_eot_converged_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        q_tag = f"{tail}_q{threshold_quantile:.4f}"
-        cache = self._cache_path("eot", f"eot_converged_{q_tag}_r{resolution}.parquet")
-        return self._cached_or_compute(
-            cache, refresh, lambda: self._eot_grid_agg(
-                "eot_results", resolution, tail, threshold_quantile,
-                value_col="converged",
-                value_alias="converged_count",
-                agg="SUM",
-                extra_where="AND converged = true",
-            )
-        )
-
-    # ------------------------------------------------------------------
-    # Aggregation reads (lakeviz global maps)
-    # ------------------------------------------------------------------
 
     def fetch_grid_agg(
         self,
@@ -280,85 +265,6 @@ class ParquetLakeProvider(LakeProvider):
             self._client, self._cache_dir, resolution, refresh=refresh, **kwargs
         )
 
-    def fetch_extremes_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.extremes", resolution, refresh=refresh)
-
-    def fetch_extremes_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.extremes_by_type", resolution, refresh=refresh)
-
-    def fetch_transitions_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.transitions", resolution, refresh=refresh)
-
-    def fetch_transitions_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.transitions_by_type", resolution, refresh=refresh)
-
-    def fetch_eot_convergence_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "eot.convergence", resolution,
-            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
-        )
-
-    def fetch_eot_converged_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "eot.converged", resolution,
-            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
-        )
-
-    def fetch_pwm_convergence_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.convergence", resolution, refresh=refresh)
-
-    def fetch_pwm_converged_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.converged", resolution, refresh=refresh)
-
-    def fetch_pwm_monthly_threshold_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.monthly_threshold", resolution, refresh=refresh)
-
-    def fetch_pwm_exceedance_grid_agg(
-        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "pwm.exceedance", resolution,
-            refresh=refresh, p_high=p_high, p_low=p_low,
-        )
-
-    def fetch_pwm_monthly_exceedance_grid_agg(
-        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "pwm.monthly_exceedance", resolution,
-            refresh=refresh, p_high=p_high, p_low=p_low,
-        )
-
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
@@ -370,6 +276,15 @@ class ParquetLakeProvider(LakeProvider):
             if not rows:
                 continue
             new_df = pd.DataFrame(rows)
+            if table_name in _APPEND_ONLY_TABLES:
+                target_dir = self._data_dir / table_name
+                target_dir.mkdir(parents=True, exist_ok=True)
+                part_path = target_dir / f"part-{uuid4().hex}.parquet"
+                new_df.to_parquet(part_path, index=False)
+                self._client.register_or_replace_glob(table_name, str(target_dir / "*.parquet"))
+                log.info("Appended %d rows to %s", len(rows), part_path)
+                continue
+
             parquet_path = self._data_dir / f"{table_name}.parquet"
             if parquet_path.exists():
                 existing_df = pd.read_parquet(parquet_path)
