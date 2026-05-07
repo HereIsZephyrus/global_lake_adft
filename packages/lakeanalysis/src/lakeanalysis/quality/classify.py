@@ -11,12 +11,17 @@ from .filters import (
     FLAG_AREA_RATIO,
     FLAG_OUTSIDE_RANGE,
     FLAG_PV,
+    FLAG_SHIFT,
+    FLAG_NAMES,
+    decode_anomaly_flags,
+    encode_anomaly_flags,
 )
 from .filters.median_zero import ZeroQuantileFilter, ZeroQuantileConfig
 from .filters.flatness import FlatnessFilter, FlatnessFilterConfig
 from .filters.area_ratio import AreaRatioFilter, AreaRatioConfig
 from .filters.outside_range import OutsideRangeFilter, OutsideRangeConfig
 from .filters.penalized_volatility import PenalizedVolatilityFilter, PenalizedVolatilityConfig
+from .filters.shift import ShiftFilter, ShiftConfig
 
 
 _FLAG_BITS: dict[str, int] = {
@@ -25,6 +30,7 @@ _FLAG_BITS: dict[str, int] = {
     "area_ratio": FLAG_AREA_RATIO,
     "outside_range": FLAG_OUTSIDE_RANGE,
     "pv": FLAG_PV,
+    "shift": FLAG_SHIFT,
 }
 
 
@@ -61,6 +67,7 @@ def default_filters(
     ratio_config: AreaRatioConfig | None = None,
     pv_config: PenalizedVolatilityConfig | None = None,
     outside_range_config: OutsideRangeConfig | None = None,
+    shift_config: ShiftConfig | None = None,
 ) -> list[AnomalyFilter]:
     """Construct the default filter chain."""
     return [
@@ -69,4 +76,5 @@ def default_filters(
         AreaRatioFilter(ratio_config),
         OutsideRangeFilter(outside_range_config),
         PenalizedVolatilityFilter(pv_config),
+        ShiftFilter(shift_config),
     ]

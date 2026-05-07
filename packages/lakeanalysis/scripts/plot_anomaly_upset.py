@@ -31,7 +31,7 @@ from lakeviz.plot_config import setup_chinese_font
 
 log = logging.getLogger(__name__)
 
-_SET_COLS = ["is_median_zero", "is_flat_or_pv", "is_area_mismatch"]
+_SET_COLS = ["is_median_zero", "is_flat_or_pv", "is_area_mismatch", "is_shift"]
 
 _FLAG_TO_SET = {
     "median_zero": "is_median_zero",
@@ -39,6 +39,7 @@ _FLAG_TO_SET = {
     "area_ratio": "is_area_ratio",
     "outside_range": "is_outside_range",
     "pv": "is_pv",
+    "shift": "is_shift",
 }
 
 _DISPLAY_NAMES = {

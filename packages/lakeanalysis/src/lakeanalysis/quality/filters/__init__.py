@@ -14,6 +14,7 @@ FLAG_FLAT = 2
 FLAG_AREA_RATIO = 4
 FLAG_OUTSIDE_RANGE = 8
 FLAG_PV = 16
+FLAG_SHIFT = 32
 
 FLAG_NAMES: dict[int, str] = {
     FLAG_ZERO_QUANTILE: "zero_quantile",
@@ -21,6 +22,7 @@ FLAG_NAMES: dict[int, str] = {
     FLAG_AREA_RATIO: "area_ratio",
     FLAG_OUTSIDE_RANGE: "outside_range",
     FLAG_PV: "pv",
+    FLAG_SHIFT: "shift",
 }
 
 

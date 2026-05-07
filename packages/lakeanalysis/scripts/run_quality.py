@@ -46,6 +46,7 @@ from lakeanalysis.quality import (
     AreaRatioConfig,
     PenalizedVolatilityConfig,
     OutsideRangeConfig,
+    ShiftConfig,
     LakeContext,
     classify_area_anomaly,
     compute_mean_area,
@@ -128,6 +129,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Truncate area_quality and area_anomalies before running (reprocess all chunks).",
     )
+    parser.add_argument(
+        "--shift-p-value",
+        type=float,
+        default=0.05,
+        metavar="P",
+        help="Shift filter: Pettitt significance threshold (default: 0.05).",
+    )
+    parser.add_argument(
+        "--shift-smooth-window",
+        type=int,
+        default=12,
+        metavar="N",
+        help="Shift filter: rolling smooth window in months (default: 12).",
+    )
     return parser.parse_args()
 
 
@@ -139,6 +154,7 @@ def run(
     ratio_config: AreaRatioConfig | None = None,
     pv_config: PenalizedVolatilityConfig | None = None,
     outside_range_config: OutsideRangeConfig | None = None,
+    shift_config: ShiftConfig | None = None,
     reset: bool = False,
 ) -> None:
     """Execute the area quality pipeline in resumable chunks."""
@@ -151,6 +167,8 @@ def run(
         pv_config = PenalizedVolatilityConfig()
     if outside_range_config is None:
         outside_range_config = OutsideRangeConfig()
+    if shift_config is None:
+        shift_config = ShiftConfig()
 
     log.info(
         "Starting area quality pipeline, limit_id=%s, chunk_size=%d, reset=%s, "
@@ -158,7 +176,8 @@ def run(
         "flat_dominant_ratio_threshold=%.3f, flat_round_digits=%s, "
         "area_ratio_min=%.3f, area_ratio_max=%.1f, "
         "pv_threshold=%.4f, pv_dominant_ratio_max=%.2f, "
-        "outside_range_tolerance=%.2f",
+        "outside_range_tolerance=%.2f, "
+        "shift_p_value=%.3f, shift_smooth_window=%d",
         limit_id,
         chunk_size,
         reset,
@@ -170,6 +189,8 @@ def run(
         pv_config.pv_threshold,
         pv_config.dominant_ratio_max,
         outside_range_config.tolerance,
+        shift_config.p_value_thresh,
+        shift_config.smooth_window,
     )
 
     with series_db.connection_context() as conn:
@@ -184,7 +205,7 @@ def run(
         log.info("Truncated area_quality and area_anomalies (reset mode)")
 
     processor = ChunkedLakeProcessor(series_db, chunk_size=chunk_size, done_table="area_processed")
-    filters = default_filters(zero_quantile_config=zero_quantile_config, flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config, outside_range_config=outside_range_config)
+    filters = default_filters(zero_quantile_config=zero_quantile_config, flat_config=flat_config, ratio_config=ratio_config, pv_config=pv_config, outside_range_config=outside_range_config, shift_config=shift_config)
 
     def process_chunk(chunk_start: int, chunk_end: int) -> dict[str, list[dict]]:
         with series_db.connection_context() as conn:
@@ -199,6 +220,7 @@ def run(
         n_area_ratio = 0
         n_outside_range = 0
         n_pv = 0
+        n_shift = 0
 
         for hylak_id, df in lake_frames.items():
             frozen_ym = frozen_map.get(hylak_id, None)
@@ -237,12 +259,14 @@ def run(
                     n_outside_range += 1
                 if bool(decision["is_pv"]):
                     n_pv += 1
+                if bool(decision["is_shift"]):
+                    n_shift += 1
             else:
                 normal.append(row)
 
         log.debug(
             "chunk [%d, %d): %d normal, %d anomalous "
-            "(zero_quantile=%d, flat=%d, area_ratio=%d, outside_range=%d, pv=%d)",
+            "(zero_quantile=%d, flat=%d, area_ratio=%d, outside_range=%d, pv=%d, shift=%d)",
             chunk_start,
             chunk_end,
             len(normal),
@@ -252,6 +276,7 @@ def run(
             n_area_ratio,
             n_outside_range,
             n_pv,
+            n_shift,
         )
         return {"normal": normal, "anomalies": anomalies}
 
@@ -282,6 +307,10 @@ def main() -> None:
     outside_range_config = OutsideRangeConfig(
         tolerance=args.outside_range_tolerance,
     )
+    shift_config = ShiftConfig(
+        p_value_thresh=args.shift_p_value,
+        smooth_window=args.shift_smooth_window,
+    )
     run(
         limit_id=args.limit_id,
         chunk_size=args.chunk_size,
@@ -290,6 +319,7 @@ def main() -> None:
         ratio_config=ratio_config,
         pv_config=pv_config,
         outside_range_config=outside_range_config,
+        shift_config=shift_config,
         reset=args.reset,
     )
 

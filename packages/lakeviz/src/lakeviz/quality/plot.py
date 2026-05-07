@@ -510,6 +510,7 @@ _SET_DISPLAY_NAMES = {
     "is_median_zero": "面积为0",
     "is_flat_or_pv": "序列异常",
     "is_area_mismatch": "面积偏差",
+    "is_shift": "结构性变化",
 }
 
 
@@ -524,7 +525,7 @@ def plot_anomaly_upset(
 
     Args:
         flags_df: DataFrame with columns
-            hylak_id, is_median_zero, is_flat_or_pv, is_area_mismatch.
+            hylak_id, is_median_zero, is_flat_or_pv, is_area_mismatch, is_shift.
         min_size: Minimum intersection size to display.
         show_counts: Whether to annotate intersection sizes.
         title: Figure title.
