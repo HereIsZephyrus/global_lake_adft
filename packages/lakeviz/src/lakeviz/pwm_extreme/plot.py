@@ -15,9 +15,11 @@ from lakeviz.domain.pwm_extreme import (
     plot_pwm_extreme_quantile_function,
     plot_pwm_extreme_threshold_summary as _plot_pwm_extreme_threshold_summary,
 )
+from lakeviz.style.presets import Theme
 
 
 def _render_quantile_function(curve_df: pd.DataFrame, month: int, output_dir: Path | None = None) -> Path | None:
+    Theme.apply()
     fig = plot_pwm_extreme_quantile_function(curve_df, month)
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,6 +68,7 @@ def plot_pwm_extreme_threshold_summary(
     Returns:
         Path to saved figure.
     """
+    Theme.apply()
     fig = _plot_pwm_extreme_threshold_summary(thresholds_df, hylak_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "threshold_summary.png"

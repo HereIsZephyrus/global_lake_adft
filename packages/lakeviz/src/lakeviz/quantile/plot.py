@@ -7,16 +7,51 @@ from pathlib import Path
 import pandas as pd
 
 from lakeviz.domain.quantile import (
-    plot_adft_fallback,
-    plot_anomaly_timeline,
-    plot_monthly_timeline,
-    plot_transition_count_summary,
-    plot_transition_count_summary_from_cache,
-    plot_transition_seasonality_summary,
-    plot_transition_seasonality_summary_from_cache,
+    plot_adft_fallback as _plot_adft_fallback,
+    plot_anomaly_timeline as _plot_anomaly_timeline,
+    plot_monthly_timeline as _plot_monthly_timeline,
+    plot_transition_count_summary as _plot_transition_count_summary,
+    plot_transition_count_summary_from_cache as _plot_transition_count_summary_from_cache,
+    plot_transition_seasonality_summary as _plot_transition_seasonality_summary,
+    plot_transition_seasonality_summary_from_cache as _plot_transition_seasonality_summary_from_cache,
 )
 from lakeviz.layout import save as _save
 from lakeviz.style.presets import Theme
+
+
+def plot_monthly_timeline(labels_df, transitions_df, *, hylak_id=None):
+    Theme.apply()
+    return _plot_monthly_timeline(labels_df, transitions_df, hylak_id=hylak_id)
+
+
+def plot_anomaly_timeline(labels_df, *, hylak_id=None):
+    Theme.apply()
+    return _plot_anomaly_timeline(labels_df, hylak_id=hylak_id)
+
+
+def plot_transition_count_summary(transitions_df):
+    Theme.apply()
+    return _plot_transition_count_summary(transitions_df)
+
+
+def plot_transition_count_summary_from_cache(counts_df):
+    Theme.apply()
+    return _plot_transition_count_summary_from_cache(counts_df)
+
+
+def plot_transition_seasonality_summary(transitions_df):
+    Theme.apply()
+    return _plot_transition_seasonality_summary(transitions_df)
+
+
+def plot_transition_seasonality_summary_from_cache(seasonality_df):
+    Theme.apply()
+    return _plot_transition_seasonality_summary_from_cache(seasonality_df)
+
+
+def plot_adft_fallback(hylak_id, series_df, adft_df):
+    Theme.apply()
+    return _plot_adft_fallback(hylak_id, series_df, adft_df)
 
 
 def save_lake_plots(

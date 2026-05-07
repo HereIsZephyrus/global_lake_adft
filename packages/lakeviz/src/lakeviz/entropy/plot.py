@@ -7,12 +7,13 @@ import logging
 import numpy as np
 import pandas as pd
 
+from lakeviz.style.presets import Theme
 from lakeviz.domain.entropy import (
-    plot_ae_distribution,
-    plot_amplitude_histogram,
-    plot_amplitude_vs_entropy,
-    plot_annual_ae,
-    plot_trend_summary,
+    plot_ae_distribution as _plot_ae_distribution,
+    plot_amplitude_histogram as _plot_amplitude_histogram,
+    plot_amplitude_vs_entropy as _plot_amplitude_vs_entropy,
+    plot_annual_ae as _plot_annual_ae,
+    plot_trend_summary as _plot_trend_summary,
 )
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,31 @@ def remove_amplitude_outliers(summary_df: pd.DataFrame) -> pd.DataFrame:
     if n_removed > 0:
         log.debug("remove_amplitude_outliers: removed %d rows (IQR bounds [%.4g, %.4g])", n_removed, low, high)
     return summary_df.loc[~mask].copy()
+
+
+def plot_ae_distribution(summary_df):
+    Theme.apply()
+    return _plot_ae_distribution(summary_df)
+
+
+def plot_amplitude_histogram(summary_df):
+    Theme.apply()
+    return _plot_amplitude_histogram(summary_df)
+
+
+def plot_annual_ae(hylak_id, annual_df, trend=None):
+    Theme.apply()
+    return _plot_annual_ae(hylak_id, annual_df, trend)
+
+
+def plot_trend_summary(summary_df):
+    Theme.apply()
+    return _plot_trend_summary(summary_df)
+
+
+def plot_amplitude_vs_entropy(summary_df):
+    Theme.apply()
+    return _plot_amplitude_vs_entropy(summary_df)
 
 
 __all__ = [

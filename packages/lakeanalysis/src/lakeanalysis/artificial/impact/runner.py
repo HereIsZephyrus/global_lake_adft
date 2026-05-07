@@ -17,7 +17,6 @@ from lakeviz.artificial import (
     plot_typical_pair_timeline,
     plot_volatility_comparison,
 )
-from lakeviz.style.presets import Theme
 
 from ..fetch import load_pairs_and_areas
 from .events import compute_pair_events
@@ -138,7 +137,6 @@ def show_impact_plots(
         return
 
     log.info("Plotting impact summary for %d pairs.", len(impact_df))
-    Theme.apply()
     plot_dir = data_dir / "plot"
     plot_dir.mkdir(parents=True, exist_ok=True)
 

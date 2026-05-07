@@ -12,8 +12,6 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from lakeviz.style.presets import Theme
-
 from lakesource.quantile.schema import QuantileResult
 
 from lakeviz.quantile import (
@@ -238,8 +236,6 @@ def save_summary_plots_from_cache(cache_root: Path, output_root: Path) -> dict[s
     output_root.mkdir(parents=True, exist_ok=True)
     count_path = output_root / "transition_count_summary.png"
     seasonality_path = output_root / "transition_seasonality.png"
-
-    Theme.apply()
 
     fig = plot_transition_count_summary_from_cache(counts_df)
     fig.savefig(count_path, dpi=300, bbox_inches="tight")
