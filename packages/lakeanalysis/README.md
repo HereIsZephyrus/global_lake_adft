@@ -87,7 +87,9 @@ packages/lakeanalysis/
 ├ src/lakeanalysis/
 │   batch/
 │     engine.py
+│     io.py
 │     manager.py
+│     single_process.py
 │     worker.py
 │     protocol.py
 │     calculator/

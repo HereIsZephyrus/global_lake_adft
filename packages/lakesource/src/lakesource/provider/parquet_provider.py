@@ -1,36 +1,15 @@
-"""ParquetLakeProvider: read-only implementation via DuckDB."""
+"""ParquetLakeProvider: backend reads and grid aggregations via DuckDB."""
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from uuid import uuid4
 
 import pandas as pd
 
 from lakesource.config import SourceConfig
 from lakesource.parquet.client import DuckDBClient
-from lakesource.table_config import TableConfig
 
 from .base import LakeProvider
-
-log = logging.getLogger(__name__)
-
-_APPEND_ONLY_TABLES = {
-    "quantile_labels",
-    "quantile_extremes",
-    "quantile_abrupt_transitions",
-    "quantile_run_status",
-    "pwm_extreme_thresholds",
-    "pwm_extreme_run_status",
-    "eot_results",
-    "eot_extremes",
-    "eot_run_status",
-    "comparison_run_status",
-    "area_entropy_cv",
-    "area_quality",
-    "area_anomalies",
-}
 
 
 def _ensure_queries_registered() -> None:
@@ -197,59 +176,6 @@ class ParquetLakeProvider(LakeProvider):
             "Lake geometry WKT requires PostGIS; use PostgresLakeProvider"
         )
 
-    # ------------------------------------------------------------------
-    # Algorithm-specific reads
-    # ------------------------------------------------------------------
-
-    def fetch_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> set[int]:
-        if algorithm == "quality":
-            done_ids: set[int] = set()
-            try:
-                quality_df = self._client.query_df(
-                    "SELECT DISTINCT hylak_id FROM area_quality WHERE hylak_id >= ? AND hylak_id < ?",
-                    parameters=[chunk_start, chunk_end],
-                )
-                done_ids |= set(quality_df["hylak_id"].astype(int))
-            except Exception:
-                pass
-            try:
-                anomaly_df = self._client.query_df(
-                    "SELECT DISTINCT hylak_id FROM area_anomalies WHERE hylak_id >= ? AND hylak_id < ?",
-                    parameters=[chunk_start, chunk_end],
-                )
-                done_ids |= set(anomaly_df["hylak_id"].astype(int))
-            except Exception:
-                pass
-            return done_ids
-        status_table = f"{algorithm}_run_status"
-        try:
-            df = self._client.query_df(
-                f"SELECT DISTINCT hylak_id FROM {status_table} "
-                f"WHERE hylak_id >= ? AND hylak_id < ? AND status = 'done'",
-                parameters=[chunk_start, chunk_end],
-            )
-            return set(df["hylak_id"].astype(int))
-        except Exception:
-            return set()
-
-    def count_done_ids(
-        self, algorithm: str, chunk_start: int, chunk_end: int
-    ) -> int:
-        if algorithm == "quality":
-            return len(self.fetch_done_ids(algorithm, chunk_start, chunk_end))
-        status_table = f"{algorithm}_run_status"
-        try:
-            df = self._client.query_df(
-                f"SELECT COUNT(DISTINCT hylak_id) AS cnt FROM {status_table} "
-                f"WHERE hylak_id >= ? AND hylak_id < ? AND status = 'done'",
-                parameters=[chunk_start, chunk_end],
-            )
-            return int(df.iloc[0, 0])
-        except Exception:
-            return 0
-
     def fetch_grid_agg(
         self,
         query_name: str,
@@ -264,41 +190,6 @@ class ParquetLakeProvider(LakeProvider):
         return query.fetch_parquet(
             self._client, self._cache_dir, resolution, refresh=refresh, **kwargs
         )
-
-    # ------------------------------------------------------------------
-    # Writes
-    # ------------------------------------------------------------------
-
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        if not any(rows_by_table.values()):
-            return
-        for table_name, rows in rows_by_table.items():
-            if not rows:
-                continue
-            new_df = pd.DataFrame(rows)
-            if table_name in _APPEND_ONLY_TABLES:
-                target_dir = self._data_dir / table_name
-                target_dir.mkdir(parents=True, exist_ok=True)
-                part_path = target_dir / f"part-{uuid4().hex}.parquet"
-                new_df.to_parquet(part_path, index=False)
-                self._client.register_or_replace_glob(table_name, str(target_dir / "*.parquet"))
-                log.info("Appended %d rows to %s", len(rows), part_path)
-                continue
-
-            parquet_path = self._data_dir / f"{table_name}.parquet"
-            if parquet_path.exists():
-                existing_df = pd.read_parquet(parquet_path)
-                new_df = pd.concat([existing_df, new_df], ignore_index=True)
-            new_df.to_parquet(parquet_path, index=False)
-            self._client.register_or_replace(table_name, parquet_path)
-            log.info("Persisted %d rows to %s (total: %d)", len(rows), parquet_path, len(new_df))
-
-    # ------------------------------------------------------------------
-    # Schema management (no-op for parquet)
-    # ------------------------------------------------------------------
-
-    def ensure_schema(self, algorithm: str) -> None:
-        pass
 
     # ------------------------------------------------------------------
     # Utility
