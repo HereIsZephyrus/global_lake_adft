@@ -26,7 +26,7 @@ from lakeviz.eot import (
     plot_eot_threshold_map,
     plot_eot_xi_map,
 )
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args()
     load_env()
-    setup_chinese_font()
+    Theme.apply()
 
     source = SourceConfig()
     provider = create_provider(source)

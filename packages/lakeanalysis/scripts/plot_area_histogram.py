@@ -12,7 +12,7 @@ from scipy.stats import gaussian_kde
 
 from lakesource.postgres import series_db
 from lakeviz.layout import save
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def run(args: argparse.Namespace) -> None:
     log.info("lake_info: %d lakes, area_quality: %d lakes", len(lake_info_areas), len(area_quality_areas))
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    setup_chinese_font()
+    Theme.apply()
 
     _plot_kde(axes[0], lake_info_areas, area_quality_areas, "全部湖泊")
 

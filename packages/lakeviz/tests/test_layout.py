@@ -60,3 +60,21 @@ def test_save(tmp_path):
     out = save(fig, tmp_path / "test.png", close=False)
     assert out.exists()
     plt.close(fig)
+
+
+def test_create_figure_uses_default_projection():
+    fig, axes = create_figure(
+        [{"name": "main", "row": 0, "col": 0}],
+        projection="polar",
+    )
+    assert axes["main"].name == "polar"
+    plt.close(fig)
+
+
+def test_create_figure_axis_projection_overrides_default():
+    fig, axes = create_figure(
+        [{"name": "main", "row": 0, "col": 0, "projection": None}],
+        projection="polar",
+    )
+    assert axes["main"].name == "rectilinear"
+    plt.close(fig)

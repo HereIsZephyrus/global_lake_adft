@@ -11,21 +11,16 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from lakeviz.config import DEFAULT_VIZ_CONFIG
+from lakeviz.domain.pwm_extreme import (
+    plot_pwm_extreme_quantile_function,
+    plot_pwm_extreme_threshold_summary as _plot_pwm_extreme_threshold_summary,
+)
+from lakeviz.style.presets import Theme
 
 
-def _render_quantile_function(
-    curve_df: pd.DataFrame,
-    month: int,
-    output_dir: Path | None = None,
-) -> Path | None:
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(curve_df["u"], curve_df["prior_y"], label="Prior (shifted exp)", linestyle="--")
-    ax.plot(curve_df["u"], curve_df["fitted_x"], label="Cross-entropy fit")
-    ax.set_xlabel("Probability level u")
-    ax.set_ylabel("Normalised quantile")
-    ax.set_title(f"Month {month}: PWM+CrossEnt quantile function")
-    ax.legend()
-    fig.tight_layout()
+def _render_quantile_function(curve_df: pd.DataFrame, month: int, output_dir: Path | None = None) -> Path | None:
+    Theme.apply()
+    fig = plot_pwm_extreme_quantile_function(curve_df, month)
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"month_{month}_quantile.png"
@@ -73,16 +68,8 @@ def plot_pwm_extreme_threshold_summary(
     Returns:
         Path to saved figure.
     """
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(thresholds_df["month"], thresholds_df["mean_area"], "o-", label="Mean area")
-    ax.plot(thresholds_df["month"], thresholds_df["threshold_high"], "s--", label="High threshold")
-    ax.plot(thresholds_df["month"], thresholds_df["threshold_low"], "s--", label="Low threshold")
-    ax.set_xlabel("Month")
-    ax.set_ylabel("Area")
-    ax.set_title(f"PWM+CrossEnt thresholds (hylak_id={hylak_id})")
-    ax.legend()
-    ax.set_xticks(range(1, 13))
-    fig.tight_layout()
+    Theme.apply()
+    fig = _plot_pwm_extreme_threshold_summary(thresholds_df, hylak_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "threshold_summary.png"
     fig.savefig(path, dpi=DEFAULT_VIZ_CONFIG.default_dpi)

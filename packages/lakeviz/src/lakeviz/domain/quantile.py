@@ -81,6 +81,11 @@ def draw_anomaly_timeline(
     high_style: ScatterStyle = QUANTILE_EXTREME_HIGH,
     low_style: ScatterStyle = QUANTILE_EXTREME_LOW,
 ) -> None:
+    if labels_df.empty:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+        title_suffix = "unknown" if hylak_id is None else str(hylak_id)
+        apply_axis_style(ax, AxisStyle(title=f"Lake {title_suffix} Anomaly Timeline", xlabel="Month", ylabel="Anomaly"))
+        return
     dates = pd.to_datetime(dict(year=labels_df["year"], month=labels_df["month"], day=1))
     draw_line(ax, dates, labels_df["anomaly"], style=anomaly_style)
     draw_axhline(ax, 0.0, style=ReferenceLineStyle(color="black", linewidth=0.8))

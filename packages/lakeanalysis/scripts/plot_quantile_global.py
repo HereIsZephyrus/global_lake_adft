@@ -17,13 +17,13 @@ from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
-from lakeviz.plot_config import setup_chinese_font
 from lakeviz.quantile import (
     plot_extremes_by_type_map,
     plot_extremes_density_map,
     plot_transition_by_type_map,
     plot_transition_density_map,
 )
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args()
     load_env()
-    setup_chinese_font()
+    Theme.apply()
 
     source = SourceConfig()
     provider = create_provider(source)

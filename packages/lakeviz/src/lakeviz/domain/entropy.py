@@ -14,7 +14,7 @@ from lakeviz.draw.line import draw_line
 from lakeviz.draw.scatter import draw_scatter
 from lakeviz.draw.bar import draw_bar
 from lakeviz.draw.histogram import draw_histogram
-from lakeviz.draw.reference import draw_axhline
+from lakeviz.draw.reference import draw_axhline, draw_axvline
 from lakeviz.draw.annotate import draw_text_box
 from lakeviz.style.base import AxisStyle, apply_axis_style
 from lakeviz.style.line import LineStyle
@@ -42,7 +42,7 @@ def draw_ae_distribution(
     kde = gaussian_kde(values)
     draw_line(ax, kde_x, kde(kde_x), style=LineStyle(linewidth=2, label="核密度估计"))
 
-    draw_axhline(ax, float(values.mean()), style=ReferenceLineStyle(color="red", linestyle="--", label=f"均值 = {values.mean():.3f}"))
+    draw_axvline(ax, float(values.mean()), style=ReferenceLineStyle(color="red", linestyle="--", label=f"均值 = {values.mean():.3f}"))
     apply_axis_style(ax, axis_style)
     ax.legend()
 
@@ -106,14 +106,14 @@ def draw_trend_summary(
     slopes = summary_df["sens_slope"].dropna()
     if len(slopes) > 0:
         draw_histogram(ax_slope, slopes, style=HistogramStyle(edgecolor="white", linewidth=0.4, bins=40))
-        draw_axhline(ax_slope, 0, style=ReferenceLineStyle(color="red", linestyle="--", linewidth=1))
+        draw_axvline(ax_slope, 0, style=ReferenceLineStyle(color="red", linestyle="--", linewidth=1))
         apply_axis_style(ax_slope, AxisStyle(xlabel="Sen 斜率 (AE/年)", ylabel="频数", title=f"Sen 斜率分布 (n={len(slopes)})"))
         ax_slope.set_xlim(-0.02, 0.02)
 
     changes = summary_df["change_per_decade_pct"].dropna()
     if len(changes) > 0:
         draw_histogram(ax_change, changes, style=HistogramStyle(edgecolor="white", linewidth=0.4, bins=40))
-        draw_axhline(ax_change, 0, style=ReferenceLineStyle(color="red", linestyle="--", linewidth=1))
+        draw_axvline(ax_change, 0, style=ReferenceLineStyle(color="red", linestyle="--", linewidth=1))
         ax_change.set_xlim(-50, 50)
         apply_axis_style(ax_change, AxisStyle(xlabel="每十年变化 (%)", ylabel="频数", title=f"每十年变化分布 (n={len(changes)})"))
 

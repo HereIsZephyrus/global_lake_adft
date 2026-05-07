@@ -19,7 +19,7 @@ from lakesource.env import load_env
 from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
 from lakeviz.comparison import plot_comparison_zonal_profile
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args()
     load_env()
-    setup_chinese_font()
+    Theme.apply()
 
     source = SourceConfig()
     provider = create_provider(source)

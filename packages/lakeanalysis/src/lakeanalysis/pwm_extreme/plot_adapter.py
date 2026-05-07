@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+
 from lakeviz.pwm_extreme import (
     plot_pwm_extreme_quantile_functions as _plot_quantile_functions,
     plot_pwm_extreme_threshold_summary as _plot_threshold_summary,
@@ -52,8 +54,9 @@ def plot_threshold_summary(
     """
     if output_dir is None:
         return None
-    return _plot_threshold_summary(
-        result.thresholds_df,
-        result.hylak_id,
-        output_dir,
-    )
+    fig = _plot_threshold_summary(result.thresholds_df, result.hylak_id)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / "threshold_summary.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return out_path

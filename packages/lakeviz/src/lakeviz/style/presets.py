@@ -145,6 +145,15 @@ ENTROPY_ANOMALY_NEG = BarStyle(color="tomato")
 SIMILARITY_SCATTER = ScatterStyle(alpha=0.4, s=10, rasterized=True)
 
 # ---------------------------------------------------------------------------
+# PWM extreme presets
+# ---------------------------------------------------------------------------
+PWM_EXTREME_PRIOR = LineStyle(linestyle="--", label="Prior (shifted exp)")
+PWM_EXTREME_FITTED = LineStyle(label="Cross-entropy fit")
+PWM_EXTREME_MEAN = LineStyle(marker="o", label="Mean area")
+PWM_EXTREME_HIGH = LineStyle(marker="s", linestyle="--", label="High threshold")
+PWM_EXTREME_LOW = LineStyle(marker="s", linestyle="--", label="Low threshold")
+
+# ---------------------------------------------------------------------------
 # Impact (artificial vs natural) presets
 # ---------------------------------------------------------------------------
 IMPACT_ARTIFICIAL = LineStyle(color="#E74C3C", linewidth=1.0, label="人工湖")

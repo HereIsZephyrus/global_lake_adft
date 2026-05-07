@@ -1,5 +1,9 @@
 """Visualisation package for PWM extreme quantile results."""
 
+from .plot import (
+    plot_pwm_extreme_quantile_functions,
+    plot_pwm_extreme_threshold_summary,
+)
 from .global_map import (
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
@@ -10,6 +14,8 @@ from .global_map import (
 )
 
 __all__ = [
+    "plot_pwm_extreme_quantile_functions",
+    "plot_pwm_extreme_threshold_summary",
     "plot_pwm_convergence_map",
     "plot_pwm_exceedance_maps",
     "plot_pwm_monthly_exceedance_maps",

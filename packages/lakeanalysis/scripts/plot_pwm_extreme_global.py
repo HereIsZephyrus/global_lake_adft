@@ -20,7 +20,6 @@ from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
-from lakeviz.plot_config import setup_chinese_font
 from lakeviz.pwm_extreme import (
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
@@ -29,6 +28,7 @@ from lakeviz.pwm_extreme import (
     plot_pwm_threshold_high_map,
     plot_pwm_threshold_low_map,
 )
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = parse_args()
     load_env()
-    setup_chinese_font()
+    Theme.apply()
 
     source = SourceConfig()
     provider = create_provider(source)

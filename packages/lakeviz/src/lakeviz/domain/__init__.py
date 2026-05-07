@@ -17,9 +17,6 @@ from .hawkes import (
     draw_kernel_matrix,
     draw_lrt_summary,
 )
-from .interpolation import (
-    draw_interpolation_timeline,
-)
 from .quantile import (
     draw_monthly_timeline,
     draw_anomaly_timeline,
@@ -41,6 +38,12 @@ from .entropy import (
     draw_trend_summary,
     draw_amplitude_vs_entropy,
 )
+from .artificial import (
+    draw_volatility_comparison,
+    draw_delta_cv_distribution,
+    draw_anomaly_ratio_comparison,
+    draw_typical_pair_timeline,
+)
 from .similarity import (
     draw_pearson_distribution,
     draw_acf_cosine_distribution,
@@ -49,9 +52,6 @@ from .similarity import (
 from .pwm_extreme import (
     draw_quantile_function,
     draw_threshold_summary,
-)
-from .interpolation import (
-    draw_interpolation_timeline,
 )
 
 __all__ = [
@@ -84,10 +84,13 @@ __all__ = [
     "draw_annual_ae",
     "draw_trend_summary",
     "draw_amplitude_vs_entropy",
+    "draw_volatility_comparison",
+    "draw_delta_cv_distribution",
+    "draw_anomaly_ratio_comparison",
+    "draw_typical_pair_timeline",
     "draw_pearson_distribution",
     "draw_acf_cosine_distribution",
     "draw_pearson_vs_acf",
     "draw_quantile_function",
     "draw_threshold_summary",
-    "draw_interpolation_timeline",
 ]

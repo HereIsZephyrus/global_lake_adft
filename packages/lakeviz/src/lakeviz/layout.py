@@ -74,8 +74,9 @@ def create_figure(
         rowspan = s.get("rowspan", 1)
         colspan = s.get("colspan", 1)
         subplot_kw: dict = {}
-        if "projection" in s:
-            subplot_kw["projection"] = s["projection"]
+        axis_projection = s.get("projection", projection)
+        if axis_projection is not None:
+            subplot_kw["projection"] = axis_projection
         ax = fig.add_subplot(
             gs[s["row"]:s["row"] + rowspan, s["col"]:s["col"] + colspan],
             **subplot_kw,

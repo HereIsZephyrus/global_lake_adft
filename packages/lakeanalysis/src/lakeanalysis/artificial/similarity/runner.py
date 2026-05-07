@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from lakesource.postgres import series_db
-from lakeviz.plot_config import setup_chinese_font
 from lakeviz.similarity import (
     plot_acf_cosine_distribution,
     plot_pearson_distribution,
@@ -105,7 +104,6 @@ def show_similarity_plots(data_dir: Path) -> None:
         return
 
     log.info("Plotting summary for %d pairs.", len(summary_df))
-    setup_chinese_font()
     plot_dir = data_dir / "plot"
     plot_dir.mkdir(parents=True, exist_ok=True)
 

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from lakeviz.domain.entropy import draw_ae_distribution, draw_trend_summary
 from lakeviz.draw.line import draw_line
 from lakeviz.draw.scatter import draw_scatter
 from lakeviz.draw.bar import draw_bar
@@ -75,6 +76,8 @@ def test_draw_axhline():
 def test_draw_axvline():
     fig, ax = plt.subplots()
     draw_axvline(ax, 0.5)
+    xdata = ax.get_lines()[0].get_xdata()
+    assert xdata[0] == xdata[1] == 0.5
     plt.close(fig)
 
 
@@ -97,4 +100,27 @@ def test_draw_text_box():
     fig, ax = plt.subplots()
     draw_text_box(ax, "info text")
     assert len(ax.texts) >= 1
+    plt.close(fig)
+
+
+def test_entropy_distribution_uses_vertical_mean_line():
+    fig, ax = plt.subplots()
+    draw_ae_distribution(ax, pd.DataFrame({"ae_overall": [0.2, 0.3, 0.5, 0.7]}))
+    mean_line = ax.get_lines()[-1]
+    xdata = mean_line.get_xdata()
+    assert xdata[0] == xdata[1]
+    plt.close(fig)
+
+
+def test_entropy_trend_summary_uses_vertical_zero_lines():
+    fig, (ax_slope, ax_change) = plt.subplots(1, 2)
+    draw_trend_summary(
+        ax_slope,
+        ax_change,
+        pd.DataFrame({"sens_slope": [-0.1, 0.2, 0.3], "change_per_decade_pct": [-1.0, 0.0, 2.0]}),
+    )
+    slope_ref = ax_slope.get_lines()[-1].get_xdata()
+    change_ref = ax_change.get_lines()[-1].get_xdata()
+    assert slope_ref[0] == slope_ref[1] == 0
+    assert change_ref[0] == change_ref[1] == 0
     plt.close(fig)

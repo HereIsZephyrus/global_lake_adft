@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from lakesource.postgres import fetch_eot_extremes_by_id, fetch_lake_area_by_ids, series_db
 from lakeanalysis.eot import plot_eot_extremes_from_db
 from lakeanalysis.logger import Logger
-from lakeviz.plot_config import setup_chinese_font
+from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def run(args: argparse.Namespace) -> Path:
     elif args.tail != "both":
         extremes_df = extremes_df[extremes_df["tail"] == args.tail].reset_index(drop=True)
 
-    setup_chinese_font()
+    Theme.apply()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     fig = plot_eot_extremes_from_db(
         hylak_id=args.hylak_id,
