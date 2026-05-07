@@ -10,7 +10,14 @@ from lakesource.quantile.schema import (
 )
 from lakesource.quantile.store import make_run_status_row
 from lakesource.provider.base import LakeProvider
-from lakeanalysis.batch import Engine, LakeTask, RangeFilter, RunReport
+from lakesource.config import Backend, SourceConfig
+from lakeanalysis.batch import (
+    Engine,
+    LakeTask,
+    RangeFilter,
+    RunReport,
+)
+from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakeanalysis.batch.calculator.quantile import QuantileCalculator
 
 
@@ -45,13 +52,10 @@ class FakeProvider(LakeProvider):
     def fetch_lake_geometry_wkt_by_ids(self, hylak_ids, **kw):
         raise NotImplementedError
 
-    def fetch_done_ids(self, algorithm, cs, ce):
-        return {0, 1}
-
-    def count_done_ids(self, algorithm, cs, ce):
-        return len(self._done_ids)
-
     def fetch_extremes_grid_agg(self, resolution=0.5, **kw):
+        return pd.DataFrame()
+
+    def fetch_grid_agg(self, query_name, resolution=0.5, **kw):
         return pd.DataFrame()
 
     def fetch_extremes_by_type_grid_agg(self, resolution=0.5, **kw):
@@ -75,12 +79,6 @@ class FakeProvider(LakeProvider):
     def fetch_pwm_converged_grid_agg(self, resolution=0.5, **kw):
         return pd.DataFrame()
 
-    def persist(self, rows_by_table):
-        pass
-
-    def ensure_schema(self, algorithm):
-        pass
-
     @property
     def backend_name(self):
         return "fake"
@@ -88,6 +86,42 @@ class FakeProvider(LakeProvider):
     @property
     def cache_dir(self):
         return None
+
+
+class FakeReader(BatchReader):
+    def __init__(self, provider: FakeProvider):
+        self._provider = provider
+
+    def fetch_lake_area_chunk(self, cs, ce):
+        return self._provider.fetch_lake_area_chunk(cs, ce)
+
+    def fetch_lake_area_by_ids(self, id_list):
+        return self._provider.fetch_lake_area_by_ids(id_list)
+
+    def fetch_frozen_year_months_chunk(self, cs, ce):
+        return self._provider.fetch_frozen_year_months_chunk(cs, ce)
+
+    def fetch_frozen_year_months_by_ids(self, id_list):
+        return self._provider.fetch_frozen_year_months_by_ids(id_list)
+
+    def fetch_max_hylak_id(self):
+        return self._provider.fetch_max_hylak_id()
+
+    def fetch_done_ids(self, algorithm, cs, ce):
+        return {0, 1}
+
+
+class FakeWriter(BatchWriter):
+    def __init__(self):
+        self.rows = {}
+        self.ensured = []
+
+    def persist(self, rows_by_table):
+        for k, v in rows_by_table.items():
+            self.rows.setdefault(k, []).extend(v)
+
+    def ensure_schema(self, algorithm):
+        self.ensured.append(algorithm)
 
 
 def test_quantile_calculator_run() -> None:
@@ -141,18 +175,11 @@ def test_range_filter() -> None:
 
 
 def test_engine_single_process_with_mocks() -> None:
-    class CollectingProvider(FakeProvider):
-        def __init__(self):
-            super().__init__()
-            self.rows = {}
-
-        def persist(self, rows_by_table):
-            for k, v in rows_by_table.items():
-                self.rows.setdefault(k, []).extend(v)
-
-    provider = CollectingProvider()
+    provider = FakeProvider()
+    writer = FakeWriter()
     engine = Engine(
-        provider=provider,
+        reader=FakeReader(provider),
+        writer=writer,
         calculator=_FakeCalculator(),
         algorithm="quantile",
         chunk_size=5,
@@ -162,7 +189,7 @@ def test_engine_single_process_with_mocks() -> None:
     assert report.total_chunks == 2
     assert report.success_lakes == 8
     assert report.skipped_lakes == 2
-    assert len(provider.rows.get("mock", [])) == 8
+    assert len(writer.rows.get("mock", [])) == 8
 
 
 def test_engine_skips_all_done_lakes() -> None:
@@ -178,7 +205,8 @@ def test_engine_skips_all_done_lakes() -> None:
             return {0, 1}
 
     engine = Engine(
-        provider=AllDoneProvider(),
+        reader=FakeReader(AllDoneProvider()),
+        writer=FakeWriter(),
         calculator=_FakeCalculator(),
         algorithm="quantile",
         chunk_size=5,

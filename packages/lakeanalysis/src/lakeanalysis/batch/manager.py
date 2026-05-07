@@ -21,16 +21,17 @@ log = logging.getLogger(__name__)
 
 
 class Manager:
-    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None, provider=None) -> None:
+    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None, writer=None) -> None:
         self._comm = comm
         self._size = size
         self._io_budget = io_budget
         self._lake_filter = lake_filter
-        self._provider = provider
+        self._writer = writer
         self._io_active = 0
         self._n_workers = size - 1
         self._worker_states: dict[int, str] = {}
         self._read_queue: deque[int] = deque()
+        self._queued_workers: set[int] = set()
         self._done_workers: set[int] = set()
         self._report = RunReport()
         self._pending_rows: dict[str, list[dict]] = defaultdict(list)
@@ -105,16 +106,18 @@ class Manager:
         prev = self._worker_states.get(worker)
         self._worker_states[worker] = state
 
+        if prev == WorkerState.READING and state in (
+            WorkerState.CALCULATING,
+            WorkerState.PENDING,
+            WorkerState.DONE,
+        ):
+            self._io_active = max(0, self._io_active - 1)
+
         if state == WorkerState.CALCULATING:
-            self._io_active -= 1
-            self._report.source_lakes += stats.get("source", 0)
-            self._report.skipped_lakes += stats.get("skipped", 0)
-            self._report.success_lakes += stats.get("success", 0)
-            self._report.error_lakes += stats.get("error", 0)
-            self._read_queue.append(worker)
+            return
 
         elif state == WorkerState.PENDING:
-            self._read_queue.append(worker)
+            self._enqueue_for_read(worker)
 
         elif state == WorkerState.DONE:
             self._report.source_lakes += stats.get("source", 0)
@@ -132,9 +135,16 @@ class Manager:
                 self._io_active,
             )
 
+    def _enqueue_for_read(self, worker: int) -> None:
+        if worker in self._done_workers or worker in self._queued_workers:
+            return
+        self._read_queue.append(worker)
+        self._queued_workers.add(worker)
+
     def _schedule_io(self) -> None:
         while self._read_queue and self._io_active < self._io_budget:
             worker = self._read_queue.popleft()
+            self._queued_workers.discard(worker)
             self._comm.send(TRIGGER_READ, dest=worker, tag=TAG_TRIGGER)
             self._io_active += 1
 
@@ -148,10 +158,10 @@ class Manager:
     def _flush(self) -> None:
         if not any(self._pending_rows.values()):
             return
-        if self._provider is None:
-            log.warning("No provider set, cannot flush data")
+        if self._writer is None:
+            log.warning("No writer set, cannot flush data")
             return
-        self._provider.persist(dict(self._pending_rows))
+        self._writer.persist(dict(self._pending_rows))
         self._pending_rows = defaultdict(list)
         self._chunks_since_flush = 0
         log.info("Flushed data to parquet")

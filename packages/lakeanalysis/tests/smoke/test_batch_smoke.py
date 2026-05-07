@@ -10,7 +10,9 @@ Run with:
 
 from __future__ import annotations
 
-from lakeanalysis.batch import Engine, RangeFilter
+from lakesource.config import Backend, SourceConfig
+
+from lakeanalysis.batch import Engine, RangeFilter, build_batch_reader, build_batch_writer
 from lakeanalysis.batch.calculator import CalculatorFactory
 
 
@@ -18,14 +20,15 @@ def _run_algorithm_smoke(
     algorithm: str,
     id_start: int,
     id_end: int,
-    provider,
+    source_config: SourceConfig,
     cleanup_algorithm_rows=None,
     **calc_kwargs,
 ) -> None:
     calculator = CalculatorFactory.create(algorithm, **calc_kwargs)
     lake_filter = RangeFilter(start=id_start, end=id_end)
     engine = Engine(
-        provider=provider,
+        reader=build_batch_reader(source_config),
+        writer=build_batch_writer(source_config),
         calculator=calculator,
         algorithm=algorithm,
         lake_filter=lake_filter,
@@ -50,7 +53,7 @@ def test_a_quantile_smoke(id_range, provider, cleanup_algorithm_rows):
         "quantile",
         id_range[0],
         id_range[1],
-        provider,
+        provider._config,
         cleanup_algorithm_rows,
     )
 
@@ -60,7 +63,7 @@ def test_b_pwm_extreme_smoke(id_range, provider, cleanup_algorithm_rows):
         "pwm_extreme",
         id_range[0],
         id_range[1],
-        provider,
+        provider._config,
         cleanup_algorithm_rows,
     )
 
@@ -70,7 +73,7 @@ def test_c_eot_smoke(id_range, provider, cleanup_algorithm_rows):
         "eot",
         id_range[0],
         id_range[1],
-        provider,
+        provider._config,
         cleanup_algorithm_rows,
         tails=["high"],
         quantiles=[0.95],
@@ -85,7 +88,8 @@ def test_incremental_skip_smoke(id_range, provider, cleanup_algorithm_rows):
     calculator = CalculatorFactory.create("quantile")
     lake_filter = RangeFilter(start=id_start, end=id_end)
     engine = Engine(
-        provider=provider,
+        reader=build_batch_reader(provider._config),
+        writer=build_batch_writer(provider._config),
         calculator=calculator,
         algorithm="quantile",
         lake_filter=lake_filter,
@@ -117,7 +121,8 @@ def test_error_handling_smoke(id_range, provider, cleanup_algorithm_rows):
     )
     lake_filter = RangeFilter(start=id_start, end=id_end)
     engine = Engine(
-        provider=provider,
+        reader=build_batch_reader(provider._config),
+        writer=build_batch_writer(provider._config),
         calculator=calculator,
         algorithm="quantile",
         lake_filter=lake_filter,
@@ -132,29 +137,32 @@ def test_error_handling_smoke(id_range, provider, cleanup_algorithm_rows):
 # --- Parquet backend ---
 
 def test_d_parquet_quantile_smoke(parquet_id_range, parquet_provider):
+    (parquet_provider._data_dir / "quantile_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "quantile",
         parquet_id_range[0],
         parquet_id_range[1],
-        parquet_provider,
+        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
     )
 
 
-def test_e_parquet_pwm_extreme_smoke(parquet_id_range, parquet_provider):
+def test_e_parquet_pwm_extreme_smoke(parquet_pwm_id_range, parquet_provider):
+    (parquet_provider._data_dir / "pwm_extreme_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "pwm_extreme",
-        parquet_id_range[0],
-        parquet_id_range[1],
-        parquet_provider,
+        parquet_pwm_id_range[0],
+        parquet_pwm_id_range[1],
+        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
     )
 
 
 def test_f_parquet_eot_smoke(parquet_id_range, parquet_provider):
+    (parquet_provider._data_dir / "eot_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "eot",
         parquet_id_range[0],
         parquet_id_range[1],
-        parquet_provider,
+        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
         tails=["high"],
         quantiles=[0.95],
     )
@@ -167,7 +175,8 @@ def test_parquet_incremental_skip_smoke(parquet_id_range, parquet_provider, parq
     calculator = CalculatorFactory.create("quantile")
     lake_filter = RangeFilter(start=id_start, end=id_end)
     engine = Engine(
-        provider=parquet_provider,
+        reader=build_batch_reader(SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir)),
+        writer=build_batch_writer(SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir)),
         calculator=calculator,
         algorithm="quantile",
         lake_filter=lake_filter,

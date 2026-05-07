@@ -3,19 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
 
-import pandas as pd
-
-from lakesource.postgres import (
-    fetch_atlas_area_chunk,
-    fetch_frozen_year_months_chunk,
-    fetch_lake_area_chunk,
-    series_db,
-    upsert_area_anomalies,
-    upsert_area_quality,
-)
+from lakesource.config import SourceConfig
+from lakesource.provider.factory import create_provider
 
 from . import FLAG_ZERO_QUANTILE, QualityRunConfig, classify_area_anomaly
 from .runner import build_quality_context, build_quality_filters
@@ -36,146 +27,33 @@ class RecomputePvConfig:
 @dataclass(frozen=True)
 class RecheckZeroQuantileConfig:
     zero_quantile: float = 0.80
-    batch_size: int = 10_000
+    batch_size: int = 1_000
     dry_run: bool = False
 
 
-def _load_all_status(conn: object) -> dict[int, tuple[str, int]]:
-    result: dict[int, tuple[str, int]] = {}
-    with conn.cursor() as cur:
-        cur.execute("SELECT hylak_id FROM area_quality")
-        for (hid,) in cur.fetchall():
-            result[int(hid)] = ("quality", 0)
-        cur.execute("SELECT hylak_id, anomaly_flags FROM area_anomalies")
-        for hid, flags in cur.fetchall():
-            result[int(hid)] = ("anomalies", int(flags))
-    return result
+def _provider(source_config: SourceConfig | None = None):
+    return create_provider(source_config or SourceConfig())
 
 
-def _delete_from_quality(conn: object, hylak_ids: list[int]) -> None:
+def _clear_zero_quantile_flag(conn: object, hylak_ids: list[int]) -> int:
+    """Compatibility shim retained for unit tests around the SQL update shape."""
+
     if not hylak_ids:
-        return
+        return 0
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM area_quality WHERE hylak_id = ANY(%s)", [hylak_ids])
+        cur.execute(
+            "UPDATE area_anomalies SET anomaly_flags = anomaly_flags & ~%s WHERE hylak_id = ANY(%s)",
+            [FLAG_ZERO_QUANTILE, hylak_ids],
+        )
+        updated = int(cur.rowcount or 0)
     conn.commit()
+    return updated
 
 
-def _delete_from_anomalies(conn: object, hylak_ids: list[int]) -> None:
-    if not hylak_ids:
-        return
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM area_anomalies WHERE hylak_id = ANY(%s)", [hylak_ids])
-    conn.commit()
-
-
-def _update_flags(conn: object, updates: list[tuple[int, int]]) -> None:
-    if not updates:
-        return
-    with conn.cursor() as cur:
-        cur.executemany(
-            "UPDATE area_anomalies SET anomaly_flags = %s WHERE hylak_id = %s",
-            [(flags, hid) for hid, flags in updates],
-        )
-    conn.commit()
-
-
-def _fetch_zero_quantile_lakes(conn: object) -> dict[int, int]:
-    result: dict[int, int] = {}
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT hylak_id, anomaly_flags FROM area_anomalies WHERE anomaly_flags & %s > 0",
-            [FLAG_ZERO_QUANTILE],
-        )
-        for hid, flags in cur.fetchall():
-            result[int(hid)] = int(flags)
-    return result
-
-
-def _find_nonzero_quantile_lakes(conn: object, hylak_ids: list[int], quantile: float) -> set[int]:
-    placeholders = ",".join(["%s"] * len(hylak_ids))
-    result: set[int] = set()
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT la.hylak_id
-            FROM lake_area la
-            WHERE la.hylak_id IN ({placeholders})
-              AND NOT EXISTS (
-                SELECT 1 FROM anomaly a
-                WHERE a.hylak_id = la.hylak_id
-                  AND a.anomaly_type = 'frozen'
-                  AND a.year_month = la.year_month
-              )
-            GROUP BY la.hylak_id
-            HAVING PERCENTILE_CONT(%s) WITHIN GROUP (ORDER BY la.water_area) > 0
-            """,
-            hylak_ids + [quantile],
-        )
-        for (hid,) in cur.fetchall():
-            result.add(int(hid))
-    return result
-
-
-def _fetch_full_data(
-    conn: object,
-    hylak_ids: list[int],
-) -> tuple[dict[int, pd.DataFrame], dict[int, float], dict[int, list[int]]]:
-    placeholders = ",".join(["%s"] * len(hylak_ids))
-
-    lake_frames: dict[int, pd.DataFrame] = {}
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT hylak_id, year_month, water_area
-            FROM lake_area
-            WHERE hylak_id IN ({placeholders})
-            ORDER BY hylak_id, year_month
-            """,
-            hylak_ids,
-        )
-        rows = cur.fetchall()
-
-    by_lake: dict[int, list[tuple[object, object]]] = defaultdict(list)
-    for hid, ym, area in rows:
-        by_lake[int(hid)].append((ym, area))
-    for hid, records in by_lake.items():
-        frame = pd.DataFrame(records, columns=["year_month", "water_area"])
-        year_month = pd.to_datetime(frame["year_month"])
-        frame["year"] = year_month.dt.year.astype(int)
-        frame["month"] = year_month.dt.month.astype(int)
-        lake_frames[hid] = frame[["year", "month", "water_area", "year_month"]]
-
-    atlas_areas: dict[int, float] = {}
-    with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id IN ({placeholders})",
-            hylak_ids,
-        )
-        for hid, area in cur.fetchall():
-            atlas_areas[int(hid)] = float(area)
-
-    frozen_map: dict[int, list[int]] = defaultdict(list)
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT hylak_id,
-                   (EXTRACT(YEAR FROM year_month)::int * 100
-                    + EXTRACT(MONTH FROM year_month)::int) AS year_month_key
-            FROM anomaly
-            WHERE hylak_id IN ({placeholders}) AND anomaly_type = 'frozen'
-            ORDER BY hylak_id, year_month
-            """,
-            hylak_ids,
-        )
-        for hid, ym_key in cur.fetchall():
-            frozen_map[int(hid)].append(int(ym_key))
-
-    return lake_frames, atlas_areas, frozen_map
-
-
-def run_recompute_pv(config: RecomputePvConfig) -> None:
+def run_recompute_pv(config: RecomputePvConfig, source_config: SourceConfig | None = None) -> None:
     filters = build_quality_filters(QualityRunConfig())
     pv_filter = filters[4]
+    provider = _provider(source_config)
 
     total_lakes = 0
     pv_triggered = 0
@@ -184,14 +62,10 @@ def run_recompute_pv(config: RecomputePvConfig) -> None:
     moved_a_to_q = 0
     flags_cleared = 0
 
-    with series_db.connection_context() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT MAX(hylak_id) FROM lake_info")
-            row = cur.fetchone()
-        max_id = int(row[0]) if row and row[0] is not None else None
-        all_status = _load_all_status(conn)
+    max_id = provider.fetch_max_hylak_id()
+    all_status = provider.fetch_area_statuses()
 
-    if max_id is None:
+    if max_id <= 0:
         log.error("No lakes found in lake_info")
         return
 
@@ -208,10 +82,9 @@ def run_recompute_pv(config: RecomputePvConfig) -> None:
     for idx, (chunk_start, chunk_end) in enumerate(all_chunks, 1):
         log.info("[%d/%d] chunk %d-%d: processing...", idx, total_chunks, chunk_start, chunk_end - 1)
 
-        with series_db.connection_context() as conn:
-            lake_frames = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
-            atlas_areas = fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
-            frozen_map = fetch_frozen_year_months_chunk(conn, chunk_start, chunk_end)
+        lake_frames = provider.fetch_lake_area_chunk(chunk_start, chunk_end)
+        atlas_areas = provider.fetch_atlas_area_chunk(chunk_start, chunk_end)
+        frozen_map = provider.fetch_frozen_year_months_chunk(chunk_start, chunk_end)
 
         to_quality: list[dict[str, int | float]] = []
         to_anomalies: list[dict[str, int | float]] = []
@@ -226,7 +99,7 @@ def run_recompute_pv(config: RecomputePvConfig) -> None:
             ctx, metrics = build_quality_context(
                 df=df,
                 atlas_area=atlas_areas.get(hylak_id, 0.0),
-                frozen_ym=frozen_map.get(hylak_id),
+                frozen_year_months=frozenset(frozen_map.get(hylak_id, set())),
                 zero_quantile=0.80,
             )
             pv_flag = pv_filter.classify(ctx)
@@ -273,14 +146,13 @@ def run_recompute_pv(config: RecomputePvConfig) -> None:
         )
 
         if not config.dry_run and n_moves > 0:
-            with series_db.connection_context() as conn:
-                _delete_from_quality(conn, delete_from_quality)
-                _delete_from_anomalies(conn, delete_from_anomalies)
-                if to_quality:
-                    upsert_area_quality(conn, to_quality)
-                if to_anomalies:
-                    upsert_area_anomalies(conn, to_anomalies)
-                _update_flags(conn, flag_updates)
+            provider.delete_ids("area_quality", delete_from_quality)
+            provider.delete_ids("area_anomalies", delete_from_anomalies)
+            if to_quality:
+                provider.upsert_rows("area_quality", to_quality)
+            if to_anomalies:
+                provider.upsert_rows("area_anomalies", to_anomalies)
+            provider.update_area_anomaly_flags(flag_updates)
 
     print("\n=== Recompute PV Summary ===")
     print(f"Total lakes checked:  {total_lakes}")
@@ -294,12 +166,11 @@ def run_recompute_pv(config: RecomputePvConfig) -> None:
         print("\n[DRY RUN - no changes written]")
 
 
-def run_recheck_zero_quantile(config: RecheckZeroQuantileConfig) -> None:
-    zero_quantile_config = QualityRunConfig(zero_quantile=config.zero_quantile)
-    filters = build_quality_filters(zero_quantile_config)
-
-    with series_db.connection_context() as conn:
-        zero_lakes = _fetch_zero_quantile_lakes(conn)
+def run_recheck_zero_quantile(
+    config: RecheckZeroQuantileConfig, source_config: SourceConfig | None = None
+) -> None:
+    provider = _provider(source_config)
+    zero_lakes = provider.fetch_zero_quantile_flags()
 
     if not zero_lakes:
         log.info("No zero-quantile flagged lakes found.")
@@ -316,15 +187,12 @@ def run_recheck_zero_quantile(config: RecheckZeroQuantileConfig) -> None:
     total_batches = len(batches)
 
     total_checked = 0
-    rescued_to_quality = 0
     flags_updated = 0
-    still_anomalous = 0
     quantile_zero = 0
 
     for idx, batch_ids in enumerate(batches, 1):
         log.info("[%d/%d] phase 1: SQL quantile filter on %d lakes", idx, total_batches, len(batch_ids))
-        with series_db.connection_context() as conn:
-            nonzero_ids = _find_nonzero_quantile_lakes(conn, batch_ids, config.zero_quantile)
+        nonzero_ids = provider.find_nonzero_quantile_lakes(batch_ids, config.zero_quantile)
 
         quantile_zero_in_batch = len(batch_ids) - len(nonzero_ids)
         quantile_zero += quantile_zero_in_batch
@@ -341,64 +209,26 @@ def run_recheck_zero_quantile(config: RecheckZeroQuantileConfig) -> None:
             continue
 
         nonzero_list = sorted(nonzero_ids)
-        log.info("[%d/%d] phase 2: fetching full data for %d lakes", idx, total_batches, len(nonzero_list))
-        with series_db.connection_context() as conn:
-            lake_frames, atlas_areas, frozen_map = _fetch_full_data(conn, nonzero_list)
+        log.info("[%d/%d] phase 2: clearing bit1 for %d lakes", idx, total_batches, len(nonzero_list))
 
-        to_quality: list[dict[str, int | float]] = []
-        flag_updates: list[tuple[int, int]] = []
-        delete_from_anomalies: list[int] = []
+        batch_updated = len(nonzero_list)
+        if not config.dry_run:
+            batch_updated = provider.clear_zero_quantile_flag(nonzero_list)
+        flags_updated += batch_updated
 
-        for hylak_id in nonzero_list:
-            df = lake_frames.get(hylak_id)
-            if df is None or df.empty:
-                continue
-
-            ctx, metrics = build_quality_context(
-                df=df,
-                atlas_area=atlas_areas.get(hylak_id, 0.0),
-                frozen_ym=frozen_map.get(hylak_id),
-                zero_quantile=config.zero_quantile,
-            )
-            decision = classify_area_anomaly(ctx, filters)
-            old_flags = zero_lakes[hylak_id]
-
-            if not bool(decision["is_anomalous"]):
-                to_quality.append({"hylak_id": hylak_id, **metrics})
-                delete_from_anomalies.append(hylak_id)
-                rescued_to_quality += 1
-            else:
-                new_flags = int(decision["anomaly_flags"])
-                if new_flags != old_flags:
-                    flag_updates.append((hylak_id, new_flags))
-                    flags_updated += 1
-                else:
-                    still_anomalous += 1
-
-        n_changes = len(to_quality) + len(flag_updates)
         log.info(
-            "[%d/%d] phase 2 done: rescued=%d, flags_updated=%d, still_anomalous=%d",
+            "[%d/%d] phase 2 done: flags_updated=%d",
             idx,
             total_batches,
-            len(to_quality),
-            len(flag_updates),
-            still_anomalous,
+            batch_updated,
         )
-
-        if not config.dry_run and n_changes > 0:
-            with series_db.connection_context() as conn:
-                _delete_from_anomalies(conn, delete_from_anomalies)
-                if to_quality:
-                    upsert_area_quality(conn, to_quality)
-                _update_flags(conn, flag_updates)
 
     print(f"\n=== Recheck Zero-Quantile Summary (quantile={config.zero_quantile}) ===")
     print(f"Total zero-quantile flagged lakes: {len(zero_lakes)}")
     print(f"Lakes checked:                    {total_checked}")
     print(f"  Quantile still zero:            {quantile_zero}")
     print(f"  Quantile now nonzero:           {total_checked - quantile_zero}")
-    print(f"    Rescued to area_quality:       {rescued_to_quality}")
-    print(f"    Flags updated:                 {flags_updated}")
-    print(f"    Still anomalous (same flags):  {still_anomalous}")
+    print(f"    Flags updated in anomalies:    {flags_updated}")
+    print(f"    Still zero-quantile flagged:   {quantile_zero}")
     if config.dry_run:
         print("\n[DRY RUN - no changes written]")
