@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ from lakesource.config import SourceConfig
 from lakesource.parquet.client import DuckDBClient
 
 from .base import LakeProvider
+
+log = logging.getLogger(__name__)
 
 
 def _ensure_queries_registered() -> None:
@@ -105,7 +108,8 @@ class ParquetLakeProvider(LakeProvider):
                 "SELECT * FROM anomaly WHERE hylak_id >= ? AND hylak_id < ?",
                 parameters=[chunk_start, chunk_end],
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_frozen_year_months_chunk failed: %s", e)
             return {}
         return self._frozen_from_anomaly_df(df)
 
@@ -120,7 +124,8 @@ class ParquetLakeProvider(LakeProvider):
                 f"SELECT * FROM anomaly WHERE hylak_id IN ({placeholders})",
                 parameters=id_list,
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_frozen_year_months_by_ids failed: %s", e)
             return {}
         return self._frozen_from_anomaly_df(df)
 
@@ -132,7 +137,8 @@ class ParquetLakeProvider(LakeProvider):
                 "SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id >= ? AND hylak_id < ?",
                 parameters=[chunk_start, chunk_end],
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_atlas_area_chunk failed: %s", e)
             return {}
         if df.empty:
             return {}
@@ -150,7 +156,8 @@ class ParquetLakeProvider(LakeProvider):
                 f"SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id IN ({placeholders})",
                 parameters=id_list,
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_atlas_area_by_ids failed: %s", e)
             return {}
         if df.empty:
             return {}
@@ -174,7 +181,8 @@ class ParquetLakeProvider(LakeProvider):
                 "SELECT hylak_id, annual_means_std, mean_area FROM lake_info WHERE hylak_id >= ? AND hylak_id < ?",
                 parameters=[chunk_start, chunk_end],
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_seasonal_amplitude_chunk failed: %s", e)
             return {}
         result: dict[int, float | None] = {}
         for row in df.itertuples(index=False):
@@ -193,7 +201,8 @@ class ParquetLakeProvider(LakeProvider):
                 f"SELECT hylak_id, annual_means_std, mean_area FROM lake_info WHERE hylak_id IN ({placeholders})",
                 parameters=id_list,
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_seasonal_amplitude_by_ids failed: %s", e)
             return {}
         result: dict[int, float | None] = {}
         for row in df.itertuples(index=False):
@@ -315,7 +324,8 @@ class ParquetLakeProvider(LakeProvider):
                 ORDER BY a.hylak_id
                 """
             )
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_impact_pairs failed: %s", e)
             return []
         return [
             {
@@ -345,7 +355,8 @@ class ParquetLakeProvider(LakeProvider):
             df = self._client.query_df("SELECT MAX(hylak_id) AS max_id FROM lake_info")
             val = df.iloc[0, 0]
             return int(val) if val is not None else 0
-        except Exception:
+        except Exception as e:
+            log.warning("fetch_max_hylak_id failed: %s", e)
             return 0
 
     def fetch_lake_geometry_wkt_by_ids(
