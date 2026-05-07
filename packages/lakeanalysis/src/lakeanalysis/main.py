@@ -1,6 +1,6 @@
 import logging
 
-from logger import Logger
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 

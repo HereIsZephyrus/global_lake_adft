@@ -7,6 +7,7 @@ from .lookup import (
     lookup_pfaf_ids,
 )
 from .nearest import compute_nearest_naturals
+from .runner import PfafRunConfig, run_pfaf
 from .store import (
     ensure_af_nearest_table,
     ensure_lake_pfaf_table,
@@ -20,6 +21,8 @@ __all__ = [
     "lookup_pfaf_chunk",
     "lookup_pfaf_ids",
     "compute_nearest_naturals",
+    "PfafRunConfig",
+    "run_pfaf",
     "ensure_af_nearest_table",
     "ensure_lake_pfaf_table",
     "upsert_af_nearest",

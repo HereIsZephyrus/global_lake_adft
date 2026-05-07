@@ -64,6 +64,7 @@ from .metrics import (
     compute_relative_diff,
     is_anomalous,
 )
+from .runner import QualityRunConfig, run_quality
 
 __all__ = [
     "AgreementConfig",
@@ -86,7 +87,8 @@ __all__ = [
     "CollinearSegment",
     "PenalizedVolatilityConfig",
     "OutsideRangeConfig",
-"ZeroQuantileConfig",
+    "QualityRunConfig",
+    "ZeroQuantileConfig",
     "ZeroQuantileFilter",
     "ShiftConfig",
     "apply_frozen_plateau",
@@ -115,6 +117,7 @@ __all__ = [
     "get_collinear_segments",
     "is_anomalous",
     "month_index_to_year_month_key",
+    "run_quality",
     "summarize_comparison",
     "year_month_key_to_index",
     "year_month_to_key",
