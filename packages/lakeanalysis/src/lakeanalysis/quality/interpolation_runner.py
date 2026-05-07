@@ -9,11 +9,6 @@ from pathlib import Path
 import pandas as pd
 
 from lakesource.config import Backend, SourceConfig
-from lakesource.postgres import (
-    ensure_interpolation_detect_table,
-    series_db,
-    upsert_interpolation_detect,
-)
 from lakesource.provider.factory import create_provider
 
 from .interpolation import InterpolationConfig, detect_interpolation
@@ -58,8 +53,7 @@ def run_interpolation_detect(config: InterpolationRunConfig) -> pd.DataFrame:
     )
 
     if not config.no_db:
-        with series_db.connection_context() as conn:
-            ensure_interpolation_detect_table(conn)
+        provider.ensure_table("interpolation_detect")
 
     all_rows: list[dict[str, int | float | bool | None]] = []
     db_rows: list[dict[str, int | float | None]] = []
@@ -139,8 +133,7 @@ def run_interpolation_detect(config: InterpolationRunConfig) -> pd.DataFrame:
     log.info("Wrote %d rows to %s", len(result_df), out_path)
 
     if not config.no_db and db_rows:
-        with series_db.connection_context() as conn:
-            upsert_interpolation_detect(conn, db_rows)
+        provider.upsert_rows("interpolation_detect", db_rows)
         log.info("Wrote %d true-linear lakes to PostgreSQL", len(db_rows))
 
     if n_total > 0:

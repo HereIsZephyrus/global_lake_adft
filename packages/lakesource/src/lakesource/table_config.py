@@ -10,6 +10,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent.parent / "lakesource" / "config.toml"
 
@@ -26,6 +27,8 @@ class TableConfig:
         lake_geometry_geom_column: Geometry column in the lake geometry table.
         lake_geometry_simplify_meters: Simplification tolerance in meters (0 = none).
     """
+
+    _cached_default: ClassVar[TableConfig | None] = None
 
     series_db: dict[str, str] = field(default_factory=dict)
     atlas_db: dict[str, str] = field(default_factory=dict)
@@ -82,5 +85,10 @@ class TableConfig:
 
     @classmethod
     def default(cls) -> TableConfig:
-        """Load the default ``config.toml`` bundled with the package."""
-        return cls.from_toml(_DEFAULT_CONFIG_PATH)
+        """Load the default ``config.toml`` bundled with the package.
+
+        The result is cached, so subsequent calls return the same instance.
+        """
+        if cls._cached_default is None:
+            cls._cached_default = cls.from_toml(_DEFAULT_CONFIG_PATH)
+        return cls._cached_default

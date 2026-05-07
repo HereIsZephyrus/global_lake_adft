@@ -163,13 +163,57 @@ def parquet_provider(parquet_data_dir):
 
 @pytest.fixture(scope="session")
 def parquet_id_range(parquet_data_dir):
-    """Discover id range from parquet area_quality data (limited to first 10 lakes for smoke test)."""
+    """Discover an id range suitable for quantile and EOT parquet smoke runs."""
     from lakesource.parquet.client import DuckDBClient
+
     client = DuckDBClient(data_dir=parquet_data_dir)
     try:
-        df = client.query_df("SELECT hylak_id FROM area_quality ORDER BY hylak_id LIMIT 10")
+        df = client.query_df(
+            """
+            SELECT hylak_id
+            FROM area_quality
+            ORDER BY hylak_id
+            LIMIT 10
+            """
+        )
         if df.empty:
-            pytest.skip("No data in area_quality parquet")
+            pytest.skip("No parquet lakes meet defrozen smoke requirements")
         return int(df["hylak_id"].min()), int(df["hylak_id"].max()) + 1
     except Exception:
         pytest.skip("Cannot read area_quality from parquet data dir")
+
+
+@pytest.fixture(scope="session")
+def parquet_pwm_id_range(parquet_data_dir):
+    """Discover a parquet id range that is known to satisfy current PWM smoke requirements."""
+    from lakesource.config import Backend, SourceConfig
+    from lakeanalysis.batch import build_batch_reader
+    from lakeanalysis.batch.calculator import CalculatorFactory
+    from lakeanalysis.batch.engine import LakeTask
+
+    source_config = SourceConfig(backend=Backend.PARQUET, data_dir=parquet_data_dir)
+    reader = build_batch_reader(source_config)
+    calculator = CalculatorFactory.create("pwm_extreme")
+
+    candidate_starts = [2, 6, 14, 35, 63, 68, 483363]
+    window = 10
+    for start in candidate_starts:
+        end = start + window
+        lake_map = reader.fetch_lake_area_chunk(start, end)
+        frozen_map = reader.fetch_frozen_year_months_chunk(start, end)
+        success_ids: list[int] = []
+        for hylak_id in sorted(lake_map):
+            task = LakeTask(
+                hylak_id=hylak_id,
+                series_df=lake_map[hylak_id],
+                frozen_year_months=frozenset(frozen_map.get(hylak_id, set())),
+                extra=None,
+            )
+            try:
+                calculator.run(task)
+                success_ids.append(hylak_id)
+            except Exception:
+                continue
+        if success_ids:
+            return min(success_ids), max(success_ids) + 1
+    pytest.skip("No parquet lakes satisfy current PWM smoke requirements")

@@ -11,25 +11,35 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 
-from lakesource.provider import LakeProvider
-
 from .engine import LakeTask
+from .io import BatchReader
 from .protocol import TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges
 
 log = logging.getLogger(__name__)
+
+
+def _build_task(reader, hid: int, series_df: object, frozen_year_months: set[int]) -> LakeTask:
+    if hasattr(reader, "build_task"):
+        return reader.build_task(hid, series_df, frozen_year_months)
+    return LakeTask(
+        hylak_id=hid,
+        series_df=series_df,
+        frozen_year_months=frozenset(frozen_year_months),
+        extra=None,
+    )
 
 
 class Worker:
     def __init__(
         self,
         rank: int,
-        provider: LakeProvider,
+        reader: BatchReader,
         algorithm: str,
         calculator,
         chunk_size: int,
     ) -> None:
         self._rank = rank
-        self._provider = provider
+        self._reader = reader
         self._algorithm = algorithm
         self._calculator = calculator
         self._chunk_size = chunk_size
@@ -53,7 +63,7 @@ class Worker:
             comm.recv(source=0, tag=TAG_TRIGGER)
             self._send(comm, WorkerState.READING, {})
 
-            lake_map = self._provider.fetch_lake_area_chunk(cs, ce)
+            lake_map = self._reader.fetch_lake_area_chunk(cs, ce)
             if not lake_map:
                 total_stats["chunks"] += 1
                 if is_last:
@@ -62,8 +72,8 @@ class Worker:
                     self._send(comm, WorkerState.PENDING, {})
                 continue
 
-            frozen_map = self._provider.fetch_frozen_year_months_chunk(cs, ce)
-            done_ids = self._provider.fetch_done_ids(self._algorithm, cs, ce)
+            frozen_map = self._reader.fetch_frozen_year_months_chunk(cs, ce)
+            done_ids = self._reader.fetch_done_ids(self._algorithm, cs, ce)
             candidate_ids = set(lake_map.keys())
             pending_ids = candidate_ids - done_ids
 
@@ -78,11 +88,7 @@ class Worker:
 
             all_rows: dict[str, list[dict]] = defaultdict(list)
             for hid in sorted(pending_ids):
-                task = LakeTask(
-                    hylak_id=hid,
-                    series_df=lake_map[hid],
-                    frozen_year_months=frozenset(frozen_map.get(hid, set())),
-                )
+                task = _build_task(self._reader, hid, lake_map[hid], frozen_map.get(hid, set()))
                 try:
                     result = self._calculator.run(task)
                     for table, rows in self._calculator.result_to_rows(result).items():
@@ -138,7 +144,7 @@ class Worker:
             comm.recv(source=0, tag=TAG_TRIGGER)
             self._send(comm, WorkerState.READING, {})
 
-            lake_map = self._provider.fetch_lake_area_by_ids(id_batch)
+            lake_map = self._reader.fetch_lake_area_by_ids(id_batch)
             if not lake_map:
                 total_stats["chunks"] += 1
                 if is_last:
@@ -147,10 +153,10 @@ class Worker:
                     self._send(comm, WorkerState.PENDING, {})
                 continue
 
-            frozen_map = self._provider.fetch_frozen_year_months_by_ids(id_batch)
+            frozen_map = self._reader.fetch_frozen_year_months_by_ids(id_batch)
             lo = min(id_batch)
             hi = max(id_batch) + 1
-            done_ids = self._provider.fetch_done_ids(self._algorithm, lo, hi) & set(id_batch)
+            done_ids = self._reader.fetch_done_ids(self._algorithm, lo, hi) & set(id_batch)
             candidate_ids = set(lake_map.keys())
             pending_ids = candidate_ids - done_ids
 
@@ -165,11 +171,7 @@ class Worker:
 
             all_rows: dict[str, list[dict]] = defaultdict(list)
             for hid in sorted(pending_ids):
-                task = LakeTask(
-                    hylak_id=hid,
-                    series_df=lake_map[hid],
-                    frozen_year_months=frozenset(frozen_map.get(hid, set())),
-                )
+                task = _build_task(self._reader, hid, lake_map[hid], frozen_map.get(hid, set()))
                 try:
                     result = self._calculator.run(task)
                     for table, rows in self._calculator.result_to_rows(result).items():

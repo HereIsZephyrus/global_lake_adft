@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-import psycopg
-
-from lakesource.postgres import fetch_impact_pairs, fetch_lake_area_by_ids
+from lakesource.provider.base import LakeProvider
 
 log = logging.getLogger(__name__)
 
 
 def load_pairs_and_areas(
-    conn: psycopg.Connection,
+    provider: LakeProvider,
 ) -> tuple[list[dict], dict[int, pd.DataFrame]]:
     """Load quality-filtered af_nearest pairs (topo_level>8) and lake_area data.
 
@@ -28,7 +26,7 @@ def load_pairs_and_areas(
         topo_level; lake_frames maps hylak_id to DataFrame with columns
         [year, month, water_area].
     """
-    pairs = fetch_impact_pairs(conn)
+    pairs = provider.fetch_impact_pairs()
     if not pairs:
         return pairs, {}
 
@@ -38,5 +36,5 @@ def load_pairs_and_areas(
         all_ids.add(row["nearest_id"])
     id_list = sorted(all_ids)
 
-    lake_frames = fetch_lake_area_by_ids(conn, id_list)
+    lake_frames = provider.fetch_lake_area_by_ids(id_list)
     return pairs, lake_frames

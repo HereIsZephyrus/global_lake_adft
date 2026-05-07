@@ -18,7 +18,8 @@ import logging
 from collections import defaultdict
 
 import numpy as np
-import psycopg
+
+from lakesource.provider.base import LakeProvider
 
 log = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ class _Type1Index:
         return None
 
 
-def _build_type1_index(conn: psycopg.Connection) -> _Type1Index:
+def _build_type1_index(provider: LakeProvider) -> _Type1Index:
     """Load all type-1 lakes from SERIES_DB and build a skip-list index.
 
     Args:
@@ -188,9 +189,16 @@ def _build_type1_index(conn: psycopg.Connection) -> _Type1Index:
     Returns:
         A :class:`_Type1Index` ready for nearest-lake queries.
     """
-    with conn.cursor() as cur:
-        cur.execute(_FETCH_TYPE1_SQL)
-        rows = cur.fetchall()
+    rows = [
+        (
+            row["hylak_id"],
+            row["pfaf_id"],
+            row["lat"],
+            row["lon"],
+            row["lake_area"],
+        )
+        for row in provider.fetch_type1_lake_records()
+    ]
 
     hylak_ids = [int(r[0])   for r in rows]
     pfaf_ids  = [int(r[1])   for r in rows]
@@ -203,7 +211,7 @@ def _build_type1_index(conn: psycopg.Connection) -> _Type1Index:
 
 
 def compute_nearest_naturals(
-    conn: psycopg.Connection,
+    provider: LakeProvider,
     limit_id: int | None = None,
     max_area_ratio: float = 2.0,
 ) -> list[dict]:
@@ -232,18 +240,18 @@ def compute_nearest_naturals(
           - ``nearest_id`` (int | None) : nearest qualifying type-1 hylak_id
           - ``topo_level`` (int | None) : number of shared Pfafstetter prefix levels
     """
-    index = _build_type1_index(conn)
-
-    if limit_id is None:
-        sql = _FETCH_NON_TYPE1_SQL
-        params = None
-    else:
-        sql = _FETCH_NON_TYPE1_LIMITED_SQL
-        params = {"limit_id": limit_id}
-
-    with conn.cursor() as cur:
-        cur.execute(sql, params)
-        non_type1_rows = cur.fetchall()
+    index = _build_type1_index(provider)
+    non_type1_rows = [
+        (
+            row["hylak_id"],
+            row["lake_type"],
+            row["pfaf_id"],
+            row["lat"],
+            row["lon"],
+            row["lake_area"],
+        )
+        for row in provider.fetch_non_type1_lake_records(limit_id=limit_id)
+    ]
 
     log.info(
         "Loaded %d type>1 lake(s) to search (max_area_ratio=%.1f)",

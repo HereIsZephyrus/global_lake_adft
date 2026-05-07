@@ -28,8 +28,8 @@ _LAKE_SYMBOLS = {
     "count_quantile_status_in_range",
     "count_source_hylak_ids_in_range",
     "ensure_area_anomalies_table",
-    "ensure_area_entropy_cv_table",
     "ensure_area_quality_table",
+    "ensure_area_entropy_cv_table",
     "ensure_entropy_table",
     "ensure_eot_results_table",
     "ensure_hawkes_results_table",
@@ -106,6 +106,20 @@ def __getattr__(name: str):
         from lakesource import comparison
 
         return getattr(comparison, name)
+    if name in {
+        "count_area_quality_hylak_ids_in_range",
+        "ensure_area_anomalies_table",
+        "ensure_area_quality_table",
+        "fetch_area_quality_hylak_ids",
+        "fetch_area_quality_hylak_ids_in_range",
+        "fetch_atlas_area_chunk",
+        "move_area_quality_to_anomalies",
+        "upsert_area_anomalies",
+        "upsert_area_quality",
+    }:
+        from . import area_quality
+
+        return getattr(area_quality, name)
     if name in _LAKE_SYMBOLS:
         from . import lake
 
