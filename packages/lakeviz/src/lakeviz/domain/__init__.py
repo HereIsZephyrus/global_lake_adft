@@ -17,6 +17,7 @@ from .hawkes import (
     draw_kernel_matrix,
     draw_lrt_summary,
 )
+from .interpolation import draw_interpolation_timeline
 from .quantile import (
     draw_monthly_timeline,
     draw_anomaly_timeline,

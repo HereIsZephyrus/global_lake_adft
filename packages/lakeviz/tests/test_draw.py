@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import lakeviz.domain as domain
 from lakeviz.domain.entropy import draw_ae_distribution, draw_trend_summary
 from lakeviz.draw.line import draw_line
 from lakeviz.draw.scatter import draw_scatter
@@ -124,3 +125,7 @@ def test_entropy_trend_summary_uses_vertical_zero_lines():
     assert slope_ref[0] == slope_ref[1] == 0
     assert change_ref[0] == change_ref[1] == 0
     plt.close(fig)
+
+
+def test_domain_reexports_interpolation_timeline_draw():
+    assert domain.draw_interpolation_timeline is not None
