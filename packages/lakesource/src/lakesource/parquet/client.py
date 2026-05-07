@@ -54,6 +54,11 @@ class DuckDBClient:
         self.con.execute(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
         log.debug("Replaced view %s: %s", name, path)
 
+    def register_or_replace_glob(self, name: str, glob_pattern: str) -> None:
+        self.con.execute(f"DROP VIEW IF EXISTS {name}")
+        self.con.execute(f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{glob_pattern}')")
+        log.debug("Replaced view %s with glob: %s", name, glob_pattern)
+
     def register_dir(self) -> None:
         """Register all Parquet files in data_dir as DuckDB views.
 
