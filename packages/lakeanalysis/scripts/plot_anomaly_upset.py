@@ -269,10 +269,10 @@ def run(args: argparse.Namespace) -> None:
 
     fig = plt.figure(figsize=(16, 5))
 
+    _plot_upset(fig, df, args.min_size)
+
     ax_donut = fig.add_axes([0.01, 0.15, 0.28, 0.75])
     _plot_donut(ax_donut, df, n_total)
-
-    _plot_upset(fig, df, args.min_size)
 
     fig.suptitle("湖泊异常分析", fontsize=14, fontweight="bold")
     save(fig, output_dir / "anomaly_upset.png")

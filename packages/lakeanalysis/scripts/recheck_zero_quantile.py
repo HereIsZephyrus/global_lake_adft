@@ -6,6 +6,11 @@ non-zero, re-run all filters and move lakes that are no longer anomalous
 to area_quality, or update their anomaly_flags if other filters still
 trigger.
 
+Two-phase approach for speed:
+  Phase 1: SQL-side PERCENTILE_CONT to find lakes where the new quantile
+           is non-zero (skips ~60% of candidates without fetching raw data).
+  Phase 2: Fetch full time-series only for those lakes, run all filters.
+
 Usage:
     # Dry run (stats only):
     uv run python scripts/recheck_zero_quantile.py --dry-run
@@ -16,22 +21,19 @@ Usage:
     # Use p90 instead:
     uv run python scripts/recheck_zero_quantile.py --zero-quantile 0.90
 
-    # Custom chunk size:
-    uv run python scripts/recheck_zero_quantile.py --chunk-size 5000
+    # Custom batch size:
+    uv run python scripts/recheck_zero_quantile.py --batch-size 10000
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+from collections import defaultdict
 
-from lakesource.postgres import (
-    fetch_atlas_area_chunk,
-    fetch_frozen_year_months_chunk,
-    fetch_lake_area_chunk,
-    series_db,
-    upsert_area_quality,
-)
+import pandas as pd
+
+from lakesource.postgres import series_db, upsert_area_quality
 from lakeanalysis.logger import Logger
 from lakeanalysis.quality import (
     FLAG_ZERO_QUANTILE,
@@ -60,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         metavar="Q",
         help="Quantile position (0-1) for the zero check (default: 0.80).",
     )
-    parser.add_argument("--chunk-size", type=int, default=5_000, metavar="N")
+    parser.add_argument("--batch-size", type=int, default=10_000, metavar="N")
     parser.add_argument("--dry-run", action="store_true", help="Stats only, no writes.")
     return parser.parse_args()
 
@@ -75,6 +77,78 @@ def _load_zero_quantile_lakes(conn) -> dict[int, int]:
         for hid, flags in cur.fetchall():
             result[int(hid)] = int(flags)
     return result
+
+
+def _find_nonzero_quantile_lakes(
+    conn, hylak_ids: list[int], quantile: float,
+) -> set[int]:
+    """Phase 1: SQL-side quantile computation to find lakes where quantile > 0."""
+    ph = ",".join(["%s"] * len(hylak_ids))
+    result: set[int] = set()
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT la.hylak_id
+            FROM lake_area la
+            WHERE la.hylak_id IN ({ph})
+              AND NOT EXISTS (
+                SELECT 1 FROM anomaly a
+                WHERE a.hylak_id = la.hylak_id
+                  AND a.anomaly_type = 'frozen'
+                  AND a.year_month = la.year_month
+              )
+            GROUP BY la.hylak_id
+            HAVING PERCENTILE_CONT(%s) WITHIN GROUP (ORDER BY la.water_area) > 0
+        """, hylak_ids + [quantile])
+        for (hid,) in cur.fetchall():
+            result.add(int(hid))
+    return result
+
+
+def _fetch_full_data(
+    conn,
+    hylak_ids: list[int],
+) -> tuple[dict[int, pd.DataFrame], dict[int, float], dict[int, list[int]]]:
+    """Phase 2: Fetch full time-series for lakes that passed phase 1."""
+    ph = ",".join(["%s"] * len(hylak_ids))
+
+    lake_frames: dict[int, pd.DataFrame] = {}
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT hylak_id, year_month, water_area
+            FROM lake_area
+            WHERE hylak_id IN ({ph})
+            ORDER BY hylak_id, year_month
+        """, hylak_ids)
+        rows = cur.fetchall()
+
+    by_lake: dict[int, list] = defaultdict(list)
+    for hid, ym, area in rows:
+        by_lake[hid].append((ym, area))
+    for hid, records in by_lake.items():
+        lake_frames[hid] = pd.DataFrame(records, columns=["year_month", "water_area"])
+
+    atlas_areas: dict[int, float] = {}
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT hylak_id, lake_area FROM lake_info WHERE hylak_id IN ({ph})
+        """, hylak_ids)
+        for hid, area in cur.fetchall():
+            atlas_areas[int(hid)] = float(area)
+
+    frozen_map: dict[int, list[int]] = defaultdict(list)
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT hylak_id,
+                   (EXTRACT(YEAR FROM year_month)::int * 100
+                    + EXTRACT(MONTH FROM year_month)::int) AS year_month_key
+            FROM anomaly
+            WHERE hylak_id IN ({ph}) AND anomaly_type = 'frozen'
+            ORDER BY hylak_id, year_month
+        """, hylak_ids)
+        for hid, ym_key in cur.fetchall():
+            frozen_map[int(hid)].append(int(ym_key))
+
+    return lake_frames, atlas_areas, frozen_map
 
 
 def _delete_from_anomalies(conn, hylak_ids: list[int]) -> None:
@@ -104,26 +178,23 @@ def main() -> None:
     filters = default_filters(zero_quantile_config=zero_quantile_config)
 
     with series_db.connection_context() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT MAX(hylak_id) FROM lake_info")
-            row = cur.fetchone()
-        max_id = int(row[0]) if row and row[0] is not None else None
         zero_lakes = _load_zero_quantile_lakes(conn)
 
-    if max_id is None:
-        log.error("No lakes found in lake_info")
+    if not zero_lakes:
+        log.info("No zero-quantile flagged lakes found.")
         return
 
+    candidate_ids = sorted(zero_lakes.keys())
     log.info(
-        "Loaded %d zero-quantile flagged lakes, max_hylak_id=%d, quantile=%.2f",
-        len(zero_lakes), max_id, args.zero_quantile,
+        "Loaded %d zero-quantile flagged lakes, quantile=%.2f",
+        len(candidate_ids), args.zero_quantile,
     )
 
-    all_chunks = [
-        (start, start + args.chunk_size)
-        for start in range(0, max_id + 1, args.chunk_size)
+    batches = [
+        candidate_ids[i : i + args.batch_size]
+        for i in range(0, len(candidate_ids), args.batch_size)
     ]
-    total_chunks = len(all_chunks)
+    total_batches = len(batches)
 
     total_checked = 0
     rescued_to_quality = 0
@@ -131,30 +202,43 @@ def main() -> None:
     still_anomalous = 0
     quantile_zero = 0
 
-    for idx, (chunk_start, chunk_end) in enumerate(all_chunks, 1):
-        candidate_ids = {
-            hid for hid in zero_lakes
-            if chunk_start <= hid < chunk_end
-        }
-        if not candidate_ids:
-            continue
-
+    for idx, batch_ids in enumerate(batches, 1):
         log.info(
-            "[%d/%d] chunk %d-%d: %d candidates",
-            idx, total_chunks, chunk_start, chunk_end - 1, len(candidate_ids),
+            "[%d/%d] phase 1: SQL quantile filter on %d lakes",
+            idx, total_batches, len(batch_ids),
         )
 
         with series_db.connection_context() as conn:
-            lake_frames = fetch_lake_area_chunk(conn, chunk_start, chunk_end)
-            atlas_areas = fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
-            frozen_map = fetch_frozen_year_months_chunk(conn, chunk_start, chunk_end)
+            nonzero_ids = _find_nonzero_quantile_lakes(conn, batch_ids, args.zero_quantile)
+
+        quantile_zero_in_batch = len(batch_ids) - len(nonzero_ids)
+        quantile_zero += quantile_zero_in_batch
+        total_checked += len(batch_ids)
+
+        log.info(
+            "[%d/%d] phase 1 done: %d quantile>0, %d quantile=0",
+            idx, total_batches, len(nonzero_ids), quantile_zero_in_batch,
+        )
+
+        if not nonzero_ids:
+            continue
+
+        nonzero_list = sorted(nonzero_ids)
+        log.info(
+            "[%d/%d] phase 2: fetching full data for %d lakes",
+            idx, total_batches, len(nonzero_list),
+        )
+
+        with series_db.connection_context() as conn:
+            lake_frames, atlas_areas, frozen_map = _fetch_full_data(conn, nonzero_list)
 
         to_quality: list[dict] = []
         flag_updates: list[tuple[int, int]] = []
         delete_from_anomalies: list[int] = []
 
-        for hylak_id, df in lake_frames.items():
-            if hylak_id not in candidate_ids:
+        for hylak_id in nonzero_list:
+            df = lake_frames.get(hylak_id)
+            if df is None or df.empty:
                 continue
 
             frozen_ym = frozen_map.get(hylak_id, None)
@@ -164,12 +248,6 @@ def main() -> None:
             rs_area_mean = compute_mean_area(df_no_frozen) / 1_000_000
             rs_area_quantile = compute_quantile_area(df_no_frozen, quantile=args.zero_quantile) / 1_000_000
             atlas_area = atlas_areas.get(hylak_id, 0.0)
-
-            total_checked += 1
-
-            if rs_area_quantile == 0.0:
-                quantile_zero += 1
-                continue
 
             ctx = LakeContext(
                 df=df,
@@ -202,12 +280,11 @@ def main() -> None:
                     still_anomalous += 1
 
         n_changes = len(to_quality) + len(flag_updates)
-        if n_changes > 0:
-            log.info(
-                "[%d/%d] chunk %d-%d: rescued=%d, flags_updated=%d, still_anomalous=%d",
-                idx, total_chunks, chunk_start, chunk_end - 1,
-                len(to_quality), len(flag_updates), still_anomalous,
-            )
+        log.info(
+            "[%d/%d] phase 2 done: rescued=%d, flags_updated=%d, still_anomalous=%d",
+            idx, total_batches,
+            len(to_quality), len(flag_updates), still_anomalous,
+        )
 
         if not args.dry_run and n_changes > 0:
             with series_db.connection_context() as conn:
