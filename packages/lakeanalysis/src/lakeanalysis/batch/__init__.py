@@ -5,6 +5,8 @@ from .io import (
     BatchReader,
     BatchWriter,
     build_batch_reader,
+    build_provider_batch_reader,
+    build_provider_batch_writer,
     build_batch_writer,
 )
 from .manager import Manager
@@ -39,5 +41,7 @@ __all__ = [
     "Worker",
     "WorkerState",
     "build_batch_reader",
+    "build_provider_batch_reader",
+    "build_provider_batch_writer",
     "build_batch_writer",
 ]

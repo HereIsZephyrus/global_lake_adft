@@ -18,6 +18,17 @@ from .protocol import TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerSta
 log = logging.getLogger(__name__)
 
 
+def _build_task(reader, hid: int, series_df: object, frozen_year_months: set[int]) -> LakeTask:
+    if hasattr(reader, "build_task"):
+        return reader.build_task(hid, series_df, frozen_year_months)
+    return LakeTask(
+        hylak_id=hid,
+        series_df=series_df,
+        frozen_year_months=frozenset(frozen_year_months),
+        extra=None,
+    )
+
+
 class Worker:
     def __init__(
         self,
@@ -77,11 +88,7 @@ class Worker:
 
             all_rows: dict[str, list[dict]] = defaultdict(list)
             for hid in sorted(pending_ids):
-                task = LakeTask(
-                    hylak_id=hid,
-                    series_df=lake_map[hid],
-                    frozen_year_months=frozenset(frozen_map.get(hid, set())),
-                )
+                task = _build_task(self._reader, hid, lake_map[hid], frozen_map.get(hid, set()))
                 try:
                     result = self._calculator.run(task)
                     for table, rows in self._calculator.result_to_rows(result).items():
@@ -164,11 +171,7 @@ class Worker:
 
             all_rows: dict[str, list[dict]] = defaultdict(list)
             for hid in sorted(pending_ids):
-                task = LakeTask(
-                    hylak_id=hid,
-                    series_df=lake_map[hid],
-                    frozen_year_months=frozenset(frozen_map.get(hid, set())),
-                )
+                task = _build_task(self._reader, hid, lake_map[hid], frozen_map.get(hid, set()))
                 try:
                     result = self._calculator.run(task)
                     for table, rows in self._calculator.result_to_rows(result).items():

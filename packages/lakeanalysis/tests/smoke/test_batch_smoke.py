@@ -137,6 +137,7 @@ def test_error_handling_smoke(id_range, provider, cleanup_algorithm_rows):
 # --- Parquet backend ---
 
 def test_d_parquet_quantile_smoke(parquet_id_range, parquet_provider):
+    (parquet_provider._data_dir / "quantile_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "quantile",
         parquet_id_range[0],
@@ -145,16 +146,18 @@ def test_d_parquet_quantile_smoke(parquet_id_range, parquet_provider):
     )
 
 
-def test_e_parquet_pwm_extreme_smoke(parquet_id_range, parquet_provider):
+def test_e_parquet_pwm_extreme_smoke(parquet_pwm_id_range, parquet_provider):
+    (parquet_provider._data_dir / "pwm_extreme_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "pwm_extreme",
-        parquet_id_range[0],
-        parquet_id_range[1],
+        parquet_pwm_id_range[0],
+        parquet_pwm_id_range[1],
         SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
     )
 
 
 def test_f_parquet_eot_smoke(parquet_id_range, parquet_provider):
+    (parquet_provider._data_dir / "eot_run_status.parquet").unlink(missing_ok=True)
     _run_algorithm_smoke(
         "eot",
         parquet_id_range[0],

@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from lakesource.postgres import series_db
+from lakesource.config import SourceConfig
+from lakesource.provider.factory import create_provider
 
 from .nearest import compute_nearest_naturals
-from .store import ensure_af_nearest_table, upsert_af_nearest
 
 log = logging.getLogger(__name__)
 
@@ -27,13 +27,13 @@ def run_nearest(config: NearestRunConfig) -> list[dict]:
         config.max_area_ratio,
     )
 
-    with series_db.connection_context() as conn:
-        ensure_af_nearest_table(conn)
-        rows = compute_nearest_naturals(
-            conn,
-            limit_id=config.limit_id,
-            max_area_ratio=config.max_area_ratio,
-        )
+    provider = create_provider(SourceConfig())
+    provider.ensure_table("af_nearest")
+    rows = compute_nearest_naturals(
+        provider,
+        limit_id=config.limit_id,
+        max_area_ratio=config.max_area_ratio,
+    )
 
     matched = sum(1 for row in rows if row["nearest_id"] is not None)
     log.info(
@@ -42,9 +42,8 @@ def run_nearest(config: NearestRunConfig) -> list[dict]:
         len(rows),
     )
 
-    with series_db.connection_context() as conn:
-        log.info("Upserting %d row(s) into af_nearest...", len(rows))
-        upsert_af_nearest(conn, rows)
+    log.info("Upserting %d row(s) into af_nearest...", len(rows))
+    provider.upsert_rows("af_nearest", rows)
 
     log.info("Pipeline complete.")
     return rows

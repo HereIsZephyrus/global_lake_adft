@@ -10,7 +10,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from lakesource.postgres import series_db
+from lakesource.config import SourceConfig
+from lakesource.provider.factory import create_provider
 from lakeviz.artificial import (
     plot_anomaly_ratio_comparison,
     plot_delta_cv_distribution,
@@ -50,9 +51,9 @@ def impact_csv_path(data_dir: Path) -> Path:
 def run_impact(config: ImpactRunConfig) -> None:
     """Load pairs and lake_area, compute impact metrics, write CSV and optionally plot."""
     config.data_dir.mkdir(parents=True, exist_ok=True)
+    provider = create_provider(SourceConfig())
 
-    with series_db.connection_context() as conn:
-        pairs, lake_frames = load_pairs_and_areas(conn)
+    pairs, lake_frames = load_pairs_and_areas(provider)
 
     if not pairs:
         log.warning("No af_nearest pairs with topo_level>8 found after quality filtering.")

@@ -9,7 +9,12 @@ import os
 os.environ.setdefault("NUMBA_NUM_THREADS", "1")
 
 from lakesource.config import SourceConfig
-from lakeanalysis.batch import Engine, RangeFilter, build_batch_reader, build_batch_writer
+from lakeanalysis.batch import (
+    Engine,
+    RangeFilter,
+    build_provider_batch_reader,
+    build_provider_batch_writer,
+)
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -36,8 +41,12 @@ def main() -> None:
     Logger("run_pwm_extreme")
 
     source_config = SourceConfig()
-    reader = build_batch_reader(source_config)
-    writer = build_batch_writer(source_config)
+    reader = build_provider_batch_reader(
+        source_config,
+        done_table="pwm_extreme_run_status",
+        done_requires_status=True,
+    )
+    writer = build_provider_batch_writer(source_config, ensure_tables=["pwm_extreme"])
     calculator = CalculatorFactory.create(
         "pwm_extreme",
         min_valid_per_month=args.min_valid_per_month,

@@ -27,7 +27,12 @@ from pathlib import Path
 import pandas as pd
 
 from lakesource.config import SourceConfig
-from lakeanalysis.batch import Engine, IdSetFilter, build_batch_reader, build_batch_writer
+from lakeanalysis.batch import (
+    Engine,
+    IdSetFilter,
+    build_provider_batch_reader,
+    build_provider_batch_writer,
+)
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -82,8 +87,15 @@ def main() -> None:
 
     lake_filter = IdSetFilter(sample_ids)
     source_config = SourceConfig()
-    reader = build_batch_reader(source_config)
-    writer = build_batch_writer(source_config)
+    reader = build_provider_batch_reader(
+        source_config,
+        done_table="comparison_run_status",
+        done_requires_status=True,
+    )
+    writer = build_provider_batch_writer(
+        source_config,
+        ensure_tables=["comparison", "quantile", "pwm_extreme"],
+    )
     calculator = CalculatorFactory.create(
         "comparison",
         min_valid_per_month=args.min_valid_per_month,

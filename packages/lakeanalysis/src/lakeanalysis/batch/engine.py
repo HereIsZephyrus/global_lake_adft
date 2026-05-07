@@ -17,6 +17,7 @@ class LakeTask:
     hylak_id: int
     series_df: pd.DataFrame
     frozen_year_months: frozenset[int]
+    extra: dict[str, Any] | None = None
 
 
 class LakeFilter(ABC):

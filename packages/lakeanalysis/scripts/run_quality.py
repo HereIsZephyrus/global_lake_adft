@@ -26,7 +26,9 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
+from lakesource.config import Backend, SourceConfig
 from lakeanalysis.logger import Logger
 from lakeanalysis.quality import (
     AreaRatioConfig,
@@ -40,6 +42,19 @@ from lakeanalysis.quality.runner import QualityRunConfig, run_quality
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Assess lake area data quality.")
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=[backend.value for backend in Backend],
+        default=None,
+        help="Data backend to use. Defaults to DATA_BACKEND or postgres.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Parquet data directory when backend=parquet.",
+    )
     parser.add_argument(
         "--limit-id",
         type=int,
@@ -156,7 +171,11 @@ def main() -> None:
     args = parse_args()
     Logger("run_quality")
     config = build_quality_run_config(args)
-    run_quality(config)
+    source_config = SourceConfig(
+        backend=Backend(args.backend) if args.backend else None,
+        data_dir=Path(args.data_dir) if args.data_dir else None,
+    )
+    run_quality(config, source_config)
 
 
 if __name__ == "__main__":
