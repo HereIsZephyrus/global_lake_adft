@@ -13,6 +13,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 _DEFAULT_ENV_PATH = Path(__file__).resolve().parent.parent.parent.parent / "lakesource" / ".env"
+_ENV_LOADED = False
 
 
 def load_env(dotenv_path: Path | str | None = None, override: bool = False) -> None:
@@ -35,3 +36,12 @@ def load_env(dotenv_path: Path | str | None = None, override: bool = False) -> N
         log.debug("Loaded environment from %s", path)
     else:
         log.debug(".env file not found at %s; skipping", path)
+
+
+def ensure_env_loaded(dotenv_path: Path | str | None = None, override: bool = False) -> None:
+    """Load the default lakesource env file once per process."""
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    load_env(dotenv_path=dotenv_path, override=override)
+    _ENV_LOADED = True

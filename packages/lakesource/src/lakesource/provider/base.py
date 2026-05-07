@@ -96,31 +96,26 @@ class LakeProvider(ABC):
         """
         ...
 
-    @abstractmethod
     def fetch_extremes_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("quantile.extremes", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_extremes_by_type_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("quantile.extremes_by_type", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_transitions_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("quantile.transitions", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_transitions_by_type_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("quantile.transitions_by_type", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_eot_convergence_grid_agg(
         self,
         tail: str,
@@ -129,9 +124,14 @@ class LakeProvider(ABC):
         *,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg(
+            "eot.convergence",
+            resolution,
+            refresh=refresh,
+            tail=tail,
+            threshold_quantile=threshold_quantile,
+        )
 
-    @abstractmethod
     def fetch_eot_converged_grid_agg(
         self,
         tail: str,
@@ -140,39 +140,52 @@ class LakeProvider(ABC):
         *,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg(
+            "eot.converged",
+            resolution,
+            refresh=refresh,
+            tail=tail,
+            threshold_quantile=threshold_quantile,
+        )
 
-    @abstractmethod
     def fetch_pwm_convergence_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("pwm.convergence", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_pwm_converged_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("pwm.converged", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_pwm_monthly_threshold_grid_agg(
         self, resolution: float = 0.5, *, refresh: bool = False
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg("pwm.monthly_threshold", resolution, refresh=refresh)
 
-    @abstractmethod
     def fetch_pwm_exceedance_grid_agg(
         self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg(
+            "pwm.exceedance",
+            resolution,
+            refresh=refresh,
+            p_high=p_high,
+            p_low=p_low,
+        )
 
-    @abstractmethod
     def fetch_pwm_monthly_exceedance_grid_agg(
         self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
         refresh: bool = False,
     ) -> pd.DataFrame:
-        ...
+        return self.fetch_grid_agg(
+            "pwm.monthly_exceedance",
+            resolution,
+            refresh=refresh,
+            p_high=p_high,
+            p_low=p_low,
+        )
 
     # ------------------------------------------------------------------
     # Writes

@@ -69,11 +69,27 @@ class PostgresLakeProvider(LakeProvider):
         with self._conn() as conn:
             return fetch_frozen_year_months_by_ids(conn, id_list)
 
-    def fetch_max_hylak_id(self) -> int:
-        from lakesource.postgres import fetch_max_area_quality_hylak_id
+    def fetch_atlas_area_chunk(
+        self, chunk_start: int, chunk_end: int
+    ) -> dict[int, float]:
+        from lakesource.postgres import fetch_atlas_area_chunk
 
         with self._conn() as conn:
-            result = fetch_max_area_quality_hylak_id(conn)
+            return fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
+
+    def fetch_atlas_area_by_ids(self, id_list: list[int]) -> dict[int, float]:
+        if not id_list:
+            return {}
+        with self._conn() as conn:
+            from lakesource.postgres import fetch_atlas_area_chunk
+
+            return fetch_atlas_area_chunk(conn, min(id_list), max(id_list) + 1)
+
+    def fetch_max_hylak_id(self) -> int:
+        from lakesource.postgres import fetch_max_lake_info_hylak_id
+
+        with self._conn() as conn:
+            result = fetch_max_lake_info_hylak_id(conn)
         return 0 if result is None else int(result)
 
     def fetch_lake_geometry_wkt_by_ids(
@@ -122,6 +138,10 @@ class PostgresLakeProvider(LakeProvider):
                     conn, chunk_start, chunk_end,
                     workflow_version=self._config.workflow_version,
                 )
+            if algorithm == "quality":
+                from lakesource.postgres import fetch_quality_done_hylak_ids_in_range
+
+                return fetch_quality_done_hylak_ids_in_range(conn, chunk_start, chunk_end)
         return set()
 
     def count_done_ids(
@@ -142,6 +162,8 @@ class PostgresLakeProvider(LakeProvider):
                     conn, chunk_start, chunk_end,
                     workflow_version=self._config.workflow_version,
                 )
+            if algorithm == "quality":
+                return len(self.fetch_done_ids(algorithm, chunk_start, chunk_end))
         return 0
 
     def _fetch_eot_done_ids(
@@ -160,37 +182,6 @@ class PostgresLakeProvider(LakeProvider):
             )
             return {int(row[0]) for row in cur.fetchall()}
 
-    # ------------------------------------------------------------------
-    # Aggregation reads (lakeviz global maps)
-    # ------------------------------------------------------------------
-
-    def fetch_extremes_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_extremes_grid_agg
-
-        return fetch_extremes_grid_agg(self._config, resolution, refresh=refresh)
-
-    def fetch_extremes_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_extremes_by_type_grid_agg
-
-        return fetch_extremes_by_type_grid_agg(
-            self._config, resolution, refresh=refresh
-        )
-
-    def fetch_transitions_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_transitions_grid_agg
-
-        return fetch_transitions_grid_agg(self._config, resolution, refresh=refresh)
-
-    # ------------------------------------------------------------------
-    # Aggregation reads (lakeviz global maps)
-    # ------------------------------------------------------------------
-
     def fetch_grid_agg(
         self,
         query_name: str,
@@ -203,85 +194,6 @@ class PostgresLakeProvider(LakeProvider):
         _ensure_queries_registered()
         query = get_grid_query(query_name)
         return query.fetch_postgres(self._config, resolution, refresh=refresh, **kwargs)
-
-    def fetch_extremes_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.extremes", resolution, refresh=refresh)
-
-    def fetch_extremes_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.extremes_by_type", resolution, refresh=refresh)
-
-    def fetch_transitions_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.transitions", resolution, refresh=refresh)
-
-    def fetch_transitions_by_type_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("quantile.transitions_by_type", resolution, refresh=refresh)
-
-    def fetch_eot_convergence_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "eot.convergence", resolution,
-            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
-        )
-
-    def fetch_eot_converged_grid_agg(
-        self,
-        tail: str,
-        threshold_quantile: float,
-        resolution: float = 0.5,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "eot.converged", resolution,
-            refresh=refresh, tail=tail, threshold_quantile=threshold_quantile,
-        )
-
-    def fetch_pwm_convergence_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.convergence", resolution, refresh=refresh)
-
-    def fetch_pwm_converged_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.converged", resolution, refresh=refresh)
-
-    def fetch_pwm_monthly_threshold_grid_agg(
-        self, resolution: float = 0.5, *, refresh: bool = False
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg("pwm.monthly_threshold", resolution, refresh=refresh)
-
-    def fetch_pwm_exceedance_grid_agg(
-        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "pwm.exceedance", resolution,
-            refresh=refresh, p_high=p_high, p_low=p_low,
-        )
-
-    def fetch_pwm_monthly_exceedance_grid_agg(
-        self, resolution: float = 0.5, *, p_high: float = 0.05, p_low: float = 0.05,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        return self.fetch_grid_agg(
-            "pwm.monthly_exceedance", resolution,
-            refresh=refresh, p_high=p_high, p_low=p_low,
-        )
 
     # ------------------------------------------------------------------
     # Writes
@@ -319,6 +231,8 @@ class PostgresLakeProvider(LakeProvider):
             "eot_run_status": "upsert_eot_run_status",
             "comparison_run_status": "upsert_comparison_run_status",
             "area_entropy_cv": "upsert_area_entropy_cv",
+            "area_quality": "upsert_area_quality",
+            "area_anomalies": "upsert_area_anomalies",
         }
         fn_name = _FNS.get(table_name)
         if fn_name is None:
@@ -354,6 +268,14 @@ class PostgresLakeProvider(LakeProvider):
 
                 ensure_quantile_tables(conn)
                 ensure_pwm_extreme_tables(conn)
+            elif algorithm == "quality":
+                from lakesource.postgres import (
+                    ensure_area_anomalies_table,
+                    ensure_area_quality_table,
+                )
+
+                ensure_area_quality_table(conn)
+                ensure_area_anomalies_table(conn)
             elif algorithm == "area_entropy_cv":
                 from lakesource.postgres import ensure_area_entropy_cv_table
 
