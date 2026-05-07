@@ -6,9 +6,7 @@ import argparse
 import logging
 
 from lakesource.config import SourceConfig
-from lakesource.provider import create_provider
-
-from lakeanalysis.batch import Engine, RangeFilter
+from lakeanalysis.batch import Engine, RangeFilter, build_batch_reader, build_batch_writer
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -45,7 +43,9 @@ def main() -> None:
 
     tails = ["high", "low"] if args.tail == "both" else [args.tail]
 
-    provider = create_provider(SourceConfig())
+    source_config = SourceConfig()
+    reader = build_batch_reader(source_config)
+    writer = build_batch_writer(source_config)
     calculator = CalculatorFactory.create(
         "eot",
         tails=tails,
@@ -62,7 +62,8 @@ def main() -> None:
         lake_filter = RangeFilter(start=id_start, end=id_end)
 
     engine = Engine(
-        provider=provider,
+        reader=reader,
+        writer=writer,
         calculator=calculator,
         algorithm="eot",
         lake_filter=lake_filter,

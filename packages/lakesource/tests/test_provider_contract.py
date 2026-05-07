@@ -26,12 +26,6 @@ class FakeGridProvider(LakeProvider):
     def fetch_frozen_year_months_by_ids(self, id_list: list[int]) -> dict[int, set[int]]:
         return {}
 
-    def fetch_atlas_area_chunk(self, chunk_start: int, chunk_end: int) -> dict[int, float]:
-        return {}
-
-    def fetch_atlas_area_by_ids(self, id_list: list[int]) -> dict[int, float]:
-        return {}
-
     def fetch_max_hylak_id(self) -> int:
         return 0
 
@@ -42,12 +36,6 @@ class FakeGridProvider(LakeProvider):
         simplify_tolerance_meters: float | None = None,
     ) -> pd.DataFrame:
         return pd.DataFrame()
-
-    def fetch_done_ids(self, algorithm: str, chunk_start: int, chunk_end: int) -> set[int]:
-        return set()
-
-    def count_done_ids(self, algorithm: str, chunk_start: int, chunk_end: int) -> int:
-        return 0
 
     def fetch_grid_agg(
         self,
@@ -60,12 +48,6 @@ class FakeGridProvider(LakeProvider):
         return pd.DataFrame(
             [{"query_name": query_name, "resolution": resolution, "refresh": refresh, **kwargs}]
         )
-
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
-        return None
-
-    def ensure_schema(self, algorithm: str) -> None:
-        return None
 
     @property
     def backend_name(self) -> str:
@@ -117,35 +99,3 @@ def test_postgres_lazy_exports_resolve_expected_symbols() -> None:
     assert postgres.fetch_max_lake_info_hylak_id
     assert postgres.fetch_quality_done_hylak_ids_in_range
     assert postgres.fetch_source_hylak_ids_in_range
-
-
-def test_parquet_provider_quality_done_ids_union_both_tables(tmp_path: Path) -> None:
-    pd.DataFrame([{"hylak_id": 1, "lake_area": 10.0}, {"hylak_id": 2, "lake_area": 11.0}]).to_parquet(
-        tmp_path / "lake_info.parquet", index=False
-    )
-    pd.DataFrame(
-        [{"hylak_id": 1, "year_month": pd.Timestamp("2000-01-01"), "water_area": 10.0}]
-    ).to_parquet(tmp_path / "lake_area.parquet", index=False)
-    pd.DataFrame([{"hylak_id": 1}]).to_parquet(tmp_path / "area_quality.parquet", index=False)
-    pd.DataFrame([{"hylak_id": 2}]).to_parquet(tmp_path / "area_anomalies.parquet", index=False)
-
-    provider = ParquetLakeProvider(SourceConfig(backend=Backend.PARQUET, data_dir=tmp_path))
-
-    assert provider.fetch_done_ids("quality", 0, 10) == {1, 2}
-    assert provider.count_done_ids("quality", 0, 10) == 2
-
-
-def test_parquet_provider_persist_appends_partitioned_tables(tmp_path: Path) -> None:
-    pd.DataFrame([{"hylak_id": 1, "lake_area": 10.0}]).to_parquet(
-        tmp_path / "lake_info.parquet", index=False
-    )
-    provider = ParquetLakeProvider(SourceConfig(backend=Backend.PARQUET, data_dir=tmp_path))
-
-    provider.persist({"area_quality": [{"hylak_id": 1, "rs_area_mean": 1.0, "rs_area_median": 1.0, "atlas_area": 2.0}]})
-    provider.persist({"area_quality": [{"hylak_id": 2, "rs_area_mean": 3.0, "rs_area_median": 3.0, "atlas_area": 4.0}]})
-
-    part_files = sorted((tmp_path / "area_quality").glob("*.parquet"))
-    merged = provider._client.query_df("SELECT hylak_id FROM area_quality ORDER BY hylak_id")
-
-    assert len(part_files) == 2
-    assert merged["hylak_id"].tolist() == [1, 2]
