@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS {table} (
 def _upsert_area_quality_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, computed_at)
-VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, now())
+VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, now()
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
@@ -78,7 +78,7 @@ CREATE OR REPLACE VIEW area_processed AS
 def _upsert_area_anomalies_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (hylak_id, rs_area_mean, rs_area_median, atlas_area, anomaly_flags, computed_at)
-VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, %(anomaly_flags)s, now())
+VALUES (%(hylak_id)s, %(rs_area_mean)s, %(rs_area_median)s, %(atlas_area)s, %(anomaly_flags)s, now()
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     rs_area_mean   = EXCLUDED.rs_area_mean,
     rs_area_median = EXCLUDED.rs_area_median,
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS {table} (
 def _upsert_quality_run_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (hylak_id, chunk_start, chunk_end, status, error_message, computed_at)
-VALUES (%(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now())
+VALUES (%(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
     chunk_end     = EXCLUDED.chunk_end,
@@ -420,7 +420,7 @@ INSERT INTO {table} (hylak_id, shift_label, udmax, udmax_p_value, udmax_break_in
                      seasonality_dominance_ratio, computed_at)
 VALUES (%(hylak_id)s, %(shift_label)s, %(udmax)s, %(udmax_p_value)s, %(udmax_break_index)s,
         %(wdmax)s, %(wdmax_p_value)s, %(wdmax_break_index)s, %(used_deseasoned)s,
-        %(seasonality_dominance_ratio)s, now())
+        %(seasonality_dominance_ratio)s, now()
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     shift_label                   = EXCLUDED.shift_label,
     udmax                         = EXCLUDED.udmax,
