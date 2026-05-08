@@ -29,15 +29,16 @@ def build_five_year_series() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_validate_monthly_series_rejects_duplicate_months() -> None:
+def test_validate_monthly_series_deduplicates_months() -> None:
     duplicated = pd.DataFrame(
         [
             {"year": 2000, "month": 1, "water_area": 101.0},
             {"year": 2000, "month": 1, "water_area": 102.0},
         ]
     )
-    with pytest.raises(ValueError, match="Duplicate"):
-        validate_monthly_series(duplicated)
+    result = validate_monthly_series(duplicated)
+    assert len(result) == 1
+    assert result.iloc[0]["water_area"] == 101.0
 
 
 def test_run_monthly_anomaly_transition_computes_expected_extremes() -> None:
