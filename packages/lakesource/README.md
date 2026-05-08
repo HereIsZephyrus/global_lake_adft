@@ -33,5 +33,5 @@ provider = create_provider(config)
 
 ## Developer notes
 
-- Source/done/quality SQL helper guidance and recommended indexes are documented in `SQL_REFACTOR_NOTES.md`.
+- Source/done/quality SQL helper guidance and recommended indexes are documented in `../docs/lakesource-sql-refactor-notes.md`.
 - `lakesource.postgres` is a lazy-export facade; exported symbols should always resolve and are covered by tests.
