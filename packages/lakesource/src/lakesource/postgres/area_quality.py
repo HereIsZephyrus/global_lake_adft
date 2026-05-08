@@ -492,13 +492,8 @@ def upsert_area_shift_labels(
             for r in rows:
                 copy.write_row([
                     r["hylak_id"], r["shift_label"],
-<<<<<<< HEAD
-                    r.get("udmax"), r.get("udmax_p_value"), r.get("udmax_break_index"),
-                    r.get("wdmax"), r.get("wdmax_p_value"), r.get("wdmax_break_index"),
-=======
                     r.get("udmax"), r.get("udmax_p_value"), _nan_to_none(r.get("udmax_break_index")),
                     r.get("wdmax"), r.get("wdmax_p_value"), _nan_to_none(r.get("wdmax_break_index")),
->>>>>>> feature/area-shift-labels
                     r.get("used_deseasoned"), r.get("seasonality_dominance_ratio"),
                 ])
         cur.execute(sql.SQL(
