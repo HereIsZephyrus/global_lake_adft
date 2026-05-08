@@ -115,6 +115,10 @@ class PostgresLakeProvider(LakeProvider):
                 from lakesource.postgres import ensure_area_anomalies_table
 
                 ensure_area_anomalies_table(conn)
+            elif table_name == "area_shift_labels":
+                from lakesource.postgres import ensure_area_shift_labels_table
+
+                ensure_area_shift_labels_table(conn)
             elif table_name == "entropy":
                 from lakesource.postgres import ensure_entropy_table
 
@@ -170,6 +174,10 @@ class PostgresLakeProvider(LakeProvider):
                 from lakesource.postgres import upsert_area_anomalies
 
                 upsert_area_anomalies(conn, rows)
+            elif table_name == "area_shift_labels":
+                from lakesource.postgres import upsert_area_shift_labels
+
+                upsert_area_shift_labels(conn, rows)
             elif table_name == "entropy":
                 from lakesource.postgres import upsert_entropy
 

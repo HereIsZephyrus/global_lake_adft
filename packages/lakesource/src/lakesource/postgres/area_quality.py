@@ -455,6 +455,19 @@ def ensure_area_shift_labels_table(
     log.debug("Ensured area_shift_labels table exists")
 
 
+def _nan_to_none(v: float | int | None) -> int | None:
+    import math
+    if v is None:
+        return None
+    if isinstance(v, float):
+        if math.isnan(v):
+            return None
+        return int(v)
+    if isinstance(v, int):
+        return v
+    return None
+
+
 def upsert_area_shift_labels(
     conn: psycopg.Connection,
     rows: list[dict],
@@ -479,8 +492,8 @@ def upsert_area_shift_labels(
             for r in rows:
                 copy.write_row([
                     r["hylak_id"], r["shift_label"],
-                    r.get("udmax"), r.get("udmax_p_value"), r.get("udmax_break_index"),
-                    r.get("wdmax"), r.get("wdmax_p_value"), r.get("wdmax_break_index"),
+                    r.get("udmax"), r.get("udmax_p_value"), _nan_to_none(r.get("udmax_break_index")),
+                    r.get("wdmax"), r.get("wdmax_p_value"), _nan_to_none(r.get("wdmax_break_index")),
                     r.get("used_deseasoned"), r.get("seasonality_dominance_ratio"),
                 ])
         cur.execute(sql.SQL(

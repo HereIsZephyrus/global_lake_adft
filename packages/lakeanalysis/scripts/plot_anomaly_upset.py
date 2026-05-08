@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 _SET_COLS = ["is_median_zero", "is_flat_or_pv", "is_area_mismatch", "is_shift"]
 
 _FLAG_TO_SET = {
-    "median_zero": "is_median_zero",
+    "zero_quantile": "is_median_zero",
     "flat": "is_flat",
     "area_ratio": "is_area_ratio",
     "outside_range": "is_outside_range",
@@ -46,12 +46,14 @@ _DISPLAY_NAMES = {
     "is_median_zero": "面积为0",
     "is_flat_or_pv": "序列异常",
     "is_area_mismatch": "面积偏差",
+    "is_shift": "趋势突变",
 }
 
 _COLORS = {
     "is_median_zero": "#E74C3C",
     "is_flat_or_pv": "#3498DB",
     "is_area_mismatch": "#F39C12",
+    "is_shift": "#9B59B6",
     "normal": "#2ECC71",
 }
 
@@ -177,6 +179,7 @@ def _plot_upset(fig, df: pd.DataFrame, min_size: int) -> dict:
         _DISPLAY_NAMES["is_median_zero"]: _COLORS["is_median_zero"],
         _DISPLAY_NAMES["is_flat_or_pv"]: _COLORS["is_flat_or_pv"],
         _DISPLAY_NAMES["is_area_mismatch"]: _COLORS["is_area_mismatch"],
+        _DISPLAY_NAMES["is_shift"]: _COLORS["is_shift"],
     }
 
     for key, ax in axes.items():

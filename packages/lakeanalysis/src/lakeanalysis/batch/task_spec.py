@@ -33,6 +33,11 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_requires_status=True,
         ensure_tables=("comparison", "quantile", "pwm_extreme"),
     ),
+    "shift_labels": BatchTaskSpec(
+        done_table="area_shift_labels",
+        done_requires_status=False,
+        ensure_tables=(),
+    ),
 }
 
 

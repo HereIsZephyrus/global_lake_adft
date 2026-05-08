@@ -29,6 +29,7 @@ _LAKE_SYMBOLS = {
     "count_source_hylak_ids_in_range",
     "ensure_area_anomalies_table",
     "ensure_area_quality_table",
+    "ensure_area_shift_labels_table",
     "ensure_quality_run_status_table",
     "ensure_area_entropy_cv_table",
     "ensure_entropy_table",
@@ -65,6 +66,7 @@ _LAKE_SYMBOLS = {
     "upsert_area_anomalies",
     "upsert_area_entropy_cv",
     "upsert_area_quality",
+    "upsert_area_shift_labels",
     "upsert_quality_run_status",
     "upsert_entropy",
     "upsert_eot_extremes",
@@ -115,6 +117,7 @@ def __getattr__(name: str):
         "count_area_quality_hylak_ids_in_range",
         "ensure_area_anomalies_table",
         "ensure_area_quality_table",
+        "ensure_area_shift_labels_table",
         "ensure_quality_run_status_table",
         "fetch_area_quality_hylak_ids",
         "fetch_area_quality_hylak_ids_in_range",
@@ -125,6 +128,7 @@ def __getattr__(name: str):
         "RUN_STATUS_ERROR",
         "upsert_area_anomalies",
         "upsert_area_quality",
+        "upsert_area_shift_labels",
         "upsert_quality_run_status",
     }:
         from . import area_quality
