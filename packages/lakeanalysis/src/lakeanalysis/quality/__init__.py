@@ -73,6 +73,10 @@ from .maintenance_runner import (
     run_recheck_zero_quantile,
     run_recompute_pv,
 )
+from .shift_labels_runner import (
+    sync_shift_to_anomalies,
+    upsert_shift_labels_from_parquet,
+)
 
 __all__ = [
     "AgreementConfig",
@@ -136,6 +140,8 @@ __all__ = [
     "run_recheck_zero_quantile",
     "run_recompute_pv",
     "summarize_comparison",
+    "sync_shift_to_anomalies",
+    "upsert_shift_labels_from_parquet",
     "year_month_key_to_index",
     "year_month_to_key",
 ]
