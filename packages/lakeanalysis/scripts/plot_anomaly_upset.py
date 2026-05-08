@@ -26,7 +26,7 @@ from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakeanalysis.logger import Logger
 from lakeanalysis.quality.filters import decode_anomaly_flags
-from lakeviz.layout import save
+from lakeviz.config import DEFAULT_VIZ_CONFIG
 from lakeviz.style.presets import Theme
 
 log = logging.getLogger(__name__)
@@ -153,34 +153,27 @@ def _plot_upset(fig, df: pd.DataFrame, min_size: int) -> dict:
     rename_map = {col: _DISPLAY_NAMES[col] for col in _SET_COLS}
     display_cols = list(rename_map.values())
 
-    anomaly_type = []
-    for _, row in plot_df.iterrows():
-        types = [_DISPLAY_NAMES[c] for c in _SET_COLS if row[c]]
-        anomaly_type.append(types[0] if types else "无")
-    plot_df["anomaly_type"] = anomaly_type
-
     plot_df = plot_df.rename(columns=rename_map)
 
     counts = upsetplot.from_indicators(display_cols, data=plot_df)
     if min_size > 0:
         counts = counts[counts >= min_size]
 
-    us = upsetplot.UpSet(counts, intersection_plot_elements=0, show_counts=True)
-    us.add_stacked_bars(
-        by="anomaly_type",
-        colors=["#E74C3C", "#3498DB", "#F39C12"],
-        title="交集大小",
-        elements=5,
+    us = upsetplot.UpSet(
+        counts,
+        intersection_plot_elements=5,
+        show_counts=True,
+        facecolor="black",
+        totals_plot_elements=3,
     )
 
-    axes = us.plot(fig=fig)
+    for col, color in zip(_SET_COLS, ["#E74C3C", "#3498DB", "#F39C12", "#9B59B6"]):
+        us.style_categories(
+            _DISPLAY_NAMES[col],
+            bar_facecolor=color,
+        )
 
-    _COLOR_MAP = {
-        _DISPLAY_NAMES["is_median_zero"]: _COLORS["is_median_zero"],
-        _DISPLAY_NAMES["is_flat_or_pv"]: _COLORS["is_flat_or_pv"],
-        _DISPLAY_NAMES["is_area_mismatch"]: _COLORS["is_area_mismatch"],
-        _DISPLAY_NAMES["is_shift"]: _COLORS["is_shift"],
-    }
+    axes = us.plot(fig=fig)
 
     for key, ax in axes.items():
         if ax.get_ylabel() == "Intersection size":
@@ -188,13 +181,6 @@ def _plot_upset(fig, df: pd.DataFrame, min_size: int) -> dict:
         for text in list(ax.texts):
             if text.get_text() == "Intersection size":
                 text.set_text("交集大小")
-            if text.get_text() in _COLOR_MAP:
-                text.set_color(_COLOR_MAP[text.get_text()])
-
-    if "matrix" in axes:
-        for text in axes["matrix"].get_yticklabels() + axes["matrix"].get_xticklabels():
-            if text.get_text() in _COLOR_MAP:
-                text.set_color(_COLOR_MAP[text.get_text()])
 
     for ax in axes.values():
         if ax.get_legend() is not None:
@@ -203,7 +189,7 @@ def _plot_upset(fig, df: pd.DataFrame, min_size: int) -> dict:
     return axes
 
 
-def _plot_donut(ax, df: pd.DataFrame, n_total: int) -> None:
+def _plot_donut(ax, df: pd.DataFrame, n_total: int) -> tuple[list, list[str]]:
     n_anomalies = len(df)
     n_normal = n_total - n_anomalies
 
@@ -223,17 +209,10 @@ def _plot_donut(ax, df: pd.DataFrame, n_total: int) -> None:
         pctdistance=0.75,
         wedgeprops=dict(width=0.4, edgecolor="white", linewidth=2),
     )
+    ax.set_anchor("N")
     for t in autotexts:
         t.set_fontsize(9)
-
-    ax.legend(
-        wedges, labels,
-        loc="center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=2,
-        fontsize=9,
-        frameon=False,
-    )
+    return list(wedges), labels
 
 
 def run(args: argparse.Namespace) -> None:
@@ -270,15 +249,35 @@ def run(args: argparse.Namespace) -> None:
             cur.execute("SELECT COUNT(*) FROM lake_info")
             n_total = int(cur.fetchone()[0])
 
-    fig = plt.figure(figsize=(16, 5))
+    fig = plt.figure(figsize=(16, 5.8))
 
     _plot_upset(fig, df, args.min_size)
 
-    ax_donut = fig.add_axes([0.01, 0.15, 0.28, 0.75])
-    _plot_donut(ax_donut, df, n_total)
+    ax_donut = fig.add_axes([0.08, 0.35, 0.28, 0.56])
+    wedges, labels = _plot_donut(ax_donut, df, n_total)
 
-    fig.suptitle("湖泊异常分析", fontsize=14, fontweight="bold")
-    save(fig, output_dir / "anomaly_upset.png")
+    legend = fig.legend(
+        wedges,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.02),
+        bbox_transform=fig.transFigure,
+        ncol=5,
+        fontsize=9,
+        frameon=False,
+    )
+
+    fig.suptitle("湖泊异常分析", fontsize=14, fontweight="bold", y=0.98)
+    out_path = output_dir / "anomaly_upset.png"
+    fig.savefig(
+        out_path,
+        dpi=DEFAULT_VIZ_CONFIG.default_dpi,
+        bbox_inches="tight",
+        bbox_extra_artists=(legend,),
+        pad_inches=0.35,
+    )
+    plt.close(fig)
+    log.info("Saved figure to %s", out_path)
 
     log.info("Combined UpSet + donut saved to %s", output_dir)
 
