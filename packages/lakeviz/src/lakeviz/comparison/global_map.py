@@ -140,11 +140,6 @@ def plot_comparison_exceedance_panel(
         List of output paths for the three panel figures.
     """
     import cartopy.crs as ccrs
-    import matplotlib.colors as mcolors
-    import matplotlib.ticker as mticker
-    from matplotlib.gridspec import GridSpec
-
-    from ..style.presets import resolve_cmap
 
     agg = _fetch_comparison_exceedance_grid_agg(
         config.provider, config.resolution,
@@ -176,15 +171,19 @@ def plot_comparison_exceedance_panel(
         if not specs:
             continue
 
-        fig = plt.figure(figsize=(12, 5))
-        gs = GridSpec(
-            1, 3, figure=fig,
-            width_ratios=[1, 1, 0.04],
-            wspace=0.05,
+        fig, axes = create_figure(
+            [
+                {"name": "left", "row": 0, "col": 0},
+                {"name": "right", "row": 0, "col": 1},
+            ],
+            figsize=(12, 5),
+            width_ratios=[1, 1],
+            projection=projection,
         )
 
         metas = []
         cmap_name = specs[0][3]
+        ax_names = ["left", "right"]
 
         for col, (
             value_col, title, cbar_label, cmap, log_scale, vmin, vmax, _fn,
@@ -197,7 +196,7 @@ def plot_comparison_exceedance_panel(
                 agg, value_col, config.resolution,
             )
 
-            ax = fig.add_subplot(gs[0, col], projection=projection)
+            ax = axes[ax_names[col]]
             meta = draw_global_grid(
                 ax, lons, lats, values,
                 title=title, cmap=cmap, log_scale=log_scale,
@@ -210,7 +209,7 @@ def plot_comparison_exceedance_panel(
 
         if metas:
             label = "超越率" if cmap_name == "sequential_warm" else "差异"
-            _add_row_cbar(fig, gs, metas, row=0, cmap_name=cmap_name, label=label)
+            _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap_name, label=label)
 
         suptitle, fn = row_labels[row]
         fig.suptitle(suptitle, fontsize=14, y=0.98)
@@ -221,8 +220,11 @@ def plot_comparison_exceedance_panel(
     return paths
 
 
-def _add_row_cbar(fig, gs, metas, *, row, cmap_name, label=""):
-    """Add a shared vertical colorbar aligned with a single row."""
+def _add_row_cbar(fig, right_ax, metas, *, cmap_name, label=""):
+    """Add a shared vertical colorbar placed to the right of *right_ax*.
+
+    Position is derived from ``right_ax.get_position()`` — no GridSpec dependency.
+    """
     import matplotlib.colors as mcolors
     import matplotlib.ticker as mticker
 
@@ -247,7 +249,10 @@ def _add_row_cbar(fig, gs, metas, *, row, cmap_name, label=""):
         meta["mesh"].set_norm(norm)
         meta["mesh"].set_cmap(resolved_cmap)
 
-    cbar_ax = fig.add_subplot(gs[row, 2])
+    bbox = right_ax.get_position()
+    cbar_width = 0.015
+    gap = 0.01
+    cbar_ax = fig.add_axes([bbox.x1 + gap, bbox.y0, cbar_width, bbox.y1 - bbox.y0])
     sm = plt.cm.ScalarMappable(cmap=resolved_cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, cax=cbar_ax, extendrect=True, extendfrac="auto")
