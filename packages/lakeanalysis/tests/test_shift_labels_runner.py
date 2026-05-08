@@ -47,6 +47,8 @@ class MockProvider:
         self._flag_updates.extend(updates)
 
     def fetch_rows(self, table_name: str, chunk_start: int, chunk_end: int) -> list[dict]:
+        if table_name == "area_shift_labels":
+            return [r for r in self._labels_df.to_dict("records") if chunk_start <= r["hylak_id"] < chunk_end]
         if table_name == "area_quality":
             return [r for r in self._area_quality if chunk_start <= r["hylak_id"] < chunk_end]
         if table_name == "area_anomalies":
