@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from lakesource.postgres.area_quality import (
+from lakesource.postgres.area_quality_schema import (
     _upsert_area_quality_sql,
+)
+from lakesource.postgres.area_anomalies_schema import (
     _upsert_area_anomalies_sql,
+)
+from lakesource.postgres.quality_run_status_schema import (
     _upsert_quality_run_status_sql,
 )
 from lakesource.postgres.lake_eot import _upsert_eot_results_sql
@@ -13,7 +17,7 @@ from lakesource.postgres.lake_quantile import _upsert_quantile_labels_sql
 from lakesource.postgres.lake_pwm import _upsert_pwm_extreme_thresholds_sql
 from lakesource.postgres.lake_hawkes import _upsert_hawkes_results_sql
 from lakesource.postgres.lake_entropy import _upsert_entropy_sql
-from lakesource.postgres.lake_misc import _upsert_comparison_run_status_sql
+from lakesource.postgres.comparison_schema import _upsert_comparison_run_status_sql
 from lakesource.table_config import TableConfig
 
 

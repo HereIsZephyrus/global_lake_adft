@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import psycopg
 
-from lakesource.postgres.lake import (
+from lakesource.postgres.lake_pwm import (
     ensure_pwm_extreme_tables as ensure_pwm_extreme_tables_in_db,
     upsert_pwm_extreme_run_status as upsert_pwm_extreme_run_status_in_db,
     upsert_pwm_extreme_thresholds as upsert_pwm_extreme_thresholds_in_db,

@@ -1,4 +1,9 @@
-"""PostgresLakeProvider: backend reads and grid aggregations via psycopg."""
+"""PostgresLakeProvider: backend reads and grid aggregations via psycopg.
+
+Refactored to use PostgresBackend internally, eliminating if/elif table_name
+dispatch.  The old ensure_table / upsert_rows / fetch_rows API is preserved
+for backward compatibility but delegates to typed domain repositories.
+"""
 
 from __future__ import annotations
 
@@ -21,221 +26,156 @@ def _ensure_queries_registered() -> None:
         import lakesource.comparison.grid_queries  # noqa: F401
 
 
+# ------------------------------------------------------------------
+# Domain method dispatch maps (env => (model, method))
+# Used only by the legacy string-based API.
+# ------------------------------------------------------------------
+
+_ENSURE_DISPATCH = {
+    "area_quality": ("quality", "ensure_area_quality_table"),
+    "area_anomalies": ("anomalies", "ensure_area_anomalies_table"),
+    "area_shift_labels": ("shift_labels", "ensure_area_shift_labels_table"),
+    "entropy": ("entropy", "ensure_entropy_table"),
+    "interpolation_detect": ("interpolation", "ensure_interpolation_detect_table"),
+    "quantile": ("quantile", "ensure_quantile_tables"),
+    "pwm_extreme": ("pwm", "ensure_pwm_extreme_tables"),
+    "eot": ("eot", "ensure_eot_results_table"),
+    "comparison": ("comparison", "ensure_comparison_tables"),
+}
+
+_UPSERT_DISPATCH = {
+    "area_quality": ("quality", "upsert_area_quality"),
+    "area_anomalies": ("anomalies", "upsert_area_anomalies"),
+    "area_shift_labels": ("shift_labels", "upsert_area_shift_labels"),
+    "entropy": ("entropy", "upsert_entropy"),
+    "interpolation_detect": ("interpolation", "upsert_interpolation_detect"),
+    "quantile_labels": ("quantile", "upsert_quantile_labels"),
+    "quantile_extremes": ("quantile", "upsert_quantile_extremes"),
+    "quantile_abrupt_transitions": ("quantile", "upsert_quantile_abrupt_transitions"),
+    "quantile_run_status": ("quantile", "upsert_quantile_run_status"),
+    "pwm_extreme_thresholds": ("pwm", "upsert_pwm_extreme_thresholds"),
+    "pwm_extreme_run_status": ("pwm", "upsert_pwm_extreme_run_status"),
+    "eot_results": ("eot", "upsert_eot_results"),
+    "eot_extremes": ("eot", "upsert_eot_extremes"),
+    "eot_run_status": ("eot", "upsert_eot_run_status"),
+    "comparison_run_status": ("comparison", "upsert_comparison_run_status"),
+}
+
+
 class PostgresLakeProvider(LakeProvider):
+    """Postgres provider backed by typed domain repositories."""
+
     def __init__(self, config: SourceConfig | None = None) -> None:
         self._config = config or SourceConfig()
         self._tc = self._config.t
+        self._backend = None  # lazily created
+
+    @property
+    def _be(self):
+        """Lazily create PostgresBackend."""
+        if self._backend is None:
+            from lakesource.postgres.backend import PostgresBackend
+            self._backend = PostgresBackend.from_config(self._config)
+        return self._backend
 
     def _conn(self):
         from lakesource.postgres import series_db
-
         return series_db.connection_context()
 
     # ------------------------------------------------------------------
-    # Core reads
+    # Core reads (delegate to repositories)
     # ------------------------------------------------------------------
 
     def fetch_lake_area_chunk(
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, pd.DataFrame]:
-        from lakesource.postgres import fetch_lake_area_chunk
-
-        with self._conn() as conn:
-            return fetch_lake_area_chunk(conn, chunk_start, chunk_end)
+        return self._be.area.fetch_lake_area_chunk(chunk_start, chunk_end)
 
     def fetch_lake_area_by_ids(self, id_list: list[int]) -> dict[int, pd.DataFrame]:
-        from lakesource.postgres import fetch_lake_area_by_ids
-
-        with self._conn() as conn:
-            return fetch_lake_area_by_ids(conn, id_list)
+        return self._be.area.fetch_lake_area_by_ids(id_list)
 
     def fetch_frozen_year_months_chunk(
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, set[int]]:
-        from lakesource.postgres import fetch_frozen_year_months_chunk
-
-        with self._conn() as conn:
-            return fetch_frozen_year_months_chunk(conn, chunk_start, chunk_end)
+        return self._be.metadata.fetch_frozen_year_months_chunk(chunk_start, chunk_end)
 
     def fetch_frozen_year_months_by_ids(
         self, id_list: list[int]
     ) -> dict[int, set[int]]:
-        from lakesource.postgres import fetch_frozen_year_months_by_ids
-
-        with self._conn() as conn:
-            return fetch_frozen_year_months_by_ids(conn, id_list)
+        return self._be.metadata.fetch_frozen_year_months_by_ids(id_list)
 
     def fetch_atlas_area_chunk(
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, float]:
-        from lakesource.postgres import fetch_atlas_area_chunk
-
-        with self._conn() as conn:
-            return fetch_atlas_area_chunk(conn, chunk_start, chunk_end)
+        return self._be.metadata.fetch_atlas_area_chunk(chunk_start, chunk_end)
 
     def fetch_atlas_area_by_ids(self, id_list: list[int]) -> dict[int, float]:
-        if not id_list:
-            return {}
-        with self._conn() as conn:
-            from lakesource.postgres import fetch_atlas_area_chunk
-
-            return fetch_atlas_area_chunk(conn, min(id_list), max(id_list) + 1)
-
-    def fetch_done_ids(self, table_name: str, chunk_start: int, chunk_end: int) -> set[int]:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT DISTINCT hylak_id FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s",
-                    (chunk_start, chunk_end),
-                )
-                return {int(row[0]) for row in cur.fetchall()}
+        return self._be.metadata.fetch_atlas_area_by_ids(id_list)
 
     def fetch_seasonal_amplitude_chunk(
         self, chunk_start: int, chunk_end: int
     ) -> dict[int, float | None]:
-        from lakesource.postgres import fetch_seasonal_amplitude_chunk
-
-        with self._conn() as conn:
-            return fetch_seasonal_amplitude_chunk(conn, chunk_start, chunk_end)
+        return self._be.metadata.fetch_seasonal_amplitude_chunk(chunk_start, chunk_end)
 
     def fetch_seasonal_amplitude_by_ids(self, id_list: list[int]) -> dict[int, float | None]:
-        if not id_list:
-            return {}
-        by_range = self.fetch_seasonal_amplitude_chunk(min(id_list), max(id_list) + 1)
-        return {hid: by_range.get(hid) for hid in id_list}
+        return self._be.metadata.fetch_seasonal_amplitude_by_ids(id_list)
+
+    def fetch_max_hylak_id(self) -> int:
+        return self._be.metadata.fetch_max_hylak_id()
+
+    # ------------------------------------------------------------------
+    # Table management (delegate to typed repos + dispatch for compat)
+    # ------------------------------------------------------------------
 
     def ensure_table(self, table_name: str) -> None:
-        with self._conn() as conn:
-            if table_name == "area_quality":
-                from lakesource.postgres import ensure_area_anomalies_table, ensure_area_quality_table
-
-                ensure_area_quality_table(conn)
-                ensure_area_anomalies_table(conn)
-            elif table_name == "area_anomalies":
-                from lakesource.postgres import ensure_area_anomalies_table
-
-                ensure_area_anomalies_table(conn)
-            elif table_name == "area_shift_labels":
-                from lakesource.postgres import ensure_area_shift_labels_table
-
-                ensure_area_shift_labels_table(conn)
-            elif table_name == "entropy":
-                from lakesource.postgres import ensure_entropy_table
-
-                ensure_entropy_table(conn)
-            elif table_name == "interpolation_detect":
-                from lakesource.postgres import ensure_interpolation_detect_table
-
-                ensure_interpolation_detect_table(conn)
-            elif table_name == "lake_pfaf":
+        info = _ENSURE_DISPATCH.get(table_name)
+        if info is None:
+            # Fallback: handle special cases not in typed dispatch
+            if table_name == "lake_pfaf":
                 from lakeanalysis.artificial.pfaf.store import ensure_lake_pfaf_table
-
-                ensure_lake_pfaf_table(conn)
-            elif table_name == "af_nearest":
+                with self._conn() as conn:
+                    ensure_lake_pfaf_table(conn)
+                return
+            if table_name == "af_nearest":
                 from lakeanalysis.artificial.pfaf.store import ensure_af_nearest_table
+                with self._conn() as conn:
+                    ensure_af_nearest_table(conn)
+                return
+            raise ValueError(f"Unsupported table ensure: {table_name}")
+        repo_name, method_name = info
+        repo = getattr(self._be, repo_name)
+        getattr(repo, method_name)()
 
-                ensure_af_nearest_table(conn)
-            elif table_name == "quantile":
-                from lakesource.postgres import ensure_quantile_tables
-
-                ensure_quantile_tables(conn)
-            elif table_name == "pwm_extreme":
-                from lakesource.postgres import ensure_pwm_extreme_tables
-
-                ensure_pwm_extreme_tables(conn)
-            elif table_name == "eot":
-                from lakesource.postgres import ensure_eot_results_table
-
-                ensure_eot_results_table(conn)
-            elif table_name == "comparison":
-                from lakesource.postgres import ensure_comparison_tables, ensure_pwm_extreme_tables, ensure_quantile_tables
-
-                ensure_comparison_tables(conn)
-                ensure_quantile_tables(conn)
-                ensure_pwm_extreme_tables(conn)
-            else:
-                raise ValueError(f"Unsupported table ensure: {table_name}")
+        # Side-effect: area_quality also ensures area_anomalies
+        if table_name == "area_quality":
+            self._be.anomalies.ensure_area_anomalies_table()
+        # Side-effect: comparison also ensures quantile and pwm tables
+        if table_name == "comparison":
+            self._be.quantile.ensure_quantile_tables()
+            self._be.pwm.ensure_pwm_extreme_tables()
 
     def truncate_table(self, table_name: str) -> None:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(f"TRUNCATE {table_name}")
-            conn.commit()
+        self._be.shift_labels.truncate_area_shift_labels() if table_name == "area_shift_labels" else exec_raw_truncate(table_name, self._conn)
 
     def upsert_rows(self, table_name: str, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return
-        with self._conn() as conn:
-            if table_name == "area_quality":
-                from lakesource.postgres import upsert_area_quality
-
-                upsert_area_quality(conn, rows)
-            elif table_name == "area_anomalies":
-                from lakesource.postgres import upsert_area_anomalies
-
-                upsert_area_anomalies(conn, rows)
-            elif table_name == "area_shift_labels":
-                from lakesource.postgres import upsert_area_shift_labels
-
-                upsert_area_shift_labels(conn, rows)
-            elif table_name == "entropy":
-                from lakesource.postgres import upsert_entropy
-
-                upsert_entropy(conn, rows)
-            elif table_name == "interpolation_detect":
-                from lakesource.postgres import upsert_interpolation_detect
-
-                upsert_interpolation_detect(conn, rows)
-            elif table_name == "lake_pfaf":
+        info = _UPSERT_DISPATCH.get(table_name)
+        if info is None:
+            if table_name == "lake_pfaf":
                 from lakeanalysis.artificial.pfaf.store import upsert_lake_pfaf
-
-                upsert_lake_pfaf(conn, {int(row["hylak_id"]): row.get("pfaf_id") for row in rows})
-            elif table_name == "af_nearest":
+                with self._conn() as conn:
+                    upsert_lake_pfaf(conn, {int(r["hylak_id"]): r.get("pfaf_id") for r in rows})
+                return
+            if table_name == "af_nearest":
                 from lakeanalysis.artificial.pfaf.store import upsert_af_nearest
-
-                upsert_af_nearest(conn, rows)
-            elif table_name == "quantile_labels":
-                from lakesource.postgres import upsert_quantile_labels
-
-                upsert_quantile_labels(conn, rows)
-            elif table_name == "quantile_extremes":
-                from lakesource.postgres import upsert_quantile_extremes
-
-                upsert_quantile_extremes(conn, rows)
-            elif table_name == "quantile_abrupt_transitions":
-                from lakesource.postgres import upsert_quantile_abrupt_transitions
-
-                upsert_quantile_abrupt_transitions(conn, rows)
-            elif table_name == "quantile_run_status":
-                from lakesource.postgres import upsert_quantile_run_status
-
-                upsert_quantile_run_status(conn, rows)
-            elif table_name == "pwm_extreme_thresholds":
-                from lakesource.postgres import upsert_pwm_extreme_thresholds
-
-                upsert_pwm_extreme_thresholds(conn, rows)
-            elif table_name == "pwm_extreme_run_status":
-                from lakesource.postgres import upsert_pwm_extreme_run_status
-
-                upsert_pwm_extreme_run_status(conn, rows)
-            elif table_name == "eot_results":
-                from lakesource.postgres import upsert_eot_results
-
-                upsert_eot_results(conn, rows)
-            elif table_name == "eot_extremes":
-                from lakesource.postgres import upsert_eot_extremes
-
-                upsert_eot_extremes(conn, rows)
-            elif table_name == "eot_run_status":
-                from lakesource.postgres import upsert_eot_run_status
-
-                upsert_eot_run_status(conn, rows)
-            elif table_name == "comparison_run_status":
-                from lakesource.postgres import upsert_comparison_run_status
-
-                upsert_comparison_run_status(conn, rows)
-            else:
-                raise ValueError(f"Unsupported table upsert: {table_name}")
+                with self._conn() as conn:
+                    upsert_af_nearest(conn, rows)
+                return
+            raise ValueError(f"Unsupported table upsert: {table_name}")
+        repo_name, method_name = info
+        repo = getattr(self._be, repo_name)
+        getattr(repo, method_name)(rows)
 
     def fetch_rows(self, table_name: str, chunk_start: int, chunk_end: int) -> list[dict[str, Any]]:
         with self._conn() as conn:
@@ -256,17 +196,21 @@ class PostgresLakeProvider(LakeProvider):
                 cur.execute(f"DELETE FROM {table_name} WHERE hylak_id = ANY(%s)", [hylak_ids])
             conn.commit()
 
+    # ------------------------------------------------------------------
+    # Status & flag operations
+    # ------------------------------------------------------------------
+
     def fetch_area_statuses(self) -> dict[int, tuple[str, int]]:
-        result: dict[int, tuple[str, int]] = {}
+        return self._be.quality_read.fetch_area_statuses()
+
+    def fetch_done_ids(self, table_name: str, chunk_start: int, chunk_end: int) -> set[int]:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT hylak_id FROM area_quality")
-                for (hid,) in cur.fetchall():
-                    result[int(hid)] = ("quality", 0)
-                cur.execute("SELECT hylak_id, anomaly_flags FROM area_anomalies")
-                for hid, flags in cur.fetchall():
-                    result[int(hid)] = ("anomalies", int(flags))
-        return result
+                cur.execute(
+                    f"SELECT DISTINCT hylak_id FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s",
+                    (chunk_start, chunk_end),
+                )
+                return {int(row[0]) for row in cur.fetchall()}
 
     def fetch_zero_quantile_flags(self) -> dict[int, int]:
         result: dict[int, int] = {}
@@ -321,38 +265,24 @@ class PostgresLakeProvider(LakeProvider):
         return result
 
     def update_area_anomaly_flags(self, updates: list[tuple[int, int]]) -> None:
-        if not updates:
-            return
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "UPDATE area_anomalies SET anomaly_flags = %s WHERE hylak_id = %s",
-                    [(flags, hid) for hid, flags in updates],
-                )
-            conn.commit()
+        self._be.anomalies.update_area_anomaly_flags(updates)
 
     def fetch_impact_pairs(self) -> list[dict[str, int]]:
-        from lakesource.postgres import fetch_impact_pairs
-
-        with self._conn() as conn:
-            return fetch_impact_pairs(conn)
+        return self._be.geometry.fetch_impact_pairs()
 
     def fetch_lake_centroids_chunk(self, chunk_start: int, chunk_end: int) -> list[tuple[int, str]]:
         from lakeanalysis.artificial.pfaf.lookup import fetch_lake_centroids_chunk
-
         with self._conn() as conn:
             return fetch_lake_centroids_chunk(conn, chunk_start, chunk_end)
 
     def lookup_pfaf_chunk(self, centroids: list[tuple[int, str]]) -> dict[int, int | None]:
         from lakeanalysis.artificial.pfaf.lookup import lookup_pfaf_chunk
         from lakesource.postgres import atlas_db
-
         with atlas_db.connection_context() as conn:
             return lookup_pfaf_chunk(conn, centroids)
 
     def fetch_type1_lake_records(self) -> list[dict[str, int | float | None]]:
         from lakeanalysis.artificial.pfaf.nearest import _FETCH_TYPE1_SQL
-
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(_FETCH_TYPE1_SQL)
@@ -375,7 +305,6 @@ class PostgresLakeProvider(LakeProvider):
             _FETCH_NON_TYPE1_LIMITED_SQL,
             _FETCH_NON_TYPE1_SQL,
         )
-
         query = _FETCH_NON_TYPE1_SQL if limit_id is None else _FETCH_NON_TYPE1_LIMITED_SQL
         params = None if limit_id is None else {"limit_id": limit_id}
         with self._conn() as conn:
@@ -394,27 +323,16 @@ class PostgresLakeProvider(LakeProvider):
             for row in rows
         ]
 
-    def fetch_max_hylak_id(self) -> int:
-        from lakesource.postgres import fetch_max_lake_info_hylak_id
-
-        with self._conn() as conn:
-            result = fetch_max_lake_info_hylak_id(conn)
-        return 0 if result is None else int(result)
-
     def fetch_lake_geometry_wkt_by_ids(
         self,
         hylak_ids: list[int],
         *,
         simplify_tolerance_meters: float | None = None,
     ) -> pd.DataFrame:
-        from lakesource.postgres import fetch_lake_geometry_wkt_by_ids
-
-        with self._conn() as conn:
-            return fetch_lake_geometry_wkt_by_ids(
-                conn,
-                hylak_ids,
-                simplify_tolerance_meters=simplify_tolerance_meters,
-            )
+        return self._be.geometry.fetch_lake_geometry_wkt_by_ids(
+            hylak_ids,
+            simplify_tolerance_meters=simplify_tolerance_meters,
+        )
 
     def fetch_grid_agg(
         self,
@@ -440,3 +358,10 @@ class PostgresLakeProvider(LakeProvider):
     @property
     def cache_dir(self) -> Path | None:
         return None
+
+
+def exec_raw_truncate(table_name: str, conn_factory) -> None:
+    with conn_factory() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"TRUNCATE {table_name}")
+        conn.commit()
