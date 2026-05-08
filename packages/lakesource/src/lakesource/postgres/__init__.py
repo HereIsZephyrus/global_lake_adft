@@ -1,9 +1,39 @@
 """PostgreSQL backend for lake data access.
 
-Provides DBClient, ChunkedLakeProcessor, and selected lake/hawkes_qc database
-operations. Symbols that require psycopg are lazily loaded via __getattr__ so
-that importing this package does not fail when psycopg is not installed.
+This package provides two API levels:
+
+1. **(New) Typed domain repositories**  via ``PostgresBackend`` (preferred):
+   >>> from lakesource.postgres.backend import PostgresBackend
+   >>> be = PostgresBackend.from_config()
+   >>> be.quality.ensure_area_quality_table()
+   >>> be.quantile.upsert_quantile_labels(rows)
+
+2. **(Legacy) Module-level functions** via ``__getattr__`` delegation:
+   >>> from lakesource.postgres import upsert_area_quality  # deprecated
+   >>> upsert_area_quality(conn, rows)
+
+All real implementations live in domain-specific modules:
+| Domain       | Module                     |
+|-------------|---------------------------|
+| area_quality | ``.area_quality_schema``   |
+| anomalies    | ``.area_anomalies_schema`` |
+| shift_labels | ``.area_shift_labels_schema`` |
+| run_status   | ``.quality_run_status_schema`` |
+| frozen       | ``.frozen_read``           |
+| lake_info    | ``.lake_info_read``        |
+| comparison   | ``.comparison_schema``     |
+| interpolation| ``.interpolation_detect_schema`` |
+| lake_area    | ``.lake_area``             |
+| quantile     | ``.lake_quantile``         |
+| pwm          | ``.lake_pwm``              |
+| eot          | ``.lake_eot``              |
+| hawkes       | ``.lake_hawkes``           |
+| entropy      | ``.lake_entropy``          |
+| hawkes_qc    | ``.hawkes_qc``             |
+| compat       | ``.lake`` (deprecated)     |
 """
+
+from .backend import PostgresBackend  # noqa: E402
 
 _CLIENT_SYMBOLS = {"DBClient", "atlas_db", "series_db"}
 
@@ -22,7 +52,7 @@ _COMPARISON_SYMBOLS = {
     "upsert_comparison_run_status",
 }
 
-_LAKE_SYMBOLS = {
+_LEGACY_LAKE_SYMBOLS = {
     "count_area_quality_hylak_ids_in_range",
     "count_pwm_extreme_status_in_range",
     "count_quantile_status_in_range",
@@ -85,61 +115,61 @@ _LAKE_SYMBOLS = {
 }
 
 __all__ = [
+    "PostgresBackend",
     "ChunkedLakeProcessor",
     "DBClient",
     "atlas_db",
     "series_db",
     "check_extensions",
-    *sorted(_LAKE_SYMBOLS),
+    *sorted(_LEGACY_LAKE_SYMBOLS),
     *sorted(_COMPARISON_SYMBOLS),
     *sorted(_HAWKES_QC_SYMBOLS),
 ]
+
+# Symbol sets used by __getattr__ for area_quality related functions
+_AREA_QUALITY_SYMBOLS = {
+    "count_area_quality_hylak_ids_in_range",
+    "ensure_area_anomalies_table",
+    "ensure_area_quality_table",
+    "ensure_area_shift_labels_table",
+    "ensure_quality_run_status_table",
+    "fetch_area_quality_hylak_ids",
+    "fetch_area_quality_hylak_ids_in_range",
+    "fetch_atlas_area_chunk",
+    "make_quality_run_status_row",
+    "move_area_quality_to_anomalies",
+    "RUN_STATUS_DONE",
+    "RUN_STATUS_ERROR",
+    "upsert_area_anomalies",
+    "upsert_area_quality",
+    "upsert_area_shift_labels",
+    "upsert_quality_run_status",
+}
 
 
 def __getattr__(name: str):
     if name == "ChunkedLakeProcessor":
         from .chunked import ChunkedLakeProcessor
-
         return ChunkedLakeProcessor
     if name in _CLIENT_SYMBOLS:
         from .client import DBClient, atlas_db, series_db
-
         return {"DBClient": DBClient, "atlas_db": atlas_db, "series_db": series_db}[name]
     if name == "check_extensions":
         from .extensions import check_extensions
-
         return check_extensions
     if name in _COMPARISON_SYMBOLS:
         from lakesource import comparison
-
         return getattr(comparison, name)
-    if name in {
-        "count_area_quality_hylak_ids_in_range",
-        "ensure_area_anomalies_table",
-        "ensure_area_quality_table",
-        "ensure_area_shift_labels_table",
-        "ensure_quality_run_status_table",
-        "fetch_area_quality_hylak_ids",
-        "fetch_area_quality_hylak_ids_in_range",
-        "fetch_atlas_area_chunk",
-        "make_quality_run_status_row",
-        "move_area_quality_to_anomalies",
-        "RUN_STATUS_DONE",
-        "RUN_STATUS_ERROR",
-        "upsert_area_anomalies",
-        "upsert_area_quality",
-        "upsert_area_shift_labels",
-        "upsert_quality_run_status",
-    }:
+    if name in _AREA_QUALITY_SYMBOLS:
         from . import area_quality
-
         return getattr(area_quality, name)
-    if name in _LAKE_SYMBOLS:
+    if name in _LEGACY_LAKE_SYMBOLS:
         from . import lake
-
         return getattr(lake, name)
     if name in _HAWKES_QC_SYMBOLS:
         from . import hawkes_qc
-
         return getattr(hawkes_qc, name)
+    if name == "PostgresBackend":
+        from .backend import PostgresBackend
+        return PostgresBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

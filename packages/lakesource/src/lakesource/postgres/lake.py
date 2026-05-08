@@ -1,14 +1,21 @@
-"""Database operations for lake data.
+"""Deprecated compatibility facade.
 
-This module provides backward-compatible imports. All functions have been migrated
-to domain-specific modules:
+Do not add new implementations here.  This module only re-exports
+symbols from domain-specific modules for backward compatibility.
+
+Real implementations live in:
 - lakesource.postgres.lake_area
 - lakesource.postgres.lake_eot
 - lakesource.postgres.lake_quantile
 - lakesource.postgres.lake_hawkes
 - lakesource.postgres.lake_pwm
 - lakesource.postgres.lake_entropy
-- lakesource.postgres.lake_misc
+- lakesource.postgres.area_quality_schema
+- lakesource.postgres.area_anomalies_schema
+- lakesource.postgres.frozen_read
+- lakesource.postgres.lake_info_read
+- lakesource.postgres.comparison_schema
+- lakesource.postgres.interpolation_detect_schema
 """
 
 from __future__ import annotations
@@ -24,7 +31,6 @@ if TYPE_CHECKING:
 from lakesource.table_config import TableConfig
 
 _default_table_config = TableConfig.default()
-
 _SAFE_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
