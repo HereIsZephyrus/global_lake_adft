@@ -1,113 +1,35 @@
-"""Deprecated compatibility facade.
+"""Lake geometry WKT reads."""
 
-Do not add new implementations here.  This module only re-exports
-symbols from domain-specific modules for backward compatibility.
 
-Real implementations live in:
-- lakesource.postgres.lake_area
-- lakesource.postgres.lake_eot
-- lakesource.postgres.lake_quantile
-- lakesource.postgres.lake_hawkes
-- lakesource.postgres.lake_pwm
-- lakesource.postgres.lake_entropy
-- lakesource.postgres.area_quality_schema
-- lakesource.postgres.area_anomalies_schema
-- lakesource.postgres.frozen_read
-- lakesource.postgres.lake_info_read
-- lakesource.postgres.comparison_schema
-- lakesource.postgres.interpolation_detect_schema
-"""
 
 from __future__ import annotations
 
+
+
 import os
+
 import re
+
 from typing import TYPE_CHECKING
 
+
+
 if TYPE_CHECKING:
+
     import pandas as pd
+
     import psycopg
+
+
 
 from lakesource.table_config import TableConfig
 
+
+
 _default_table_config = TableConfig.default()
+
 _SAFE_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
-
-def __getattr__(name: str):
-    if name in (
-        "fetch_lake_area",
-        "fetch_lake_area_chunk",
-        "fetch_af_nearest_high_topo",
-        "fetch_impact_pairs",
-        "fetch_lake_area_by_ids",
-    ):
-        from lakesource.postgres import lake_area
-        return getattr(lake_area, name)
-    if name in (
-        "fetch_eot_extremes_by_id",
-        "ensure_eot_results_table",
-        "upsert_eot_results",
-        "upsert_eot_extremes",
-        "upsert_eot_run_status",
-    ):
-        from lakesource.postgres import lake_eot
-        return getattr(lake_eot, name)
-    if name in (
-        "ensure_quantile_tables",
-        "upsert_quantile_labels",
-        "upsert_quantile_extremes",
-        "upsert_quantile_abrupt_transitions",
-        "upsert_quantile_run_status",
-        "count_quantile_status_in_range",
-        "fetch_quantile_status_ids_in_range",
-    ):
-        from lakesource.postgres import lake_quantile
-        return getattr(lake_quantile, name)
-    if name in (
-        "ensure_hawkes_results_table",
-        "upsert_hawkes_results",
-        "upsert_hawkes_lrt",
-        "upsert_hawkes_transition_monthly",
-    ):
-        from lakesource.postgres import lake_hawkes
-        return getattr(lake_hawkes, name)
-    if name in (
-        "ensure_pwm_extreme_tables",
-        "upsert_pwm_extreme_thresholds",
-        "upsert_pwm_extreme_run_status",
-        "count_pwm_extreme_status_in_range",
-        "fetch_pwm_extreme_status_ids_in_range",
-    ):
-        from lakesource.postgres import lake_pwm
-        return getattr(lake_pwm, name)
-    if name in (
-        "ensure_entropy_table",
-        "upsert_entropy",
-        "ensure_area_entropy_cv_table",
-        "upsert_area_entropy_cv",
-    ):
-        from lakesource.postgres import lake_entropy
-        return getattr(lake_entropy, name)
-    if name in (
-        "fetch_frozen_year_months_by_ids",
-        "fetch_frozen_year_months_chunk",
-        "fetch_seasonal_amplitude_chunk",
-        "fetch_linear_trend_by_ids",
-        "fetch_anomaly_hylak_ids",
-        "fetch_quality_done_hylak_ids_in_range",
-        "fetch_max_lake_info_hylak_id",
-        "count_source_hylak_ids_in_range",
-        "fetch_source_hylak_ids_in_range",
-        "ensure_comparison_tables",
-        "upsert_comparison_run_status",
-        "fetch_comparison_status_ids_in_range",
-        "ensure_interpolation_detect_table",
-        "upsert_interpolation_detect",
-    ):
-        from lakesource.postgres import lake_misc
-        return getattr(lake_misc, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _validate_sql_identifier(name: str, label: str) -> str:

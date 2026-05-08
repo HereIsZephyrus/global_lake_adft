@@ -12,7 +12,7 @@ class PostgresGeometryReadRepository:
         self._tc = table_config or TableConfig.default()
 
     def fetch_lake_geometry_wkt_by_ids(self, hylak_ids, *, simplify_tolerance_meters=None):
-        from lakesource.postgres import lake as _mod
+        from lakesource.postgres import lake_geometry as _mod
         with self._conn_factory() as conn:
             return _mod.fetch_lake_geometry_wkt_by_ids(
                 conn, hylak_ids,

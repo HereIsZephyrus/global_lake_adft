@@ -12,17 +12,17 @@ class PostgresShiftLabelsRepository:
         self._tc = table_config or TableConfig.default()
 
     def ensure_area_shift_labels_table(self):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_shift_labels_schema as _mod
         with self._conn_factory() as conn:
             _mod.ensure_area_shift_labels_table(conn, table_config=self._tc)
 
     def truncate_area_shift_labels(self):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_shift_labels_schema as _mod
         with self._conn_factory() as conn:
             _mod.truncate_area_shift_labels(conn, table_config=self._tc)
 
     def upsert_area_shift_labels(self, rows: list[dict[str, Any]]):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_shift_labels_schema as _mod
         with self._conn_factory() as conn:
             _mod.upsert_area_shift_labels(conn, rows, table_config=self._tc)
 

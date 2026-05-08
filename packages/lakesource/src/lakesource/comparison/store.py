@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import psycopg
 
-from lakesource.postgres.lake import ensure_comparison_tables as ensure_comparison_tables_in_db
-from lakesource.postgres.lake import upsert_comparison_run_status as upsert_comparison_run_status_in_db
+from lakesource.postgres.comparison_schema import ensure_comparison_tables as ensure_comparison_tables_in_db
+from lakesource.postgres.comparison_schema import upsert_comparison_run_status as upsert_comparison_run_status_in_db
 
 from .schema import RUN_STATUS_DONE, RUN_STATUS_ERROR
 

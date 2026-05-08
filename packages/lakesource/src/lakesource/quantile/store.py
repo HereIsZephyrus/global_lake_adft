@@ -7,18 +7,20 @@ from typing import Any
 import pandas as pd
 import psycopg
 
-from lakesource.postgres.lake import (
-    count_source_hylak_ids_in_range,
+from lakesource.postgres.lake_quantile import (
     count_quantile_status_in_range,
-    fetch_max_lake_info_hylak_id,
+    ensure_quantile_tables as ensure_quantile_tables_in_db,
     fetch_quantile_status_ids_in_range,
-    fetch_source_hylak_ids_in_range,
     upsert_quantile_abrupt_transitions as upsert_quantile_abrupt_transitions_in_db,
     upsert_quantile_extremes as upsert_quantile_extremes_in_db,
     upsert_quantile_labels as upsert_quantile_labels_in_db,
     upsert_quantile_run_status as upsert_quantile_run_status_in_db,
 )
-from lakesource.postgres.lake import ensure_quantile_tables as ensure_quantile_tables_in_db
+from lakesource.postgres.lake_info_read import (
+    count_source_hylak_ids_in_range,
+    fetch_max_lake_info_hylak_id,
+    fetch_source_hylak_ids_in_range,
+)
 
 from .schema import QuantileResult, RUN_STATUS_DONE, RUN_STATUS_ERROR
 

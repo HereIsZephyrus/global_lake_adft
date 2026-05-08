@@ -54,27 +54,61 @@ class TestLakeModulesImport:
         assert hasattr(lake_entropy, "ensure_area_entropy_cv_table")
         assert hasattr(lake_entropy, "upsert_area_entropy_cv")
 
-    def test_lake_misc_imports(self) -> None:
-        from lakesource.postgres import lake_misc
-        assert hasattr(lake_misc, "fetch_frozen_year_months_by_ids")
-        assert hasattr(lake_misc, "fetch_frozen_year_months_chunk")
-        assert hasattr(lake_misc, "fetch_seasonal_amplitude_chunk")
-        assert hasattr(lake_misc, "fetch_linear_trend_by_ids")
-        assert hasattr(lake_misc, "fetch_anomaly_hylak_ids")
-        assert hasattr(lake_misc, "fetch_quality_done_hylak_ids_in_range")
-        assert hasattr(lake_misc, "fetch_max_lake_info_hylak_id")
-        assert hasattr(lake_misc, "count_source_hylak_ids_in_range")
-        assert hasattr(lake_misc, "fetch_source_hylak_ids_in_range")
-        assert hasattr(lake_misc, "ensure_comparison_tables")
-        assert hasattr(lake_misc, "upsert_comparison_run_status")
-        assert hasattr(lake_misc, "fetch_comparison_status_ids_in_range")
-        assert hasattr(lake_misc, "ensure_interpolation_detect_table")
-        assert hasattr(lake_misc, "upsert_interpolation_detect")
+    def test_frozen_read_imports(self) -> None:
+        from lakesource.postgres import frozen_read
+        assert hasattr(frozen_read, "fetch_frozen_year_months_by_ids")
+        assert hasattr(frozen_read, "fetch_frozen_year_months_chunk")
+
+    def test_lake_info_read_imports(self) -> None:
+        from lakesource.postgres import lake_info_read
+        assert hasattr(lake_info_read, "fetch_seasonal_amplitude_chunk")
+        assert hasattr(lake_info_read, "fetch_linear_trend_by_ids")
+        assert hasattr(lake_info_read, "fetch_max_lake_info_hylak_id")
+        assert hasattr(lake_info_read, "count_source_hylak_ids_in_range")
+        assert hasattr(lake_info_read, "fetch_source_hylak_ids_in_range")
+
+    def test_comparison_schema_imports(self) -> None:
+        from lakesource.postgres import comparison_schema
+        assert hasattr(comparison_schema, "ensure_comparison_tables")
+        assert hasattr(comparison_schema, "upsert_comparison_run_status")
+        assert hasattr(comparison_schema, "fetch_comparison_status_ids_in_range")
+
+    def test_interpolation_detect_schema_imports(self) -> None:
+        from lakesource.postgres import interpolation_detect_schema
+        assert hasattr(interpolation_detect_schema, "ensure_interpolation_detect_table")
+        assert hasattr(interpolation_detect_schema, "upsert_interpolation_detect")
+
+    def test_area_cross_queries_imports(self) -> None:
+        from lakesource.postgres import area_cross_queries
+        assert hasattr(area_cross_queries, "fetch_anomaly_hylak_ids")
+        assert hasattr(area_cross_queries, "fetch_quality_done_hylak_ids_in_range")
+
+    def test_area_quality_schema_imports(self) -> None:
+        from lakesource.postgres import area_quality_schema
+        assert hasattr(area_quality_schema, "upsert_area_quality")
+        assert hasattr(area_quality_schema, "ensure_area_quality_table")
+        assert hasattr(area_quality_schema, "fetch_atlas_area_chunk")
+
+    def test_area_anomalies_schema_imports(self) -> None:
+        from lakesource.postgres import area_anomalies_schema
+        assert hasattr(area_anomalies_schema, "upsert_area_anomalies")
+        assert hasattr(area_anomalies_schema, "ensure_area_anomalies_table")
+        assert hasattr(area_anomalies_schema, "move_area_quality_to_anomalies")
+
+    def test_area_shift_labels_schema_imports(self) -> None:
+        from lakesource.postgres import area_shift_labels_schema
+        assert hasattr(area_shift_labels_schema, "upsert_area_shift_labels")
+        assert hasattr(area_shift_labels_schema, "ensure_area_shift_labels_table")
+        assert hasattr(area_shift_labels_schema, "truncate_area_shift_labels")
+
+    def test_backend_imports(self) -> None:
+        from lakesource.postgres import PostgresBackend
+        assert PostgresBackend is not None
 
 
 class TestAreaQualityExports:
     def test_quality_run_status_exports(self) -> None:
-        from lakesource.postgres.area_quality import (
+        from lakesource.postgres.quality_run_status_schema import (
             RUN_STATUS_DONE,
             RUN_STATUS_ERROR,
             make_quality_run_status_row,

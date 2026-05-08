@@ -12,17 +12,17 @@ class PostgresComparisonWriteRepository:
         self._tc = table_config or TableConfig.default()
 
     def ensure_comparison_tables(self):
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import comparison_schema as _mod
         with self._conn_factory() as conn:
             _mod.ensure_comparison_tables(conn, table_config=self._tc)
 
     def upsert_comparison_run_status(self, rows):
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import comparison_schema as _mod
         with self._conn_factory() as conn:
             _mod.upsert_comparison_run_status(conn, rows, table_config=self._tc)
 
     def fetch_comparison_status_ids_in_range(self, chunk_start, chunk_end, *, workflow_version):
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import comparison_schema as _mod
         with self._conn_factory() as conn:
             return _mod.fetch_comparison_status_ids_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
 
@@ -33,12 +33,12 @@ class PostgresInterpolationDetectWriteRepository:
         self._tc = table_config or TableConfig.default()
 
     def ensure_interpolation_detect_table(self):
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import interpolation_detect_schema as _mod
         with self._conn_factory() as conn:
             _mod.ensure_interpolation_detect_table(conn, table_config=self._tc)
 
     def upsert_interpolation_detect(self, rows):
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import interpolation_detect_schema as _mod
         with self._conn_factory() as conn:
             _mod.upsert_interpolation_detect(conn, rows, table_config=self._tc)
 

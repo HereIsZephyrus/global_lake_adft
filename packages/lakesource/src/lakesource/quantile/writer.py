@@ -6,7 +6,7 @@ from lakesource.config import Backend, SourceConfig
 
 
 def _upsert_extremes_postgres(rows: list[dict], config: SourceConfig) -> None:
-    from lakesource.postgres.lake import upsert_quantile_extremes
+    from lakesource.postgres.lake_quantile import upsert_quantile_extremes
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:
@@ -14,7 +14,7 @@ def _upsert_extremes_postgres(rows: list[dict], config: SourceConfig) -> None:
 
 
 def _upsert_transitions_postgres(rows: list[dict], config: SourceConfig) -> None:
-    from lakesource.postgres.lake import upsert_quantile_abrupt_transitions
+    from lakesource.postgres.lake_quantile import upsert_quantile_abrupt_transitions
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:
@@ -22,7 +22,7 @@ def _upsert_transitions_postgres(rows: list[dict], config: SourceConfig) -> None
 
 
 def _upsert_labels_postgres(rows: list[dict], config: SourceConfig) -> None:
-    from lakesource.postgres.lake import upsert_quantile_labels
+    from lakesource.postgres.lake_quantile import upsert_quantile_labels
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:
@@ -30,7 +30,7 @@ def _upsert_labels_postgres(rows: list[dict], config: SourceConfig) -> None:
 
 
 def _upsert_run_status_postgres(rows: list[dict], config: SourceConfig) -> None:
-    from lakesource.postgres.lake import upsert_quantile_run_status
+    from lakesource.postgres.lake_quantile import upsert_quantile_run_status
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:
@@ -38,7 +38,7 @@ def _upsert_run_status_postgres(rows: list[dict], config: SourceConfig) -> None:
 
 
 def _ensure_tables_postgres(config: SourceConfig) -> None:
-    from lakesource.postgres.lake import ensure_quantile_tables
+    from lakesource.postgres.lake_quantile import ensure_quantile_tables
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:

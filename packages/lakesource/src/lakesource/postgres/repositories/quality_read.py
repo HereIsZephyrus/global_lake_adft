@@ -25,6 +25,6 @@ class PostgresQualityReadRepository:
         return result
 
     def fetch_anomaly_hylak_ids(self) -> set[int]:
-        from lakesource.postgres import lake_misc as _mod
+        from lakesource.postgres import area_cross_queries as _mod
         with self._conn_factory() as conn:
             return _mod.fetch_anomaly_hylak_ids(conn, table_config=self._tc)

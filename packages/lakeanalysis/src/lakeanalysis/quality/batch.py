@@ -8,7 +8,7 @@ from typing import Any
 from lakeanalysis.batch.engine import Calculator, LakeTask
 from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakesource.provider.base import LakeProvider
-from lakesource.postgres.area_quality import (
+from lakesource.postgres.quality_run_status_schema import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
     make_quality_run_status_row,

@@ -12,17 +12,17 @@ class PostgresAnomaliesWriteRepository:
         self._tc = table_config or TableConfig.default()
 
     def ensure_area_anomalies_table(self):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_anomalies_schema as _mod
         with self._conn_factory() as conn:
             _mod.ensure_area_anomalies_table(conn, table_config=self._tc)
 
     def upsert_area_anomalies(self, rows: list[dict[str, Any]]):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_anomalies_schema as _mod
         with self._conn_factory() as conn:
             _mod.upsert_area_anomalies(conn, rows, table_config=self._tc)
 
     def move_area_quality_to_anomalies(self, hylak_ids):
-        from lakesource.postgres import area_quality as _mod
+        from lakesource.postgres import area_anomalies_schema as _mod
         with self._conn_factory() as conn:
             return _mod.move_area_quality_to_anomalies(conn, hylak_ids, table_config=self._tc)
 
