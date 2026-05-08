@@ -114,20 +114,24 @@ def _filter_done_status_ids(
     if not candidate_ids:
         return set()
     if provider.backend_name == "parquet":
-        import pandas as pd
+        import pyarrow.parquet as pq
 
         table_path = provider._data_dir / f"{table_name}.parquet"  # type: ignore[attr-defined]
         if not table_path.exists():
             return set()
-        df = pd.read_parquet(table_path)
-        if df.empty or not {"hylak_id", "status"}.issubset(df.columns):
-            return set(candidate_ids)
-        done_df = df[
-            (df["hylak_id"] >= chunk_start)
-            & (df["hylak_id"] < chunk_end)
-            & (df["status"] == "done")
-        ]
-        return set(done_df["hylak_id"].astype(int).tolist())
+        pf = pq.ParquetFile(table_path)
+        table = pf.read(
+            columns=["hylak_id"],
+            filters=[
+                ("hylak_id", ">=", chunk_start),
+                ("hylak_id", "<", chunk_end),
+                ("status", "==", "done"),
+            ],
+        )
+        df = table.to_pandas()
+        if df.empty:
+            return set()
+        return set(df["hylak_id"].astype(int).tolist())
     try:
         rows = provider.fetch_rows(table_name, chunk_start, chunk_end)  # type: ignore[attr-defined]
     except AttributeError:
