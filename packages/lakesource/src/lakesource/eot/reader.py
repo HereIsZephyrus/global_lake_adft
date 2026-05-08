@@ -131,8 +131,17 @@ def _fetch_and_cache(
 
 
 def fetch_available_quantiles(config: SourceConfig) -> pd.DataFrame:
-    if config.backend != Backend.POSTGRES:
-        raise NotImplementedError("Parquet backend for EOT quantiles is not yet implemented")
+    if config.backend == Backend.PARQUET:
+        import duckdb
+        con = duckdb.connect(":memory:")
+        data_dir = str(config.data_dir)
+        try:
+            df = con.execute(
+                f"SELECT DISTINCT tail, threshold_quantile FROM read_parquet('{data_dir}/eot_results.parquet') ORDER BY 1, 2"
+            ).fetchdf()
+        finally:
+            con.close()
+        return df
     from lakesource.postgres import series_db
 
     with series_db.connection_context() as conn:
