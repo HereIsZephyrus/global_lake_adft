@@ -32,8 +32,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from lakesource.config import SourceConfig
-from lakesource.provider import create_provider
 
 log = logging.getLogger(__name__)
 

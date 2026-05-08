@@ -10,11 +10,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from psycopg import sql as psql
 
-from lakesource.config import Backend, SourceConfig
+from lakesource.config import SourceConfig
 from lakesource.table_config import TableConfig
 
 log = logging.getLogger(__name__)

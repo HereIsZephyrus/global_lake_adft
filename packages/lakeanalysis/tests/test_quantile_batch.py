@@ -10,12 +10,10 @@ from lakesource.quantile.schema import (
 )
 from lakesource.quantile.store import make_run_status_row
 from lakesource.provider.base import LakeProvider
-from lakesource.config import Backend, SourceConfig
 from lakeanalysis.batch import (
     Engine,
     LakeTask,
     RangeFilter,
-    RunReport,
 )
 from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakeanalysis.batch.calculator.quantile import QuantileCalculator

@@ -10,7 +10,6 @@ import logging
 from decimal import Decimal
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from psycopg import sql as psql
 

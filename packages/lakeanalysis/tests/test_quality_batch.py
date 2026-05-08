@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from lakeanalysis.quality.batch import QualityCalculator, QualityRunConfig, QualityTask
-from lakeanalysis.batch.engine import LakeTask
+from lakeanalysis.quality.batch import QualityCalculator, QualityRunConfig
 
 
 @pytest.fixture

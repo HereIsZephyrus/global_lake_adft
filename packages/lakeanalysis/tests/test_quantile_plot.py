@@ -1,3 +1,5 @@
+"""Tests for quantile batch plot generation."""
+
 from pathlib import Path
 
 import matplotlib
@@ -5,10 +7,14 @@ import pandas as pd
 
 matplotlib.use("Agg")
 
-from lakeanalysis.quantile import save_lake_plots, save_summary_plots
+# pylint: disable=wrong-import-position
+from lakeanalysis.quantile import save_lake_plots, save_summary_plots, write_summary_cache
+from lakeanalysis.quantile.summary import cache_root_for
+# pylint: enable=wrong-import-position
 
 
 def build_plot_inputs() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build minimal label and transition DataFrames for plot tests."""
     labels_df = pd.DataFrame(
         [
             {
@@ -66,9 +72,27 @@ def build_plot_inputs() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def test_save_plot_outputs(tmp_path: Path) -> None:
+    """Verify lake-level and summary plots are saved as non-empty files."""
     labels_df, transitions_df = build_plot_inputs()
     lake_paths = save_lake_plots(labels_df, transitions_df, tmp_path, hylak_id=101)
-    summary_paths = save_summary_plots(transitions_df, tmp_path)
+    cache_root = cache_root_for(tmp_path)
+    write_summary_cache(
+        cache_root,
+        transition_counts=pd.DataFrame(
+            [{"transition_type": "low_to_high", "count": 1}]
+        ),
+        transition_seasonality=pd.DataFrame(
+            [{"to_month": 2, "count": 1}]
+        ),
+        lake_transition_counts=pd.DataFrame(
+            [{"hylak_id": 101, "transition_count": 1}]
+        ),
+        lake_extreme_counts=pd.DataFrame(
+            [{"hylak_id": 101, "extreme_count": 2}]
+        ),
+        run_metadata={"done_count": 1, "error_count": 0},
+    )
+    summary_paths = save_summary_plots(cache_root, tmp_path)
 
     for output_path in list(lake_paths.values()) + list(summary_paths.values()):
         assert output_path.exists()

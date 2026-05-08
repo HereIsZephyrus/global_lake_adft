@@ -1,11 +1,10 @@
 """Cross-table queries for area_anomalies and area_quality lookups."""
 from __future__ import annotations
-from typing import Any
 import logging
 import psycopg
 from psycopg import sql
 from lakesource.table_config import TableConfig
-from lakesource.postgres.sql_templates import CHUNK_WHERE, year_month_key_sql
+from lakesource.postgres.sql_templates import CHUNK_WHERE
 _default_table_config = TableConfig.default()
 
 log = logging.getLogger(__name__)
