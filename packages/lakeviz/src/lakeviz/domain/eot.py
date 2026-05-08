@@ -10,15 +10,14 @@ from __future__ import annotations
 import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 from lakeviz.draw.line import draw_line
 from lakeviz.draw.scatter import draw_scatter
 from lakeviz.draw.fill import draw_fill_between
-from lakeviz.draw.reference import draw_axhline, draw_axvline, draw_diagonal
+from lakeviz.draw.reference import draw_axhline, draw_diagonal
 from lakeviz.draw.annotate import draw_annotate_point
-from lakeviz.style.base import AxisStyle, apply_axis_style, AxKind, stamp_ax
+from lakeviz.style.base import AxisStyle, apply_axis_style
 from lakeviz.style.line import LineStyle
 from lakeviz.style.scatter import ScatterStyle
 from lakeviz.style.reference import ReferenceLineStyle
@@ -374,7 +373,7 @@ def plot_location_model(
     return fig
 
 
-def plot_eot_extremes_from_db(
+def plot_eot_extremes(
     hylak_id: int,
     series_df: pd.DataFrame,
     extremes_df: pd.DataFrame,

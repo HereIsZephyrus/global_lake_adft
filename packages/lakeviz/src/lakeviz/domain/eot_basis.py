@@ -35,7 +35,11 @@ def draw_candidate_scores(
 
     draw_bar(ax_score, names, scores, style=BarStyle(), colors=colors)
     if score_axis is None:
-        score_axis = AxisStyle(title=f"候选模型{criterion.upper()}对比", ylabel=criterion.upper(), x_rotation=20)
+        score_axis = AxisStyle(
+            title=f"候选模型{criterion.upper()}对比",
+            ylabel=criterion.upper(),
+            x_rotation=20,
+        )
     apply_axis_style(ax_score, score_axis)
 
     draw_bar(ax_rmse, names, rmse, style=BarStyle(), colors=colors)

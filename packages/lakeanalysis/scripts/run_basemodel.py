@@ -18,15 +18,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.basemodel import (
+from lakeanalysis.eot import (
     BasisSelectionResult,
     BasisSelector,
+    MonthlyTimeSeries,
     plot_basis_fit,
     plot_candidate_scores,
     plot_residuals,
 )
 from lakesource.postgres import fetch_lake_area, fetch_lake_area_by_ids, series_db
-from lakeanalysis.eot.preprocess import MonthlyTimeSeries
 from lakeanalysis.logger import Logger
 from lakeviz.style.presets import Theme
 

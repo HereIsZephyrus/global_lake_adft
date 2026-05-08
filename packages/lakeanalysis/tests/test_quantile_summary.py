@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 
 from lakeanalysis.quantile import (
     load_summary_cache,
-    save_summary_plots_from_cache,
+    save_summary_plots,
     write_summary_cache,
 )
 
@@ -52,7 +52,7 @@ def test_summary_cache_roundtrip_and_plots(tmp_path: Path) -> None:
     assert set(loaded["transition_counts"]["transition_type"]) == {"low_to_high", "high_to_low"}
     assert len(loaded["transition_seasonality"]) == 12
 
-    plot_paths = save_summary_plots_from_cache(cache_root, output_root)
+    plot_paths = save_summary_plots(cache_root, output_root)
     for path in plot_paths.values():
         assert path.exists()
         assert path.stat().st_size > 0

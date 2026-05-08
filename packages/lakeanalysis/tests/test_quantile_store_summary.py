@@ -12,7 +12,7 @@ from lakeanalysis.quantile import (
     result_to_extreme_rows,
     result_to_label_rows,
     result_to_transition_rows,
-    save_summary_plots_from_cache,
+    save_summary_plots,
     write_summary_cache,
 )
 
@@ -111,7 +111,7 @@ def test_summary_cache_and_plots_roundtrip(tmp_path: Path) -> None:
     )
 
     loaded = load_summary_cache(tmp_path / "summary_cache")
-    plot_paths = save_summary_plots_from_cache(
+    plot_paths = save_summary_plots(
         cache_root=tmp_path / "summary_cache",
         output_root=tmp_path / "summary",
     )

@@ -12,7 +12,7 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import genpareto
 
-from lakeanalysis.basemodel import BaseBasis, BasisSelector, HarmonicBasis
+from .basis import BaseBasis, BasisSelector, HarmonicBasis
 from .preprocess import (
     FrozenPlateauSchedule,
     DeclusteringStrategy,

@@ -17,8 +17,14 @@ from lakeviz.eot import (
     plot_qq as _plot_qq,
     plot_return_levels as _plot_return_levels,
     plot_location_model as _plot_location_model,
-    plot_eot_extremes_from_db as _plot_eot_extremes_from_db,
+    plot_eot_extremes as _plot_eot_extremes,
 )
+from lakeviz.eot._basemodel import (
+    plot_candidate_scores as _plot_candidate_scores,
+    plot_basis_fit as _plot_basis_fit,
+    plot_residuals as _plot_residuals,
+)
+from .basis import BasisFitRecord
 from .diagnostics import ModelChecker, ReturnLevelEstimator
 from .estimation import FitResult
 from .preprocess import MonthlyTimeSeries
@@ -99,10 +105,36 @@ def plot_location_model(fit_result: FitResult, n_points: int = 400):
     )
 
 
-def plot_eot_extremes_from_db(hylak_id, series_df, extremes_df, annotate_top_n_each_tail=8):
-    return _plot_eot_extremes_from_db(
+def plot_eot_extremes(hylak_id, series_df, extremes_df, annotate_top_n_each_tail=8):
+    return _plot_eot_extremes(
         hylak_id=hylak_id,
         series_df=series_df,
         extremes_df=extremes_df,
         annotate_top_n_each_tail=annotate_top_n_each_tail,
     )
+
+
+# ---------------------------------------------------------------------------
+# Basemodel plot adapters
+# ---------------------------------------------------------------------------
+
+
+def plot_candidate_scores(records: tuple[BasisFitRecord, ...], criterion: str, selected_basis_name: str):
+    scores_df = pd.DataFrame([
+        {
+            "basis_name": item.basis_name,
+            "aic": float(item.aic),
+            "bic": float(item.bic),
+            "rmse": float(item.rmse),
+        }
+        for item in records
+    ])
+    return _plot_candidate_scores(scores_df, criterion, selected_basis_name)
+
+
+def plot_basis_fit(fit_frame, selected_basis_name, criterion, relative_rmse):
+    return _plot_basis_fit(fit_frame, selected_basis_name, criterion, relative_rmse)
+
+
+def plot_residuals(fit_frame):
+    return _plot_residuals(fit_frame)
