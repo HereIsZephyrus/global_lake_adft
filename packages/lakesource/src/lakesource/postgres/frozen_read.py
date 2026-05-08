@@ -1,6 +1,5 @@
 """Database operations for frozen anomaly month reads."""
 from __future__ import annotations
-from typing import Any
 import logging
 import psycopg
 from psycopg import sql

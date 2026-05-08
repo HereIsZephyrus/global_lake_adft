@@ -19,15 +19,21 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
+from pathlib import Path
 
 import pytest
 
 
+def _uv_python() -> str:
+    """Return the uv-managed Python interpreter path for MPI subprocesses."""
+    return str(Path(__file__).resolve().parents[4] / ".venv" / "bin" / "python")
+
+
 @pytest.fixture(scope="session")
 def mpi_available():
+    """Skip the test session if mpi4py or mpiexec are not available."""
     try:
-        from mpi4py import MPI  # noqa: F401
+        from mpi4py import MPI  # noqa: F401  # pylint: disable=import-outside-toplevel,unused-import
     except ImportError:
         pytest.skip("mpi4py not installed")
     try:
@@ -35,13 +41,17 @@ def mpi_available():
             ["mpiexec", "--version"],
             capture_output=True,
             timeout=10,
+            check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pytest.skip("mpiexec not available")
 
 
-def _run_mpi_batch(script_name: str, algorithm: str, id_start: int, id_end: int,
-                   np: int, chunk_size: int, timeout: int = 300) -> subprocess.CompletedProcess:
+def _run_mpi_batch(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    script_name: str, id_start: int, id_end: int,
+    *,
+    np: int, chunk_size: int, timeout: int = 300,
+) -> subprocess.CompletedProcess[str]:
     script = os.path.join(
         os.path.dirname(__file__),
         "..", "..", "scripts", script_name,
@@ -52,7 +62,7 @@ def _run_mpi_batch(script_name: str, algorithm: str, id_start: int, id_end: int,
         "mpiexec",
         "--oversubscribe",
         "-np", str(np),
-        sys.executable,
+        _uv_python(),
         script,
         "--chunk-size", str(chunk_size),
         "--limit-id", str(id_end),
@@ -68,6 +78,7 @@ def _run_mpi_batch(script_name: str, algorithm: str, id_start: int, id_end: int,
         text=True,
         timeout=timeout,
         env=env,
+        check=False,
     )
     return result
 
@@ -84,7 +95,7 @@ def test_mpi_quantile_smoke(id_range, sample_hylak_ids, cleanup_algorithm_rows, 
     cleanup_algorithm_rows.register("quantile")
 
     result = _run_mpi_batch(
-        "run_quantile.py", "quantile",
+        "run_quantile.py",
         id_start, id_end,
         np=4, chunk_size=3,
     )
@@ -116,7 +127,7 @@ def test_mpi_chunk_range_isolation(id_range, sample_hylak_ids, cleanup_algorithm
     cleanup_algorithm_rows.register("quantile")
 
     result = _run_mpi_batch(
-        "run_quantile.py", "quantile",
+        "run_quantile.py",
         id_start, id_end,
         np=4, chunk_size=2,
     )
@@ -163,7 +174,7 @@ def test_mpi_no_deadlock_on_write(id_range, sample_hylak_ids, cleanup_algorithm_
         "mpiexec",
         "--oversubscribe",
         "-np", "4",
-        sys.executable,
+        _uv_python(),
         script,
         "--chunk-size", "2",
         "--limit-id", str(id_end),
@@ -180,6 +191,7 @@ def test_mpi_no_deadlock_on_write(id_range, sample_hylak_ids, cleanup_algorithm_
         text=True,
         timeout=120,
         env=env,
+        check=False,
     )
 
     assert result.returncode == 0, (

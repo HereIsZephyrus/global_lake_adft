@@ -25,7 +25,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from lakesource.config import SourceConfig
 
 log = logging.getLogger(__name__)
 

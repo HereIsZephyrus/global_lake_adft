@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 
 class TestLakeModulesImport:
@@ -112,8 +111,6 @@ class TestAreaQualityExports:
             RUN_STATUS_DONE,
             RUN_STATUS_ERROR,
             make_quality_run_status_row,
-            ensure_quality_run_status_table,
-            upsert_quality_run_status,
         )
         assert RUN_STATUS_DONE == "done"
         assert RUN_STATUS_ERROR == "error"

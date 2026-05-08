@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pandas as pd
 from lakesource.table_config import TableConfig
 
 

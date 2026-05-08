@@ -5,7 +5,6 @@ import logging
 import psycopg
 from psycopg import sql
 from lakesource.table_config import TableConfig
-from lakesource.postgres.sql_templates import CHUNK_WHERE, year_month_key_sql
 _default_table_config = TableConfig.default()
 
 log = logging.getLogger(__name__)
