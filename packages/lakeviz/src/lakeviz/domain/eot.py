@@ -374,7 +374,7 @@ def plot_location_model(
     return fig
 
 
-def plot_eot_extremes_from_db(
+def plot_eot_extremes(
     hylak_id: int,
     series_df: pd.DataFrame,
     extremes_df: pd.DataFrame,

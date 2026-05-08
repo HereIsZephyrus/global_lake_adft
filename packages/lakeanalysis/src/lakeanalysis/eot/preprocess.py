@@ -11,7 +11,7 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import genpareto
 
-from lakeanalysis.basemodel import BaseBasis, HarmonicBasis
+from .basis import BaseBasis, HarmonicBasis
 from lakeanalysis.quality.frozen import (
     FrozenPlateauSchedule,
     apply_frozen_plateau,

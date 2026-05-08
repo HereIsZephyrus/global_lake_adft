@@ -7,7 +7,7 @@ no lakeanalysis domain types are required.
 from __future__ import annotations
 
 from lakeviz.style.presets import Theme
-from lakeviz.domain.basemodel import (
+from lakeviz.domain.eot_basis import (
     plot_basis_fit as _plot_basis_fit,
     plot_candidate_scores as _plot_candidate_scores,
     plot_residuals as _plot_residuals,

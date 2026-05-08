@@ -11,9 +11,9 @@ from lakeviz.domain.quantile import (
     plot_anomaly_timeline as _plot_anomaly_timeline,
     plot_monthly_timeline as _plot_monthly_timeline,
     plot_transition_count_summary as _plot_transition_count_summary,
-    plot_transition_count_summary_from_cache as _plot_transition_count_summary_from_cache,
+    plot_transition_count_summary_precomputed as _plot_transition_count_summary_precomputed,
     plot_transition_seasonality_summary as _plot_transition_seasonality_summary,
-    plot_transition_seasonality_summary_from_cache as _plot_transition_seasonality_summary_from_cache,
+    plot_transition_seasonality_summary_precomputed as _plot_transition_seasonality_summary_precomputed,
 )
 from lakeviz.layout import save as _save
 from lakeviz.style.presets import Theme
@@ -34,9 +34,9 @@ def plot_transition_count_summary(transitions_df):
     return _plot_transition_count_summary(transitions_df)
 
 
-def plot_transition_count_summary_from_cache(counts_df):
+def plot_transition_count_summary_precomputed(counts_df):
     Theme.apply()
-    return _plot_transition_count_summary_from_cache(counts_df)
+    return _plot_transition_count_summary_precomputed(counts_df)
 
 
 def plot_transition_seasonality_summary(transitions_df):
@@ -44,9 +44,9 @@ def plot_transition_seasonality_summary(transitions_df):
     return _plot_transition_seasonality_summary(transitions_df)
 
 
-def plot_transition_seasonality_summary_from_cache(seasonality_df):
+def plot_transition_seasonality_summary_precomputed(seasonality_df):
     Theme.apply()
-    return _plot_transition_seasonality_summary_from_cache(seasonality_df)
+    return _plot_transition_seasonality_summary_precomputed(seasonality_df)
 
 
 def plot_adft_fallback(hylak_id, series_df, adft_df):
@@ -106,9 +106,9 @@ __all__ = [
     "plot_monthly_timeline",
     "plot_anomaly_timeline",
     "plot_transition_count_summary",
-    "plot_transition_count_summary_from_cache",
+    "plot_transition_count_summary_precomputed",
     "plot_transition_seasonality_summary",
-    "plot_transition_seasonality_summary_from_cache",
+    "plot_transition_seasonality_summary_precomputed",
     "save_lake_plots",
     "save_summary_plots",
     "plot_adft_fallback",

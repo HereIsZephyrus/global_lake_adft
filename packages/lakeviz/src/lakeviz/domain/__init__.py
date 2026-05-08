@@ -22,12 +22,12 @@ from .quantile import (
     draw_monthly_timeline,
     draw_anomaly_timeline,
     draw_transition_count_summary,
-    draw_transition_count_summary_from_cache,
+    draw_transition_count_summary_precomputed,
     draw_transition_seasonality_summary,
-    draw_transition_seasonality_summary_from_cache,
+    draw_transition_seasonality_summary_precomputed,
     draw_adft_fallback,
 )
-from .basemodel import (
+from .eot_basis import (
     draw_candidate_scores,
     draw_basis_fit,
     draw_residuals,
@@ -73,9 +73,9 @@ __all__ = [
     "draw_monthly_timeline",
     "draw_anomaly_timeline",
     "draw_transition_count_summary",
-    "draw_transition_count_summary_from_cache",
+    "draw_transition_count_summary_precomputed",
     "draw_transition_seasonality_summary",
-    "draw_transition_seasonality_summary_from_cache",
+    "draw_transition_seasonality_summary_precomputed",
     "draw_adft_fallback",
     "draw_candidate_scores",
     "draw_basis_fit",

@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from lakesource.postgres import fetch_lake_area_by_ids, series_db
-from lakeanalysis.eot import plot_eot_extremes_from_db
+from lakeanalysis.eot import plot_eot_extremes
 from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
@@ -277,7 +277,7 @@ def _plot_short_memory_cases(
         events_df = _load_events_from_case(case_output_dir)
         if events_df.empty:
             continue
-        fig = plot_eot_extremes_from_db(
+        fig = plot_eot_extremes(
             hylak_id=hylak_id,
             series_df=series_df,
             extremes_df=events_df,

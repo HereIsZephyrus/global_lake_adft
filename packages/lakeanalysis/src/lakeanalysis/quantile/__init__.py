@@ -16,9 +16,9 @@ from lakeviz.quantile import (
     plot_anomaly_timeline,
     plot_monthly_timeline,
     plot_transition_count_summary,
-    plot_transition_count_summary_from_cache,
+    plot_transition_count_summary_precomputed,
     plot_transition_seasonality_summary,
-    plot_transition_seasonality_summary_from_cache,
+    plot_transition_seasonality_summary_precomputed,
     save_lake_plots,
     save_summary_plots,
 )
@@ -44,7 +44,7 @@ from .store import (
 from .summary import (
     SummaryAccumulator,
     load_summary_cache,
-    save_summary_plots_from_cache,
+    save_summary_plots,
     write_summary_cache,
 )
 
@@ -65,14 +65,14 @@ __all__ = [
     "plot_monthly_timeline",
     "plot_anomaly_timeline",
     "plot_transition_count_summary",
-    "plot_transition_count_summary_from_cache",
+    "plot_transition_count_summary_precomputed",
     "plot_transition_seasonality_summary",
-    "plot_transition_seasonality_summary_from_cache",
+    "plot_transition_seasonality_summary_precomputed",
     "save_lake_plots",
     "save_summary_plots",
     "write_summary_cache",
     "load_summary_cache",
-    "save_summary_plots_from_cache",
+    "save_summary_plots",
     "SummaryAccumulator",
     "RUN_STATUS_DONE",
     "RUN_STATUS_ERROR",

@@ -43,7 +43,7 @@ from lakeviz.domain.quantile import (
     draw_transition_count_summary, draw_transition_seasonality_summary,
     draw_adft_fallback,
 )
-from lakeviz.domain.basemodel import (
+from lakeviz.domain.eot_basis import (
     draw_candidate_scores, draw_basis_fit, draw_residuals,
 )
 from lakeviz.domain.entropy import (

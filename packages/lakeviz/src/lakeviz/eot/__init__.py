@@ -8,7 +8,7 @@ from .global_map import (
     plot_eot_xi_map,
 )
 from .plot import (
-    plot_eot_extremes_from_db,
+    plot_eot_extremes,
     plot_extremes_timeline,
     plot_extremes_with_hawkes,
     plot_location_model,
@@ -32,6 +32,6 @@ __all__ = [
     "plot_qq",
     "plot_return_levels",
     "plot_location_model",
-    "plot_eot_extremes_from_db",
+    "plot_eot_extremes",
     "plot_extremes_with_hawkes",
 ]

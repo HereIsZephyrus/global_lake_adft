@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from lakeviz.domain.eot import (
-    plot_eot_extremes as plot_eot_extremes_from_db,
+    plot_eot_extremes,
     plot_extremes_timeline,
     plot_extremes_with_hawkes,
     plot_location_model,
@@ -23,6 +23,6 @@ __all__ = [
     "plot_qq",
     "plot_return_levels",
     "plot_location_model",
-    "plot_eot_extremes_from_db",
+    "plot_eot_extremes",
     "plot_extremes_with_hawkes",
 ]

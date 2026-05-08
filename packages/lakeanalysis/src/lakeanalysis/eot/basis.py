@@ -1,16 +1,128 @@
-"""Automatic baseline model selection."""
+"""Periodic basis models and automatic model selection for EOT."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import logging
 
 import numpy as np
 
-from .basic import BaseBasis, BasisFitRecord
-from .harmonic import HarmonicBasis
-
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# BasisFitRecord
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BasisFitRecord:
+    """Store fit diagnostics for one candidate basis model."""
+
+    basis_name: str
+    rmse: float
+    aic: float
+    bic: float
+    n_params: int
+    converged: bool
+    message: str = ""
+
+
+# ---------------------------------------------------------------------------
+# BaseBasis
+# ---------------------------------------------------------------------------
+
+
+class BaseBasis(ABC):
+    """Abstract periodic basis model used by EOT design matrices."""
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """Return a short model identifier."""
+
+    @property
+    @abstractmethod
+    def parameter_names(self) -> tuple[str, ...]:
+        """Return ordered names for basis-specific parameters."""
+
+    @abstractmethod
+    def design_columns(self, times: np.ndarray) -> np.ndarray:
+        """Return basis-only design columns with shape (n_obs, n_features)."""
+
+    @property
+    def n_features(self) -> int:
+        """Return the number of basis-specific features."""
+        return len(self.parameter_names)
+
+    def build_design_matrix(
+        self,
+        times: np.ndarray,
+        include_trend: bool = True,
+        include_intercept: bool = True,
+    ) -> np.ndarray:
+        """Build a full linear design matrix from this basis."""
+        times = np.asarray(times, dtype=float)
+        columns: list[np.ndarray] = []
+        if include_intercept:
+            columns.append(np.ones_like(times))
+        if include_trend:
+            columns.append(times)
+        basis_columns = self.design_columns(times)
+        if basis_columns.ndim != 2 or basis_columns.shape[0] != len(times):
+            raise ValueError(
+                "design_columns must return a 2-D array with row count equal to len(times)"
+            )
+        if basis_columns.shape[1] > 0:
+            columns.extend(
+                [basis_columns[:, idx] for idx in range(basis_columns.shape[1])]
+            )
+        return np.column_stack(columns)
+
+
+# ---------------------------------------------------------------------------
+# HarmonicBasis
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HarmonicBasis(BaseBasis):
+    """Use sine and cosine harmonics as periodic basis features."""
+
+    n_harmonics: int = 1
+
+    def __post_init__(self) -> None:
+        if self.n_harmonics < 1:
+            raise ValueError("n_harmonics must be >= 1")
+
+    @property
+    def model_name(self) -> str:
+        """Return the model identifier."""
+        return f"harmonic_{self.n_harmonics}"
+
+    @property
+    def parameter_names(self) -> tuple[str, ...]:
+        """Return basis parameter names."""
+        names: list[str] = []
+        for harmonic in range(1, self.n_harmonics + 1):
+            names.extend([f"sin_{harmonic}", f"cos_{harmonic}"])
+        return tuple(names)
+
+    def design_columns(self, times: np.ndarray) -> np.ndarray:
+        """Build harmonic columns for the supplied times."""
+        times = np.asarray(times, dtype=float)
+        columns: list[np.ndarray] = []
+        for harmonic in range(1, self.n_harmonics + 1):
+            frequency = 2.0 * np.pi * harmonic
+            columns.append(np.sin(frequency * times))
+            columns.append(np.cos(frequency * times))
+        return np.column_stack(columns)
+
+
+# ---------------------------------------------------------------------------
+# BasisSelectionResult
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -29,6 +141,11 @@ class BasisSelectionResult:
     def used_fallback(self) -> bool:
         """Return True when selector had to degrade from ideal logic."""
         return self.fallback_reason is not None
+
+
+# ---------------------------------------------------------------------------
+# BasisSelector
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -54,7 +171,9 @@ class BasisSelector:
         if not self.candidates:
             raise ValueError("At least one candidate basis model is required")
 
-    def _fit_record(self, times: np.ndarray, values: np.ndarray, basis: BaseBasis) -> BasisFitRecord:
+    def _fit_record(
+        self, times: np.ndarray, values: np.ndarray, basis: BaseBasis
+    ) -> BasisFitRecord:
         """Fit one candidate basis by least squares and return diagnostics."""
         design = basis.build_design_matrix(times, include_trend=self.include_trend)
         n_obs = len(values)
@@ -116,7 +235,9 @@ class BasisSelector:
         times = np.asarray(times, dtype=float)
         values = np.asarray(values, dtype=float)
         if times.ndim != 1 or values.ndim != 1 or len(times) != len(values):
-            raise ValueError("times and values must be one-dimensional arrays of equal length")
+            raise ValueError(
+                "times and values must be one-dimensional arrays of equal length"
+            )
         if len(times) < 3:
             raise ValueError("Too few observations to select a periodic basis.")
 
@@ -141,7 +262,8 @@ class BasisSelector:
         if relative_rmse > self.max_relative_rmse:
             reason = (
                 "Best candidate error is too large: "
-                f"relative_rmse={relative_rmse:.4g} > max_relative_rmse={self.max_relative_rmse:.4g}"
+                f"relative_rmse={relative_rmse:.4g}"
+                f" > max_relative_rmse={self.max_relative_rmse:.4g}"
             )
             log.warning("Basis selection degrades to best harmonic candidate: %s", reason)
             return BasisSelectionResult(

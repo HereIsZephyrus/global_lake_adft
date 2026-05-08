@@ -15,8 +15,8 @@ import pandas as pd
 from lakesource.quantile.schema import QuantileResult
 
 from lakeviz.quantile import (
-    plot_transition_count_summary_from_cache,
-    plot_transition_seasonality_summary_from_cache,
+    plot_transition_count_summary_precomputed,
+    plot_transition_seasonality_summary_precomputed,
 )
 
 
@@ -58,7 +58,7 @@ class SummaryAccumulator:
         self.done_count += other.done_count
         self.error_count += other.error_count
 
-    def to_cache_payload(self) -> dict[str, pd.DataFrame | dict[str, Any]]:
+    def to_summary_tables(self) -> dict[str, pd.DataFrame | dict[str, Any]]:
         """Convert the accumulator to cache payload tables."""
         return {
             "transition_counts": pd.DataFrame(
@@ -227,7 +227,7 @@ def load_summary_cache(cache_root: Path) -> dict[str, Any]:
     }
 
 
-def save_summary_plots_from_cache(cache_root: Path, output_root: Path) -> dict[str, Path]:
+def save_summary_plots(cache_root: Path, output_root: Path) -> dict[str, Path]:
     """Generate global summary figures from cached summary files."""
     cache = load_summary_cache(cache_root)
     counts_df = _normalize_transition_counts(cache["transition_counts"])
@@ -237,11 +237,11 @@ def save_summary_plots_from_cache(cache_root: Path, output_root: Path) -> dict[s
     count_path = output_root / "transition_count_summary.png"
     seasonality_path = output_root / "transition_seasonality.png"
 
-    fig = plot_transition_count_summary_from_cache(counts_df)
+    fig = plot_transition_count_summary_precomputed(counts_df)
     fig.savefig(count_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
-    fig = plot_transition_seasonality_summary_from_cache(seasonality_df)
+    fig = plot_transition_seasonality_summary_precomputed(seasonality_df)
     fig.savefig(seasonality_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 

@@ -15,7 +15,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 from lakesource.postgres import fetch_eot_extremes_by_id, fetch_lake_area_by_ids, series_db
-from lakeanalysis.eot import plot_eot_extremes_from_db
+from lakeanalysis.eot import plot_eot_extremes
 from lakeanalysis.logger import Logger
 from lakeviz.style.presets import Theme
 
@@ -81,7 +81,7 @@ def run(args: argparse.Namespace) -> Path:
 
     Theme.apply()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    fig = plot_eot_extremes_from_db(
+    fig = plot_eot_extremes(
         hylak_id=args.hylak_id,
         series_df=series_df,
         extremes_df=extremes_df,

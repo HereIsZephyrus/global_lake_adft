@@ -123,7 +123,7 @@ def draw_transition_count_summary(
     apply_axis_style(ax, axis_style)
 
 
-def draw_transition_count_summary_from_cache(
+def draw_transition_count_summary_precomputed(
     ax: plt.Axes,
     counts_df: pd.DataFrame,
     *,
@@ -153,7 +153,7 @@ def draw_transition_seasonality_summary(
     apply_axis_style(ax, axis_style)
 
 
-def draw_transition_seasonality_summary_from_cache(
+def draw_transition_seasonality_summary_precomputed(
     ax: plt.Axes,
     seasonality_df: pd.DataFrame,
     *,
@@ -261,9 +261,9 @@ def plot_transition_count_summary(transitions_df) -> plt.Figure:
     return fig
 
 
-def plot_transition_count_summary_from_cache(counts_df) -> plt.Figure:
+def plot_transition_count_summary_precomputed(counts_df) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(8, 5))
-    draw_transition_count_summary_from_cache(ax, counts_df)
+    draw_transition_count_summary_precomputed(ax, counts_df)
     fig.tight_layout()
     return fig
 
@@ -275,9 +275,9 @@ def plot_transition_seasonality_summary(transitions_df) -> plt.Figure:
     return fig
 
 
-def plot_transition_seasonality_summary_from_cache(seasonality_df) -> plt.Figure:
+def plot_transition_seasonality_summary_precomputed(seasonality_df) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 5))
-    draw_transition_seasonality_summary_from_cache(ax, seasonality_df)
+    draw_transition_seasonality_summary_precomputed(ax, seasonality_df)
     fig.tight_layout()
     return fig
 
