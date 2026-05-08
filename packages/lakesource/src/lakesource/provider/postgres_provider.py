@@ -146,6 +146,14 @@ class PostgresLakeProvider(LakeProvider):
         repo = getattr(self._be, repo_name)
         getattr(repo, method_name)()
 
+        # Side-effect: area_quality also ensures area_anomalies
+        if table_name == "area_quality":
+            self._be.anomalies.ensure_area_anomalies_table()
+        # Side-effect: comparison also ensures quantile and pwm tables
+        if table_name == "comparison":
+            self._be.quantile.ensure_quantile_tables()
+            self._be.pwm.ensure_pwm_extreme_tables()
+
     def truncate_table(self, table_name: str) -> None:
         self._be.shift_labels.truncate_area_shift_labels() if table_name == "area_shift_labels" else exec_raw_truncate(table_name, self._conn)
 

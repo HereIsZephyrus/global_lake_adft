@@ -32,7 +32,7 @@ class PostgresQualityWriteRepository:
             return _mod.count_area_quality_hylak_ids_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
     def delete_area_quality_by_ids(self, hylak_ids):
-        from lakesource.postgres import area_quality_schema as _mod
+        from lakesource.postgres import area_anomalies_schema as _mod
         params = {"id_list": hylak_ids}
         with self._conn_factory() as conn:
             with conn.cursor() as cur:

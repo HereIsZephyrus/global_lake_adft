@@ -51,7 +51,7 @@ class PostgresMetadataReadRepository:
             return _mod.fetch_source_hylak_ids_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
     def fetch_frozen_year_months_chunk(self, chunk_start, chunk_end):
-        from lakesource.postgres import lake_info_read as _mod
+        from lakesource.postgres import frozen_read as _mod
         with self._conn_factory() as conn:
             return _mod.fetch_frozen_year_months_chunk(conn, chunk_start, chunk_end, table_config=self._tc)
 
