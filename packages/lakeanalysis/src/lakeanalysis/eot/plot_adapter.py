@@ -26,8 +26,8 @@ from lakeviz.eot._basemodel import (
 )
 from .basis import BasisFitRecord
 from .diagnostics import ModelChecker, ReturnLevelEstimator
-from .estimation import FitResult
-from .preprocess import MonthlyTimeSeries
+from .models import FitResult
+from .series import MonthlyTimeSeries
 
 
 def plot_mrl(mrl_df):

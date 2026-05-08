@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
+
+import pandas as pd
 
 from lakesource.config import SourceConfig
 from lakeanalysis.batch import (
@@ -14,6 +17,7 @@ from lakeanalysis.batch import (
 )
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
+from lakeanalysis.quantile import QuantileServiceConfig, run_single_lake_service
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +35,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-valid-observations", type=int, default=None)
     parser.add_argument("--io-budget", type=int, default=4, help="Max concurrent DB IO workers.")
     return parser.parse_args()
+
+
+def run(args: argparse.Namespace) -> dict[str, Path]:
+    """Run the legacy single-lake CSV workflow used by tests.
+
+    This preserves the historical script-level interface while the default CLI
+    entrypoint continues to use the batch engine.
+    """
+    if getattr(args, "csv", None) is None:
+        raise ValueError("args.csv is required for single-lake runner mode")
+    if getattr(args, "hylak_id", None) is None:
+        raise ValueError("args.hylak_id is required for single-lake runner mode")
+
+    series_df = pd.read_csv(args.csv)
+    lake_df = series_df.loc[series_df["hylak_id"] == args.hylak_id].copy()
+    if lake_df.empty:
+        raise ValueError(f"No rows found for hylak_id={args.hylak_id}")
+
+    config = QuantileServiceConfig(
+        min_valid_per_month=args.min_valid_per_month,
+        min_valid_observations=args.min_valid_observations,
+    )
+    result = run_single_lake_service(
+        lake_df,
+        hylak_id=args.hylak_id,
+        config=config,
+    )
+
+    output_root = Path(args.output_root)
+    lake_dir = output_root / str(args.hylak_id)
+    lake_dir.mkdir(parents=True, exist_ok=True)
+
+    month_labels_path = lake_dir / "month_labels.csv"
+    result.labels_df.to_csv(month_labels_path, index=False)
+
+    return {
+        "output_root": output_root,
+        "lake_dir": lake_dir,
+        "month_labels": month_labels_path,
+    }
 
 
 def main() -> None:

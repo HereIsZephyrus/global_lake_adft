@@ -227,11 +227,31 @@ def load_summary_cache(cache_root: Path) -> dict[str, Any]:
     }
 
 
-def save_summary_plots(cache_root: Path, output_root: Path) -> dict[str, Path]:
-    """Generate global summary figures from cached summary files."""
-    cache = load_summary_cache(cache_root)
-    counts_df = _normalize_transition_counts(cache["transition_counts"])
-    seasonality_df = cache["transition_seasonality"]
+def save_summary_plots(
+    cache_root: Path | pd.DataFrame,
+    output_root: Path,
+) -> dict[str, Path]:
+    """Generate global summary figures from cached files or raw transitions.
+
+    Accepting a raw transitions DataFrame preserves the historical plotting API
+    used by existing tests and scripts.
+    """
+    if isinstance(cache_root, pd.DataFrame):
+        transitions_df = cache_root
+        counts_df = _normalize_transition_counts(
+            transitions_df.groupby("transition_type", as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
+        )
+        seasonality_df = _normalize_transition_seasonality(
+            transitions_df.groupby("to_month", as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
+        )
+    else:
+        cache = load_summary_cache(cache_root)
+        counts_df = _normalize_transition_counts(cache["transition_counts"])
+        seasonality_df = cache["transition_seasonality"]
 
     output_root.mkdir(parents=True, exist_ok=True)
     count_path = output_root / "transition_count_summary.png"

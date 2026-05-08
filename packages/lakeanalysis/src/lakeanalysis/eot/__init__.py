@@ -8,7 +8,9 @@ from .basis import (
     HarmonicBasis,
 )
 from .diagnostics import ModelChecker, ReturnLevelEstimator
-from .estimation import EOTEstimator, FitResult, LocationModel, NHPPFitter, NHPPLogLikelihood
+from .estimation import EOTEstimator, NHPPFitter
+from .likelihood import NHPPLogLikelihood
+from .models import FitResult, LocationModel
 from .plot_adapter import (
     plot_candidate_scores,
     plot_basis_fit,
@@ -24,13 +26,12 @@ from .plot_adapter import (
 )
 from .preprocess import (
     DeclusteringStrategy,
-    MonthlyTimeSeries,
     NoDeclustering,
     QuantileThresholdModel,
     RunsDeclustering,
-    TailDirection,
     ThresholdSelector,
 )
+from .series import MonthlyTimeSeries, TailDirection
 
 __all__ = [
     "DeclusteringStrategy",

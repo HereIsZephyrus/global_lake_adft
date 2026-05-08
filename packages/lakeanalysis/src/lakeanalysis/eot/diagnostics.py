@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
-from .estimation import FitResult
+from .models import FitResult
 
 log = logging.getLogger(__name__)
 
