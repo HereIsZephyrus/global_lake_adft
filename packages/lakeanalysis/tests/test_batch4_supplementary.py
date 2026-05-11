@@ -25,7 +25,7 @@ class TestBatchTaskSpec:
         spec = get_batch_task_spec("quantile")
         assert spec.done_table == "quantile_run_status"
         assert spec.done_requires_status is True
-        assert "quantile" in spec.ensure_tables
+        assert "quantile_labels" in spec.ensure_tables
 
     def test_pwm_extreme_spec(self):
         spec = get_batch_task_spec("pwm_extreme")
@@ -37,8 +37,8 @@ class TestBatchTaskSpec:
 
     def test_comparison_spec(self):
         spec = get_batch_task_spec("comparison")
-        assert "comparison" in spec.ensure_tables
-        assert "quantile" in spec.ensure_tables
+        assert "comparison_run_status" in spec.ensure_tables
+        assert "quantile_labels" in spec.ensure_tables
 
     def test_shift_labels_spec(self):
         spec = get_batch_task_spec("shift_labels")
