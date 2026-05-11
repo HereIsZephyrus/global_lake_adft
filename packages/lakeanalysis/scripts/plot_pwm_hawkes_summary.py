@@ -20,8 +20,9 @@ from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "pwm_hawkes" / "diag"
-PLOT_DIR = Path(__file__).resolve().parent.parent / "data" / "pwm_hawkes" / "figures"
+ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR = ROOT / "data" / "pwm_hawkes" / "diag"
+PLOT_DIR = ROOT / "data" / "figures" / "pwm_hawkes"
 
 
 def parse_args() -> argparse.Namespace:

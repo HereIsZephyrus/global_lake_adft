@@ -13,20 +13,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from lakesource.config import SourceConfig
 from lakesource.env import load_env
-from lakesource.postgres import (
-    fetch_hawkes_transition_monthly,
-    fetch_lake_area_by_ids,
-    fetch_pwm_extreme_extremes_by_id,
-    series_db,
-)
+from lakesource.provider import create_provider
 from lakeviz.domain.eot import draw_extremes_with_hawkes
 from lakeviz.style.presets import Theme
 from lakeanalysis.logger import Logger
+from lakeanalysis.pwm_extreme.compute import compute_monthly_thresholds
+from lakesource.pwm_extreme.schema import PWMExtremeConfig
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "pwm_hawkes" / "plots"
+ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR = ROOT / "data" / "figures" / "pwm_hawkes"
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,35 +36,39 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _adapt_extremes(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename PWM extremes columns to match draw_extremes_with_hawkes expectations."""
-    if df.empty:
-        return df
-    out = df.loc[:, ["year", "month", "water_area", "threshold", "event_type"]].copy()
-    out = out.rename(
-        columns={
-            "threshold": "threshold_at_event",
-            "event_type": "tail",
-        }
+def _compute_extremes_in_memory(
+    hylak_id: int, series_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compute PWM extreme events in-memory from lake_area data."""
+    config = PWMExtremeConfig(min_observations_per_month=2)
+    result = compute_monthly_thresholds(series_df, hylak_id=hylak_id, config=config)
+    extremes = result.extremes_df.copy()
+    if extremes.empty:
+        return pd.DataFrame(columns=["year", "month", "water_area", "threshold_at_event", "tail"])
+    events = extremes.rename(
+        columns={"threshold": "threshold_at_event", "event_type": "tail"}
     )
-    out["tail"] = out["tail"].astype(str)
-    return out
+    events["tail"] = events["tail"].astype(str)
+    return events
 
 
-def _adapt_hawkes(df: pd.DataFrame) -> pd.DataFrame:
-    """Select columns needed by draw_extremes_with_hawkes for Hawkes shading."""
+def _read_hawkes_transitions(hylak_id: int) -> pd.DataFrame:
+    """Read hawkes_transition_monthly from parquet for a single lake."""
+    config = SourceConfig()
+    parquet_path = config.data_dir / "hawkes_transition_monthly.parquet"
+    if not parquet_path.exists():
+        return pd.DataFrame(columns=["year", "month", "direction"])
+    df = pd.read_parquet(parquet_path)
+    df = df[df["hylak_id"] == hylak_id]
     if df.empty:
         return df
-    cols = ["year", "month", "direction"]
-    available = [c for c in cols if c in df.columns]
-    if not available:
-        return pd.DataFrame(columns=cols)
-    out = df.loc[:, available].copy()
+    out = df.loc[:, ["year", "month", "direction"]].copy()
     out["year"] = out["year"].astype(int)
     out["month"] = out["month"].astype(int)
     out["direction"] = out["direction"].astype(str)
     if "significant" in df.columns:
-        out = out[df["significant"].astype(bool)].copy()
+        sig_mask = df["significant"].fillna(False).astype(bool)
+        out = out[sig_mask].copy()
     return out
 
 
@@ -76,25 +79,22 @@ def run(
 ) -> Path:
     """Fetch data and save a single-lake PWM-Hawkes timeline plot."""
     output_dir = output_dir or DATA_DIR
+    load_env()
 
-    with series_db.connection_context() as conn:
-        series_map = fetch_lake_area_by_ids(conn, [hylak_id])
-        series_df = series_map.get(hylak_id)
-        if series_df is None:
-            raise ValueError(f"No lake_area series found for hylak_id={hylak_id}")
+    config = SourceConfig()
+    provider = create_provider(config)
+    lake_map = provider.fetch_lake_area_by_ids([hylak_id])
+    if hylak_id not in lake_map:
+        raise ValueError(f"No lake_area series found for hylak_id={hylak_id}")
 
-        extremes_raw = fetch_pwm_extreme_extremes_by_id(conn, hylak_id)
-        hawkes_raw = fetch_hawkes_transition_monthly(
-            conn, hylak_id=hylak_id
-        )
-
-    extremes_df = _adapt_extremes(extremes_raw)
-    hawkes_df = _adapt_hawkes(hawkes_raw)
+    series_df = lake_map[hylak_id]
+    extremes_df = _compute_extremes_in_memory(hylak_id, series_df)
+    hawkes_df = _read_hawkes_transitions(hylak_id)
 
     if extremes_df.empty:
         log.warning("No PWM extremes found for hylak_id=%d", hylak_id)
     if hawkes_df.empty:
-        log.warning("No Hawkes transition monthly data for hylak_id=%d", hylak_id)
+        log.warning("No Hawkes transition data for hylak_id=%d", hylak_id)
 
     Theme.apply()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -109,7 +109,6 @@ def run(
         hawkes_df if not hawkes_df.empty else None,
         annotate_top_n_each_tail=annotate_top_n_each_tail,
     )
-    # Adjust title to reflect PWM source
     ax.set_title(
         f"Lake {hylak_id} Area Timeline (PWM Extremes + Hawkes Transitions)"
     )
@@ -121,7 +120,6 @@ def run(
 
 
 def main() -> None:
-    load_env()
     args = parse_args()
     Logger("plot_pwm_hawkes_lake")
     out_path = run(

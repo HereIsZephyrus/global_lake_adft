@@ -19,7 +19,6 @@ import pandas as pd
 
 from lakesource.config import SourceConfig
 from lakesource.env import load_env
-from lakesource.postgres import series_db
 from lakeanalysis.batch import (
     Engine,
     RangeFilter,
@@ -31,7 +30,8 @@ from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "pwm_hawkes" / "diag"
+ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR = ROOT / "data" / "pwm_hawkes" / "diag"
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,11 +43,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunk-size", type=int, default=10_000)
     parser.add_argument("--skip-run", action="store_true")
     parser.add_argument("--io-budget", type=int, default=4)
+    parser.add_argument("--pwm-min-obs-per-month", type=int, default=2)
+    parser.add_argument("--pwm-n-pwm", type=int, default=4)
+    parser.add_argument("--decluster-run-length", type=int, default=1)
+    parser.add_argument("--min-events", type=int, default=5)
+    parser.add_argument("--min-event-rate", type=float, default=0.005)
+    parser.add_argument("--max-event-rate", type=float, default=0.50)
     return parser.parse_args()
 
 
-def _run_batch(limit_id: int, chunk_size: int, io_budget: int) -> None:
+def _run_batch(
+    limit_id: int, chunk_size: int, io_budget: int,
+    pwm_min_obs: int, pwm_n: int, decluster_rl: int,
+    min_events: int, min_rate: float, max_rate: float,
+) -> None:
     """Execute pwm_hawkes batch for lakes 0..limit_id."""
+    from lakesource.pwm_extreme.schema import PWMExtremeConfig
+
     source_config = SourceConfig()
     reader = build_provider_batch_reader(
         source_config,
@@ -57,7 +69,16 @@ def _run_batch(limit_id: int, chunk_size: int, io_budget: int) -> None:
     writer = build_provider_batch_writer(
         source_config, ensure_tables=["pwm_extreme", "hawkes"],
     )
-    calculator = CalculatorFactory.create("pwm_hawkes")
+    calculator = CalculatorFactory.create(
+        "pwm_hawkes",
+        pwm_config=PWMExtremeConfig(
+            n_pwm=pwm_n, min_observations_per_month=pwm_min_obs,
+        ),
+        decluster_run_length=decluster_rl,
+        min_events=min_events,
+        min_event_rate=min_rate,
+        max_event_rate=max_rate,
+    )
     engine = Engine(
         reader=reader,
         writer=writer,
@@ -78,42 +99,15 @@ def _run_batch(limit_id: int, chunk_size: int, io_budget: int) -> None:
 
 
 def _fetch_diagnosis(limit_id: int) -> pd.DataFrame:
-    """Query hawkes_results for lakes 0..limit_id."""
-    with series_db.connection_context() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT hylak_id, converged, log_likelihood, n_events,
-                       n_dry_events, n_wet_events,
-                       mu_d, mu_w, alpha_dd, alpha_dw, alpha_wd, alpha_ww,
-                       beta_dd, beta_dw, beta_wd, beta_ww,
-                       spectral_radius,
-                       lrt_p_d_to_w, lrt_p_w_to_d,
-                       qc_pass, qc_exceedance_rate, qc_median_excess,
-                       error_message
-                FROM hawkes_results
-                WHERE hylak_id < %(limit_id)s
-                ORDER BY hylak_id
-                """,
-                {"limit_id": limit_id},
-            )
-            cols = [d.name for d in cur.description]
-            rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=cols)
-    if not df.empty:
-        for col in ("hylak_id", "n_events", "n_dry_events", "n_wet_events"):
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
-        for col in (
-            "log_likelihood", "mu_d", "mu_w",
-            "alpha_dd", "alpha_dw", "alpha_wd", "alpha_ww",
-            "beta_dd", "beta_dw", "beta_wd", "beta_ww",
-            "spectral_radius",
-            "lrt_p_d_to_w", "lrt_p_w_to_d",
-            "qc_exceedance_rate", "qc_median_excess",
-        ):
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+    """Read hawkes_results from parquet."""
+    config = SourceConfig()
+    data_dir = config.data_dir
+    parquet_path = data_dir / "hawkes_results.parquet"
+    if not parquet_path.exists():
+        log.warning("hawkes_results.parquet not found at %s", parquet_path)
+        return pd.DataFrame()
+    df = pd.read_parquet(parquet_path)
+    df = df[df["hylak_id"] < limit_id]
     return df
 
 
@@ -194,8 +188,14 @@ def main() -> None:
     Logger("run_pwm_hawkes_diag")
 
     if not args.skip_run:
-        log.info("Running PWM-Hawkes batch on lakes 0..%d", args.limit_id)
-        _run_batch(args.limit_id, args.chunk_size, args.io_budget)
+        log.info("Running PWM-Hawkes batch on lakes 0..%d (pwm_min_obs=%d)",
+                 args.limit_id, args.pwm_min_obs_per_month)
+        _run_batch(
+            args.limit_id, args.chunk_size, args.io_budget,
+            args.pwm_min_obs_per_month, args.pwm_n_pwm,
+            args.decluster_run_length,
+            args.min_events, args.min_event_rate, args.max_event_rate,
+        )
 
     log.info("Fetching hawkes_results for lakes 0..%d", args.limit_id)
     df = _fetch_diagnosis(args.limit_id)
