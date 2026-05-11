@@ -6,11 +6,13 @@ from .compute import (
     compute_overall_ae,
     compute_trend,
 )
-from .runner import (
+from .service import (
     EntropyRunConfig,
     load_entropy_summary,
     run_entropy,
     run_update_amplitude_only,
+)
+from .runner import (
     show_entropy_plots,
     write_amplitude_entropy_csv,
 )

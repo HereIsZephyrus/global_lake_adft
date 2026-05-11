@@ -36,12 +36,12 @@ import argparse
 from pathlib import Path
 
 from lakeanalysis.logger import Logger
-from lakeanalysis.entropy.runner import (
+from lakeanalysis.entropy.service import (
     EntropyRunConfig,
     run_entropy,
     run_update_amplitude_only,
-    show_entropy_plots,
 )
+from lakeanalysis.entropy.runner import show_entropy_plots
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "entropy"
 
