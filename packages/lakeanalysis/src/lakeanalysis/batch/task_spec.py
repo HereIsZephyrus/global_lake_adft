@@ -16,27 +16,51 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
     "quantile": BatchTaskSpec(
         done_table="quantile_run_status",
         done_requires_status=True,
-        ensure_tables=("quantile",),
+        ensure_tables=(
+            "quantile_labels",
+            "quantile_extremes",
+            "quantile_abrupt_transitions",
+            "quantile_run_status",
+        ),
     ),
     "pwm_extreme": BatchTaskSpec(
         done_table="pwm_extreme_run_status",
         done_requires_status=True,
-        ensure_tables=("pwm_extreme",),
-    ),
-    "pwm_hawkes": BatchTaskSpec(
-        done_table="pwm_hawkes_run_status",
-        done_requires_status=True,
-        ensure_tables=("pwm_extreme", "hawkes"),
+        ensure_tables=(
+            "pwm_extreme_thresholds",
+            "pwm_extreme_run_status",
+        ),
     ),
     "eot": BatchTaskSpec(
         done_table="eot_run_status",
         done_requires_status=True,
-        ensure_tables=("eot",),
+        ensure_tables=(
+            "eot_results",
+            "eot_extremes",
+            "eot_run_status",
+        ),
     ),
     "comparison": BatchTaskSpec(
         done_table="comparison_run_status",
         done_requires_status=True,
-        ensure_tables=("comparison", "quantile", "pwm_extreme"),
+        ensure_tables=(
+            "comparison_run_status",
+            "quantile_labels",
+            "quantile_extremes",
+            "quantile_abrupt_transitions",
+            "quantile_run_status",
+            "pwm_extreme_thresholds",
+            "pwm_extreme_run_status",
+        ),
+    ),
+    "pwm_hawkes": BatchTaskSpec(
+        done_table="pwm_hawkes_run_status",
+        done_requires_status=True,
+        ensure_tables=(
+            "pwm_extreme_thresholds",
+            "pwm_extreme_run_status",
+            "pwm_hawkes_run_status",
+        ),
     ),
     "shift_labels": BatchTaskSpec(
         done_table="area_shift_labels",
