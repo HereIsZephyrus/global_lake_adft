@@ -43,6 +43,7 @@ import pandas as pd
 from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakesource.provider import create_provider
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -309,7 +310,7 @@ def _print_summary(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("explore_penalized_volatility")
     args = parse_args()
     load_env()
 

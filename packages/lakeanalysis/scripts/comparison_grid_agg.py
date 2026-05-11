@@ -20,6 +20,7 @@ import pandas as pd
 from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakesource.provider import create_provider
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -48,10 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)-8s | %(message)s",
-    )
+    Logger("comparison_grid_agg")
     load_env()
 
     sample_file = args.sample_file

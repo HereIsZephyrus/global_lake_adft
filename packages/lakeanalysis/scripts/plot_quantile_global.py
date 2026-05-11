@@ -26,6 +26,7 @@ from lakeviz.quantile import (
     plot_transition_event_density_map,
 )
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_quantile_global")
     args = parse_args()
     load_env()
     Theme.apply()

@@ -17,6 +17,7 @@ from pathlib import Path
 import duckdb
 import numpy as np
 import pandas as pd
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_flat_lake_series")
     args = parse_args()
 
     import matplotlib.pyplot as plt

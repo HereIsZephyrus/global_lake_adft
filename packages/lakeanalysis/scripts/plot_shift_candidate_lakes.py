@@ -16,6 +16,7 @@ from lakesource.env import load_env
 from lakesource.postgres import fetch_frozen_year_months_by_ids, fetch_lake_area_by_ids, series_db
 from lakeanalysis.quality import ShiftConfig, filter_frozen_rows
 from lakeanalysis.quality.filters.shift import ShiftFilter
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _plot_lake(ax, df: pd.DataFrame, detail: dict[str, object], hylak_id: int) -
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_shift_candidate_lakes")
     args = parse_args()
     load_env()
 

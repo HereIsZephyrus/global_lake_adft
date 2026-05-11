@@ -36,6 +36,7 @@ from lakesource.env import load_env
 from lakesource.config import SourceConfig
 from lakesource.provider.factory import create_provider
 from lakesource.postgres import series_db
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("explore_entropy_cv")
     args = parse_args()
     load_env()
 

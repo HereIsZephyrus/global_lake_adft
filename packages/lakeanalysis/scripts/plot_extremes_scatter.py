@@ -22,6 +22,7 @@ import cartopy.feature as cfeature
 from lakesource.env import load_env
 from lakeviz.style.base import AxKind, stamp_ax
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def _classify(row):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_extremes_scatter")
     args = parse_args()
     load_env()
     Theme.apply()

@@ -18,6 +18,7 @@ from lakeviz.comparison import (
 )
 from lakeviz.config import GlobalGridConfig
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def _log_outputs(label: str, paths: list[Path]) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_comparison_global")
     args = parse_args()
     load_env()
     Theme.apply()

@@ -13,6 +13,7 @@ from scipy.stats import gaussian_kde
 from lakesource.postgres import series_db
 from lakeviz.layout import save
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
+    Logger("plot_area_histogram")
     run(parse_args())
 
 
