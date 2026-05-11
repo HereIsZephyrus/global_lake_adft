@@ -15,6 +15,7 @@ import pandas as pd
 
 from lakesource.env import load_env
 from lakesource.postgres import fetch_lake_area_by_ids, series_db
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_hcv_lake_series")
     load_env()
 
     import matplotlib.pyplot as plt

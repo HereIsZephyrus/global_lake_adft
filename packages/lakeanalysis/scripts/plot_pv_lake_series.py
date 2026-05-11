@@ -16,6 +16,7 @@ import pandas as pd
 
 from lakesource.postgres import fetch_lake_area_by_ids, series_db
 from lakeanalysis.quality.filters import FLAG_NAMES, decode_anomaly_flags
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def _flag_label(flags: int) -> str:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_pv_lake_series")
 
     import matplotlib.pyplot as plt
     from lakeviz.style.presets import Theme

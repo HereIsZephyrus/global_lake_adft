@@ -30,6 +30,7 @@ from lakesource.postgres import (
     series_db,
 )
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -204,10 +205,7 @@ def plot_transition_significant_rate(
 def main() -> int:
     """Entry point."""
     args = parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    Logger("run_hawkes_qc", level=logging.DEBUG if args.verbose else None)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     tq = args.threshold_quantile

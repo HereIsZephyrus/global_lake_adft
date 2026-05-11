@@ -20,6 +20,7 @@ from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
 from lakeviz.comparison import plot_comparison_zonal_profile
 from lakeviz.style.presets import Theme
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("plot_comparison_zonal")
     args = parse_args()
     load_env()
     Theme.apply()

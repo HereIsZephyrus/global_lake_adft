@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from lakesource.postgres import series_db
+from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    Logger("sample_test_lakes")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
