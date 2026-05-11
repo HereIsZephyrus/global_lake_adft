@@ -73,14 +73,12 @@ def draw_global_grid(
 
     resolved_cmap = resolve_cmap(cmap)
 
-    ax.add_feature(cfeature.OCEAN, facecolor="#e8f4f8", edgecolor="none")
-    ax.add_feature(cfeature.LAND, facecolor="#f0f0f0", edgecolor="none")
-    ax.add_feature(cfeature.LAKES, facecolor="#d4e6f1", edgecolor="#666666", linewidth=0.2)
+    ax.stock_img()
     ax.set_global()
 
     valid = values[~np.isnan(values)]
     if len(valid) == 0:
-        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, edgecolor="#666666")
         if title:
             ax.set_title(title, fontsize=14)
         return None
@@ -101,7 +99,7 @@ def draw_global_grid(
         shading="auto",
     )
 
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.3, edgecolor="#666666")
 
     if title:
         ax.set_title(title, fontsize=14)
@@ -220,21 +218,30 @@ def draw_global_density(
     filled = np.nan_to_num(values, nan=0.0)
     if not np.any(filled > 0):
         stamp_ax(ax, AxKind.GEOGRAPHIC)
-        ax.add_feature(cfeature.OCEAN, facecolor="#e8f4f8", edgecolor="none")
-        ax.add_feature(cfeature.LAND, facecolor="#f0f0f0", edgecolor="none")
-        ax.add_feature(cfeature.LAKES, facecolor="#d4e6f1", edgecolor="#666666", linewidth=0.2)
+        ax.stock_img()
         ax.set_global()
-        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, edgecolor="#666666")
         if title:
             ax.set_title(title, fontsize=14)
         return None
 
     smoothed = gaussian_filter(filled, sigma=sigma, mode="constant", cval=0.0)
 
-    scale = float(lons[1] - lons[0]) / target_res
-    upsampled = zoom(smoothed, scale, order=3)
+    # Normalized convolution: divide by smoothed weight so that empty cells
+    # (NaN → 0) do not dilute neighbouring data values.
+    valid_mask = (~np.isnan(values)).astype(float)
+    weight = gaussian_filter(valid_mask, sigma=sigma, mode="constant", cval=0.0)
+    weight[weight < 1e-10] = np.nan
+    smoothed = smoothed / weight
 
-    threshold = np.nanmax(upsampled) * 0.005
+    scale = float(lons[1] - lons[0]) / target_res
+    upsampled = zoom(np.nan_to_num(smoothed, nan=0.0), scale, order=3)
+
+    # Re-apply NaN mask: upsample the weight field and mask where negligible
+    weight_up = zoom(np.nan_to_num(weight, nan=0.0), scale, order=1)
+    upsampled[weight_up < 1e-10] = np.nan
+
+    threshold = np.nanmax(upsampled) * 0.005 if np.any(~np.isnan(upsampled)) else 0.0
     mask = upsampled < threshold
     if log_scale and mask.any():
         upsampled = upsampled.copy()

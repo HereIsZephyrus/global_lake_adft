@@ -19,6 +19,25 @@ from ..map_plot import draw_global_density
 
 log = logging.getLogger(__name__)
 
+_LAND_MASK_CACHE: dict[float, np.ndarray] = {}
+
+
+def _get_land_mask(lons: np.ndarray, lats: np.ndarray, resolution: float) -> np.ndarray:
+    """Return a boolean 2D array (n_lat, n_lon): True where grid center is on land."""
+    if resolution in _LAND_MASK_CACHE:
+        return _LAND_MASK_CACHE[resolution]
+
+    from cartopy.io import shapereader
+    from shapely.ops import unary_union
+    from shapely.vectorized import contains
+
+    land_shp = shapereader.natural_earth(resolution="110m", category="physical", name="land")
+    land_geom = unary_union(list(shapereader.Reader(land_shp).geometries()))
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    mask = contains(land_geom, lon_grid, lat_grid)
+    _LAND_MASK_CACHE[resolution] = mask
+    return mask
+
 
 def _merge_two(
     left: pd.DataFrame,
@@ -313,13 +332,31 @@ def _standardize_gt10_vs_full(
     )
 
 
-def _add_row_cbar(fig, right_ax, metas, *, cmap_name, label=""):
+def _add_row_cbar(fig, right_ax, metas, *, cmap_name, label="", use_int_bounds=False):
     import matplotlib.colors as mcolors
     import matplotlib.ticker as mticker
 
     from ..style.presets import resolve_cmap
 
     resolved_cmap = resolve_cmap(cmap_name)
+    if use_int_bounds:
+        bounds = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        norm = mcolors.BoundaryNorm(bounds, ncolors=len(bounds) + 1, extend="both")
+        for meta in metas:
+            meta["mesh"].set_norm(norm)
+            meta["mesh"].set_cmap(resolved_cmap)
+        bbox = right_ax.get_position()
+        cbar_ax = fig.add_axes([bbox.x1 + 0.01, bbox.y0, 0.015, bbox.y1 - bbox.y0])
+        sm = plt.cm.ScalarMappable(cmap=resolved_cmap, norm=norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, cax=cbar_ax, extend="both", extendrect=False)
+        cbar.set_ticks(bounds)
+        cbar.ax.tick_params(labelsize=8)
+        cbar.ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+        if label:
+            cbar.ax.set_ylabel(label, fontsize=9)
+        return
+
     vmin_shared = min(m["vmin"] for m in metas)
     vmax_shared = max(m["vmax"] for m in metas)
     log_scale = metas[0]["log_scale"]
@@ -358,28 +395,58 @@ def _render_two_panel(
     out_path: Path,
     sigma: float = 1.0,
     target_res: float = 0.1,
+    use_int_bounds: bool = False,
+    min_lakes: int = 1,
 ) -> Path | None:
     import cartopy.crs as ccrs
 
     if df.empty or left_col not in df.columns or right_col not in df.columns:
         return None
+
+    coords = agg_to_grid_matrix(df, left_col, config.resolution)
+    lons, lats = coords[0], coords[1]
+
+    no_lakes_mask = None
+    if "lake_count" in df.columns:
+        from scipy.ndimage import binary_dilation
+        _, _, lake_counts = agg_to_grid_matrix(df, "lake_count", config.resolution)
+        has_data = (~np.isnan(lake_counts)) & (lake_counts >= min_lakes)
+        dilated = binary_dilation(has_data, iterations=3)
+        land_mask = _get_land_mask(lons, lats, config.resolution)
+        hatch_cells = ~has_data & dilated & land_mask
+        if np.any(hatch_cells):
+            no_lakes_mask = np.where(hatch_cells, 1.0, np.nan)
+        else:
+            no_lakes_mask = None
+
     fig, axes = create_figure(
         [{"name": "left", "row": 0, "col": 0}, {"name": "right", "row": 0, "col": 1}],
         figsize=(12, 5), width_ratios=[1, 1], projection=ccrs.Robinson(),
     )
+    actual_log_scale = False if use_int_bounds else log_scale
     metas = []
     for ax_name, value_col, title in (("left", left_col, left_title), ("right", right_col, right_title)):
-        lons, lats, values = agg_to_grid_matrix(df, value_col, config.resolution)
+        _, _, values = agg_to_grid_matrix(df, value_col, config.resolution)
         meta = draw_global_density(
             axes[ax_name], lons, lats, values,
-            title=title, cmap=cmap, log_scale=log_scale,
+            title=title, cmap=cmap, log_scale=actual_log_scale,
             cbar_label=label, sigma=sigma, target_res=target_res,
             add_cbar=False,
         )
         if meta is not None:
             metas.append(meta)
+        if no_lakes_mask is not None:
+            import matplotlib.colors as mcolors
+            hatch_cmap = mcolors.ListedColormap(["none"])
+            axes[ax_name].pcolormesh(
+                lons, lats, no_lakes_mask,
+                transform=ccrs.PlateCarree(),
+                cmap=hatch_cmap, hatch="//////",
+                edgecolors="#999999", linewidths=0,
+                zorder=2,
+            )
     if metas:
-        _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap, label=label)
+        _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap, label=label, use_int_bounds=use_int_bounds)
     return save(fig, out_path)
 
 
@@ -391,9 +458,8 @@ def _render_six_panels(
     left_label: str,
     right_label: str,
     min_lakes: int = 1,
+    use_int_bounds: bool = False,
 ) -> list[Path]:
-    if min_lakes > 1 and "lake_count" in df.columns:
-        df = df[df["lake_count"] >= min_lakes]
     if df.empty:
         return []
     specs = [
@@ -419,6 +485,8 @@ def _render_six_panels(
             log_scale=log_scale,
             label=agg_label,
             out_path=out_path,
+            use_int_bounds=use_int_bounds,
+            min_lakes=min_lakes,
         )
         if result is not None:
             outputs.append(result)
@@ -440,6 +508,7 @@ def plot_pwm_pvalue_panels(
         left_label=f"PWM p={p1}",
         right_label=f"PWM p={p2}",
         min_lakes=min_lakes,
+        use_int_bounds=True,
     )
 
 
@@ -474,6 +543,7 @@ def plot_quantile_vs_pwm_panels(
         left_label="Quantile",
         right_label="PWM",
         min_lakes=min_lakes,
+        use_int_bounds=True,
     )
 
 
@@ -502,6 +572,7 @@ def plot_gt10_vs_full_panels(
     full_dir: Path,
 ) -> list[Path]:
     outputs: list[Path] = []
+    int_bounds_map = {"quantile": True, "pwm": True, "eot": False}
     for domain in ("quantile", "pwm", "eot"):
         df = _standardize_gt10_vs_full(
             config.resolution,
@@ -517,6 +588,7 @@ def plot_gt10_vs_full_panels(
             left_label="gt10",
             right_label="full",
             min_lakes=min_lakes,
+            use_int_bounds=int_bounds_map[domain],
         )
         renamed_outputs: list[Path] = []
         for path in domain_outputs:
