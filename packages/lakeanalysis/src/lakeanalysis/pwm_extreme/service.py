@@ -6,7 +6,6 @@ import pandas as pd
 
 from .compute import compute_monthly_thresholds
 from lakesource.pwm_extreme.schema import (
-    PWMExtremeConfig,
     PWMExtremeResult,
     PWMExtremeServiceConfig,
 )

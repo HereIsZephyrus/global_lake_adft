@@ -8,6 +8,9 @@ import psycopg
 
 from lakesource.postgres.lake_pwm import (
     ensure_pwm_extreme_tables as ensure_pwm_extreme_tables_in_db,
+    upsert_pwm_extreme_labels as upsert_pwm_extreme_labels_in_db,
+    upsert_pwm_extreme_extremes as upsert_pwm_extreme_extremes_in_db,
+    upsert_pwm_extreme_abrupt_transitions as upsert_pwm_extreme_abrupt_transitions_in_db,
     upsert_pwm_extreme_run_status as upsert_pwm_extreme_run_status_in_db,
     upsert_pwm_extreme_thresholds as upsert_pwm_extreme_thresholds_in_db,
 )
@@ -28,6 +31,33 @@ def upsert_pwm_extreme_thresholds(
     commit: bool = True,
 ) -> None:
     upsert_pwm_extreme_thresholds_in_db(conn, rows, commit=commit)
+
+
+def upsert_pwm_extreme_labels(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> None:
+    upsert_pwm_extreme_labels_in_db(conn, rows, commit=commit)
+
+
+def upsert_pwm_extreme_extremes(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> None:
+    upsert_pwm_extreme_extremes_in_db(conn, rows, commit=commit)
+
+
+def upsert_pwm_extreme_abrupt_transitions(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> None:
+    upsert_pwm_extreme_abrupt_transitions_in_db(conn, rows, commit=commit)
 
 
 def upsert_pwm_extreme_run_status(
@@ -65,6 +95,88 @@ def result_to_threshold_rows(
             }
         )
     return rows
+
+
+def result_to_label_rows(
+    result: PWMExtremeResult,
+    *,
+    workflow_version: str,
+) -> list[dict[str, Any]]:
+    """Convert PWMExtremeResult.labels_df to DB row dicts for the labels table."""
+    columns = [
+        "hylak_id",
+        "year",
+        "month",
+        "water_area",
+        "threshold_low",
+        "threshold_high",
+        "extreme_label",
+    ]
+    return _attach_workflow_version(
+        result.labels_df.loc[:, columns].to_dict("records"),
+        workflow_version=workflow_version,
+    )
+
+
+def result_to_extreme_rows(
+    result: PWMExtremeResult,
+    *,
+    workflow_version: str,
+) -> list[dict[str, Any]]:
+    """Convert PWMExtremeResult.extremes_df to DB row dicts for the extremes table."""
+    if result.extremes_df.empty:
+        return []
+    columns = [
+        "hylak_id",
+        "year",
+        "month",
+        "event_type",
+        "water_area",
+        "threshold",
+        "severity",
+        "extreme_label",
+    ]
+    return _attach_workflow_version(
+        result.extremes_df.loc[:, columns].to_dict("records"),
+        workflow_version=workflow_version,
+    )
+
+
+def result_to_transition_rows(
+    result: PWMExtremeResult,
+    *,
+    workflow_version: str,
+) -> list[dict[str, Any]]:
+    """Convert PWMExtremeResult.transitions_df to DB row dicts for the transitions table."""
+    if result.transitions_df.empty:
+        return []
+    columns = [
+        "hylak_id",
+        "from_year",
+        "from_month",
+        "to_year",
+        "to_month",
+        "transition_type",
+        "from_water_area",
+        "to_water_area",
+        "from_label",
+        "to_label",
+    ]
+    return _attach_workflow_version(
+        result.transitions_df.loc[:, columns].to_dict("records"),
+        workflow_version=workflow_version,
+    )
+
+
+def _attach_workflow_version(
+    rows: list[dict[str, Any]],
+    *,
+    workflow_version: str,
+) -> list[dict[str, Any]]:
+    version = workflow_version.strip()
+    if not version:
+        raise ValueError("workflow_version must not be empty")
+    return [{**row, "workflow_version": version} for row in rows]
 
 
 def make_run_status_row(
