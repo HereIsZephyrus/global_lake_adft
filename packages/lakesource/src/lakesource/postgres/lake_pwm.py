@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 import logging
 
+import pandas as pd
 import psycopg
 from psycopg import sql
 
@@ -485,3 +486,93 @@ def upsert_pwm_hawkes_run_status(
     if commit:
         conn.commit()
     log.info("Upserted %d pwm_hawkes_run_status row(s)", len(rows))
+
+
+def _fetch_pwm_extreme_extremes_by_id_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT hylak_id, year, month, event_type, water_area, threshold, severity, extreme_label
+FROM {table}
+WHERE hylak_id = %(hylak_id)s
+ORDER BY year, month
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_extremes")))
+
+
+def _fetch_pwm_extreme_labels_by_id_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+SELECT hylak_id, year, month, water_area, threshold_low, threshold_high, extreme_label
+FROM {table}
+WHERE hylak_id = %(hylak_id)s
+ORDER BY year, month
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_labels")))
+
+
+def fetch_pwm_extreme_extremes_by_id(
+    conn: psycopg.Connection,
+    hylak_id: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> pd.DataFrame:
+    """Fetch PWM extreme event rows for one lake.
+
+    Returns:
+        DataFrame with columns: hylak_id, year, month, event_type,
+        water_area, threshold, severity, extreme_label.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            _fetch_pwm_extreme_extremes_by_id_sql(table_config),
+            {"hylak_id": int(hylak_id)},
+        )
+        rows = cur.fetchall()
+        colnames = [d.name for d in cur.description]
+
+    df = pd.DataFrame(rows, columns=colnames)
+    if df.empty:
+        return df
+
+    for col in ("hylak_id", "year", "month"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    for col in ("water_area", "threshold", "severity"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+    if "event_type" in df.columns:
+        df["event_type"] = df["event_type"].astype(str)
+    if "extreme_label" in df.columns:
+        df["extreme_label"] = df["extreme_label"].astype(str)
+    return df
+
+
+def fetch_pwm_extreme_labels_by_id(
+    conn: psycopg.Connection,
+    hylak_id: int,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> pd.DataFrame:
+    """Fetch PWM extreme labels for one lake.
+
+    Returns:
+        DataFrame with columns: hylak_id, year, month, water_area,
+        threshold_low, threshold_high, extreme_label.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            _fetch_pwm_extreme_labels_by_id_sql(table_config),
+            {"hylak_id": int(hylak_id)},
+        )
+        rows = cur.fetchall()
+        colnames = [d.name for d in cur.description]
+
+    df = pd.DataFrame(rows, columns=colnames)
+    if df.empty:
+        return df
+
+    for col in ("hylak_id", "year", "month"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    for col in ("water_area", "threshold_low", "threshold_high"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+    if "extreme_label" in df.columns:
+        df["extreme_label"] = df["extreme_label"].astype(str)
+    return df

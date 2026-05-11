@@ -125,6 +125,8 @@ _SYMBOL_MAP = {
     # lake_pwm
     "count_pwm_extreme_status_in_range": "lake_pwm",
     "ensure_pwm_extreme_tables": "lake_pwm",
+    "fetch_pwm_extreme_extremes_by_id": "lake_pwm",
+    "fetch_pwm_extreme_labels_by_id": "lake_pwm",
     "fetch_pwm_extreme_status_ids_in_range": "lake_pwm",
     "upsert_pwm_extreme_run_status": "lake_pwm",
     "upsert_pwm_extreme_thresholds": "lake_pwm",
