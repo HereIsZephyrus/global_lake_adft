@@ -39,6 +39,7 @@ _ENSURE_DISPATCH = {
     "interpolation_detect": ("interpolation", "ensure_interpolation_detect_table"),
     "quantile": ("quantile", "ensure_quantile_tables"),
     "pwm_extreme": ("pwm", "ensure_pwm_extreme_tables"),
+    "hawkes": ("hawkes", "ensure_hawkes_results_table"),
     "eot": ("eot", "ensure_eot_results_table"),
     "comparison": ("comparison", "ensure_comparison_tables"),
 }
@@ -58,6 +59,7 @@ _UPSERT_DISPATCH = {
     "pwm_extreme_extremes": ("pwm", "upsert_pwm_extreme_extremes"),
     "pwm_extreme_abrupt_transitions": ("pwm", "upsert_pwm_extreme_abrupt_transitions"),
     "pwm_extreme_run_status": ("pwm", "upsert_pwm_extreme_run_status"),
+    "pwm_hawkes_run_status": ("pwm", "upsert_pwm_hawkes_run_status"),
     "eot_results": ("eot", "upsert_eot_results"),
     "eot_extremes": ("eot", "upsert_eot_extremes"),
     "eot_run_status": ("eot", "upsert_eot_run_status"),

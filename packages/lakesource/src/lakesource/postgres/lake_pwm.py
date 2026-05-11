@@ -292,6 +292,7 @@ def ensure_pwm_extreme_tables(
         cur.execute(_ensure_pwm_extreme_labels_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_extremes_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_abrupt_transitions_table_sql(table_config))
+        cur.execute(_ensure_pwm_hawkes_run_status_table_sql(table_config))
     conn.commit()
 
 
@@ -420,3 +421,67 @@ def fetch_pwm_extreme_status_ids_in_range(
             params,
         )
         return {int(row[0]) for row in cur.fetchall()}
+
+
+def _ensure_pwm_hawkes_run_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id          INTEGER      NOT NULL,
+    workflow_version  TEXT         NOT NULL,
+    chunk_start       INTEGER,
+    chunk_end         INTEGER,
+    status            TEXT         NOT NULL,
+    error_message     TEXT,
+    computed_at       TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, workflow_version)
+);
+""").format(table=sql.Identifier(tc.series_table("pwm_hawkes_run_status")))
+
+
+def _upsert_pwm_hawkes_run_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+) VALUES (
+    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+""").format(
+        table=sql.Identifier(tc.series_table("pwm_hawkes_run_status")),
+        conflict_cols=sql.SQL(", ").join(
+            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+        ),
+    )
+
+
+def ensure_pwm_hawkes_run_status_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    """Create the pwm_hawkes_run_status table if it does not exist."""
+    with conn.cursor() as cur:
+        cur.execute(_ensure_pwm_hawkes_run_status_table_sql(table_config))
+    conn.commit()
+
+
+def upsert_pwm_hawkes_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    """Upsert PWM-Hawkes run status rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_pwm_hawkes_run_status_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d pwm_hawkes_run_status row(s)", len(rows))

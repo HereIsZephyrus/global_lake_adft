@@ -1,0 +1,109 @@
+"""Run PWM-Hawkes batch computation via unified batch framework.
+
+Usage:
+    uv run python scripts/run_pwm_hawkes.py
+    uv run python scripts/run_pwm_hawkes.py --chunk-size 5000 --limit-id 10000
+    uv run python scripts/run_pwm_hawkes.py --decluster-run-length 2
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+
+os.environ.setdefault("NUMBA_NUM_THREADS", "1")
+
+from lakesource.config import SourceConfig
+from lakeanalysis.batch import (
+    Engine,
+    RangeFilter,
+    build_provider_batch_reader,
+    build_provider_batch_writer,
+)
+from lakeanalysis.batch.calculator import CalculatorFactory
+from lakeanalysis.logger import Logger
+
+log = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run PWM-Hawkes batch computation.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--chunk-size", type=int, default=10_000)
+    parser.add_argument("--limit-id", type=int, default=None)
+    parser.add_argument("--id-start", type=int, default=0)
+    parser.add_argument("--id-end", type=int, default=None)
+    parser.add_argument("--decluster-run-length", type=int, default=1)
+    parser.add_argument("--hawkes-window-months", type=float, default=4.0)
+    parser.add_argument("--min-events", type=int, default=10)
+    parser.add_argument("--min-event-rate", type=float, default=0.01)
+    parser.add_argument("--max-event-rate", type=float, default=0.30)
+    parser.add_argument("--min-relative-amplitude", type=float, default=0.05)
+    parser.add_argument("--min-median-severity", type=float, default=1.0)
+    parser.add_argument(
+        "--monthly-significance-quantile", type=float, default=0.95,
+    )
+    parser.add_argument("--io-budget", type=int, default=4)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    Logger("run_pwm_hawkes")
+
+    source_config = SourceConfig()
+    reader = build_provider_batch_reader(
+        source_config,
+        done_table="pwm_hawkes_run_status",
+        done_requires_status=True,
+    )
+    writer = build_provider_batch_writer(
+        source_config, ensure_tables=["pwm_extreme", "hawkes"],
+    )
+    calculator = CalculatorFactory.create(
+        "pwm_hawkes",
+        decluster_run_length=args.decluster_run_length,
+        hawkes_window_months=args.hawkes_window_months,
+        min_events=args.min_events,
+        min_event_rate=args.min_event_rate,
+        max_event_rate=args.max_event_rate,
+        min_relative_amplitude=args.min_relative_amplitude,
+        min_median_severity=args.min_median_severity,
+        monthly_significance_quantile=args.monthly_significance_quantile,
+    )
+
+    id_start = args.id_start
+    id_end = args.id_end
+    if args.limit_id is not None:
+        id_end = args.limit_id if id_end is None else min(id_end, args.limit_id)
+
+    lake_filter = None
+    if id_start > 0 or id_end is not None:
+        lake_filter = RangeFilter(start=id_start, end=id_end)
+
+    engine = Engine(
+        reader=reader,
+        writer=writer,
+        calculator=calculator,
+        algorithm="pwm_hawkes",
+        lake_filter=lake_filter,
+        chunk_size=args.chunk_size,
+        io_budget=args.io_budget,
+    )
+
+    report = engine.run()
+    if report:
+        log.info(
+            "Done: chunks=%d/%d success=%d error=%d",
+            report.processed_chunks,
+            report.total_chunks,
+            report.success_lakes,
+            report.error_lakes,
+        )
+
+
+if __name__ == "__main__":
+    main()

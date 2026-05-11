@@ -23,6 +23,11 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_requires_status=True,
         ensure_tables=("pwm_extreme",),
     ),
+    "pwm_hawkes": BatchTaskSpec(
+        done_table="pwm_hawkes_run_status",
+        done_requires_status=True,
+        ensure_tables=("pwm_extreme", "hawkes"),
+    ),
     "eot": BatchTaskSpec(
         done_table="eot_run_status",
         done_requires_status=True,

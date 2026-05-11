@@ -28,6 +28,9 @@ def _lazy_register(algorithm: str) -> None:
     elif algorithm == "pwm_extreme":
         from .pwm_extreme import PWMExtremeCalculator
         CalculatorFactory._registry["pwm_extreme"] = PWMExtremeCalculator
+    elif algorithm == "pwm_hawkes":
+        from .pwm_hawkes import PWMExtremeHawkesCalculator
+        CalculatorFactory._registry["pwm_hawkes"] = PWMExtremeHawkesCalculator
     elif algorithm == "eot":
         from .eot import EOTCalculator
         CalculatorFactory._registry["eot"] = EOTCalculator
