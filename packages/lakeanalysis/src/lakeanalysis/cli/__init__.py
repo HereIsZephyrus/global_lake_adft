@@ -16,8 +16,8 @@ from __future__ import annotations
 import typer
 
 app = typer.Typer(
-    name="lake",
-    help="Lake analysis unified CLI.",
+    name="lake_adft",
+    help="Lake analysis unified CLI (lake_adft).",
     no_args_is_help=True,
 )
 

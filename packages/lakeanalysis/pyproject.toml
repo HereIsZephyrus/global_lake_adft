@@ -31,7 +31,7 @@ remote = [
 ]
 
 [project.scripts]
-lake = "lakeanalysis.cli:app"
+lake_adft = "lakeanalysis.cli:app"
 
 [dependency-groups]
 dev = [
