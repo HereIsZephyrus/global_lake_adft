@@ -12,6 +12,44 @@ uv run --package lakeanalysis pytest packages/lakeanalysis/tests
 uv run --package lakeanalysis pylint packages/lakeanalysis/src/lakeanalysis
 ```
 
+## CLI（`lake_adft`）
+
+本包提供统一的命令行入口 `lake_adft`，基于 typer 构建，包含 10 个子命令组：
+
+| 子命令组 | 说明 |
+|----------|------|
+| `quality` | 质量过滤与指标计算 |
+| `hawkes` | Hawkes 过程建模与挖掘 |
+| `pwm` | PWM 极值估计与事件识别 |
+| `eot` | 极值阈值检验 |
+| `entropy` | 熵分析流水线 |
+| `comparison` | 方法对比与全局/gt10 面板 |
+| `spatial` | 空间聚合与区域统计 |
+| `shift` | 突变检测与标签计算 |
+| `plot` | 绘图（18 个子命令，按图形内容命名） |
+| `export` | 数据导出 |
+
+### 使用方式
+
+```bash
+# 查看所有子命令组
+lake_adft --help
+
+# 查看某个组的子命令
+lake_adft plot --help
+
+# 运行具体命令
+lake_adft plot bindiff --data-dir data/output
+lake_adft hawkes mine --limit-id 100
+lake_adft eot run --chunk-size 5000
+```
+
+如果未安装到 PATH，可通过 `uv run` 调用：
+
+```bash
+uv run --package lakeanalysis lake_adft --help
+```
+
 ## 环境变量
 
 复制 `packages/lakeanalysis/.env.example` 到本地 `.env`，然后填入数据库连接与日志相关配置。
@@ -41,13 +79,14 @@ LAKE_DATA_DIR=
 
 ## Batch 框架
 
-`lakeanalysis.batch` 提供 MPI 分布式批处理能力，支持三种算法：
+`lakeanalysis.batch` 提供 MPI 分布式批处理能力，支持四种算法：
 
-| 算法 | 脚本 | 说明 |
-|------|------|------|
+| 算法 | 脚本 / Calculator | 说明 |
+|------|-------------------|------|
 | Quantile | `scripts/run_quantile.py` | 月距平分位数极端事件识别 |
 | PWM Extreme | `scripts/run_pwm_extreme.py` | PWM 极值阈值估计 |
 | EOT | `scripts/run_eot.py` | 极值阈值检验 |
+| EOT Hawkes | `EOTHawkesCalculator` (via CLI) | EOT + Hawkes 联合批处理 |
 
 ### 单进程运行
 
@@ -84,7 +123,15 @@ packages/lakeanalysis/
 │   run_quantile.py
 │   run_pwm_extreme.py
 │   run_eot.py
+│   run_entropy.py
+│   run_hawkes_mining.py
+│   _archived/              # 已废弃脚本
 ├ src/lakeanalysis/
+│   cli/                    # typer CLI（lake_adft 入口）
+│     __init__.py
+│     _common.py
+│     quality.py, hawkes.py, pwm.py, eot.py, entropy.py
+│     comparison.py, spatial.py, shift.py, plot.py, export.py
 │   batch/
 │     engine.py
 │     io.py
@@ -93,9 +140,15 @@ packages/lakeanalysis/
 │     worker.py
 │     protocol.py
 │     calculator/
+│       quantile.py, pwm_extreme.py, eot.py, eot_hawkes.py
 │   quantile/
 │   pwm_extreme/
 │   eot/
+│   entropy/
+│     runner.py
+│     service.py            # 流水线编排（从 runner 拆分）
+│   hawkes/
+│     mining.py             # 纯数据函数（从脚本提取）
 ├ tests/
 │   smoke/
 │   unit/
