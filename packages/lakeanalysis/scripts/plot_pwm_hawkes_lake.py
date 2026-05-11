@@ -20,6 +20,7 @@ from lakeviz.domain.eot import draw_extremes_with_hawkes
 from lakeviz.style.presets import Theme
 from lakeanalysis.logger import Logger
 from lakeanalysis.pwm_extreme.compute import compute_monthly_thresholds
+from lakeanalysis.pwm_extreme.events import run_runs_declustering
 from lakesource.pwm_extreme.schema import PWMExtremeConfig
 
 log = logging.getLogger(__name__)
@@ -45,7 +46,8 @@ def _compute_extremes_in_memory(
     extremes = result.extremes_df.copy()
     if extremes.empty:
         return pd.DataFrame(columns=["year", "month", "water_area", "threshold_at_event", "tail"])
-    events = extremes.rename(
+    declustered = run_runs_declustering(extremes, run_length=1)
+    events = declustered.rename(
         columns={"threshold": "threshold_at_event", "event_type": "tail"}
     )
     events["tail"] = events["tail"].astype(str)
