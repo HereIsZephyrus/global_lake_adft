@@ -11,7 +11,10 @@ from lakesource.pwm_extreme.schema import (
 )
 from lakesource.pwm_extreme.store import (
     make_run_status_row,
+    result_to_extreme_rows,
+    result_to_label_rows,
     result_to_threshold_rows,
+    result_to_transition_rows,
 )
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig, PWMExtremeConfig
@@ -47,6 +50,15 @@ class PWMExtremeCalculator(Calculator):
     def result_to_rows(self, result: Any) -> dict[str, list[dict]]:
         return {
             "pwm_extreme_thresholds": result_to_threshold_rows(
+                result, workflow_version=self._workflow_version
+            ),
+            "pwm_extreme_labels": result_to_label_rows(
+                result, workflow_version=self._workflow_version
+            ),
+            "pwm_extreme_extremes": result_to_extreme_rows(
+                result, workflow_version=self._workflow_version
+            ),
+            "pwm_extreme_abrupt_transitions": result_to_transition_rows(
                 result, workflow_version=self._workflow_version
             ),
             "pwm_extreme_run_status": [

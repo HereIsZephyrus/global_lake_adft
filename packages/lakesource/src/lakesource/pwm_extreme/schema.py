@@ -7,7 +7,7 @@ circular dependency.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +40,8 @@ class PWMExtremeResult:
     hylak_id: int | None
     month_results: list[PWMExtremeMonthResult]
     labels_df: pd.DataFrame
+    extremes_df: pd.DataFrame = field(default_factory=pd.DataFrame)
+    transitions_df: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
     def thresholds_df(self) -> pd.DataFrame:

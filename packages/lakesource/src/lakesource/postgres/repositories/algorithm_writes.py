@@ -61,6 +61,21 @@ class PostgresPwmWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_pwm_extreme_thresholds(conn, rows, table_config=self._tc)
 
+    def upsert_pwm_extreme_labels(self, rows):
+        from lakesource.postgres import lake_pwm as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_extreme_labels(conn, rows, table_config=self._tc)
+
+    def upsert_pwm_extreme_extremes(self, rows):
+        from lakesource.postgres import lake_pwm as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_extreme_extremes(conn, rows, table_config=self._tc)
+
+    def upsert_pwm_extreme_abrupt_transitions(self, rows):
+        from lakesource.postgres import lake_pwm as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_extreme_abrupt_transitions(conn, rows, table_config=self._tc)
+
     def upsert_pwm_extreme_run_status(self, rows):
         from lakesource.postgres import lake_pwm as _mod
         with self._conn_factory() as conn:

@@ -11,6 +11,8 @@ from lakeanalysis.pwm_extreme.compute import (
     compute_one_month_thresholds,
     compute_pwm_beta,
     crossent_quantile,
+    detect_pwm_abrupt_transitions,
+    extract_pwm_extreme_events,
     shifted_exponential_prior,
     solve_lagrange_multipliers,
 )
@@ -125,3 +127,102 @@ class TestComputeMonthlyThresholds:
         config = PWMExtremeConfig(min_observations_per_month=10)
         with pytest.raises(ValueError, match="No observations remain"):
             compute_monthly_thresholds(series_df, config=config, frozen_year_months=all_keys)
+
+    def test_result_has_extremes_df(self, series_df):
+        config = PWMExtremeConfig(min_observations_per_month=10)
+        result = compute_monthly_thresholds(series_df, config=config)
+        assert result.extremes_df is not None
+
+    def test_result_has_transitions_df(self, series_df):
+        config = PWMExtremeConfig(min_observations_per_month=10)
+        result = compute_monthly_thresholds(series_df, config=config)
+        assert result.transitions_df is not None
+
+
+class TestExtractPWMExtremeEvents:
+    def test_no_extreme_returns_empty(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1],
+            "year": [2000, 2000],
+            "month": [1, 2],
+            "water_area": [100.0, 110.0],
+            "extreme_label": ["normal", "normal"],
+        })
+        result = extract_pwm_extreme_events(df)
+        assert result.empty
+        assert "severity" in result.columns
+
+    def test_high_low_events(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1, 1, 1],
+            "year": [2000, 2000, 2000, 2000],
+            "month": [1, 2, 3, 4],
+            "water_area": [180.0, 110.0, 30.0, 100.0],
+            "threshold_low": [40.0, 40.0, 40.0, 40.0],
+            "threshold_high": [150.0, 150.0, 150.0, 150.0],
+            "extreme_label": ["extreme_high", "normal", "extreme_low", "normal"],
+        })
+        result = extract_pwm_extreme_events(df)
+        assert len(result) == 2
+        assert set(result["event_type"]) == {"high", "low"}
+        high_row = result[result["event_type"] == "high"].iloc[0]
+        assert high_row["water_area"] == 180.0
+        assert high_row["severity"] == 30.0
+        low_row = result[result["event_type"] == "low"].iloc[0]
+        assert low_row["water_area"] == 30.0
+        assert low_row["severity"] == 10.0
+
+
+class TestDetectPWMAbruptTransitions:
+    def test_no_transition_returns_empty(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1],
+            "year": [2000, 2000],
+            "month": [1, 2],
+            "month_ordinal": [0, 1],
+            "water_area": [100.0, 110.0],
+            "extreme_label": ["normal", "normal"],
+        })
+        result = detect_pwm_abrupt_transitions(df)
+        assert result.empty
+
+    def test_low_to_high_transition(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1],
+            "year": [2000, 2000],
+            "month": [1, 2],
+            "month_ordinal": [0, 1],
+            "water_area": [30.0, 180.0],
+            "extreme_label": ["extreme_low", "extreme_high"],
+        })
+        result = detect_pwm_abrupt_transitions(df)
+        assert len(result) == 1
+        row = result.iloc[0]
+        assert row["transition_type"] == "low_to_high"
+        assert row["from_water_area"] == 30.0
+        assert row["to_water_area"] == 180.0
+
+    def test_high_to_low_transition(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1],
+            "year": [2000, 2000],
+            "month": [1, 2],
+            "month_ordinal": [0, 1],
+            "water_area": [180.0, 30.0],
+            "extreme_label": ["extreme_high", "extreme_low"],
+        })
+        result = detect_pwm_abrupt_transitions(df)
+        assert len(result) == 1
+        assert result.iloc[0]["transition_type"] == "high_to_low"
+
+    def test_non_adjacent_skipped(self):
+        df = pd.DataFrame({
+            "hylak_id": [1, 1, 1],
+            "year": [2000, 2001, 2001],
+            "month": [1, 1, 2],
+            "month_ordinal": [0, 12, 13],
+            "water_area": [30.0, 100.0, 180.0],
+            "extreme_label": ["extreme_low", "normal", "extreme_high"],
+        })
+        result = detect_pwm_abrupt_transitions(df)
+        assert result.empty
