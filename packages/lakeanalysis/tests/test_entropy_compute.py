@@ -37,9 +37,9 @@ class TestAeFromValues:
         ae = ae_from_values(np.array([]))
         assert np.isnan(ae)
 
-    def test_negative_values_not_nan(self):
+    def test_negative_values_produce_nan(self):
         ae = ae_from_values(np.array([-1.0, 2.0]))
-        assert not np.isnan(ae)
+        assert np.isnan(ae)
 
     def test_negative_and_positive_sum_zero(self):
         ae = ae_from_values(np.array([1.0, -1.0]))
