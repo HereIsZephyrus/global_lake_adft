@@ -20,8 +20,10 @@ from lakeviz.config import GlobalGridConfig
 from lakeviz.quantile import (
     plot_extremes_by_type_map,
     plot_extremes_density_map,
+    plot_extremes_event_density_map,
     plot_transition_by_type_map,
     plot_transition_density_map,
+    plot_transition_event_density_map,
 )
 from lakeviz.style.presets import Theme
 
@@ -50,9 +52,11 @@ def main() -> None:
 
     plot_fns = [
         ("extremes_density", lambda: plot_extremes_density_map(grid_config, refresh=args.refresh)),
+        ("extremes_event_density", lambda: plot_extremes_event_density_map(grid_config, refresh=args.refresh)),
         ("extremes_high", lambda: plot_extremes_by_type_map(grid_config, "high", refresh=args.refresh)),
         ("extremes_low", lambda: plot_extremes_by_type_map(grid_config, "low", refresh=args.refresh)),
         ("transition_density", lambda: plot_transition_density_map(grid_config, refresh=args.refresh)),
+        ("transition_event_density", lambda: plot_transition_event_density_map(grid_config, refresh=args.refresh)),
         ("transition_low_to_high", lambda: plot_transition_by_type_map(grid_config, "low_to_high", refresh=args.refresh)),
         ("transition_high_to_low", lambda: plot_transition_by_type_map(grid_config, "high_to_low", refresh=args.refresh)),
     ]

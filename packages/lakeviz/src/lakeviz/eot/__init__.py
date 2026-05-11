@@ -2,6 +2,7 @@
 
 from .global_map import (
     plot_eot_convergence_map,
+    plot_eot_extremes_density_map,
     plot_eot_extremes_frequency_map,
     plot_eot_sigma_map,
     plot_eot_threshold_map,
@@ -21,6 +22,7 @@ from .plot import (
 
 __all__ = [
     "plot_eot_convergence_map",
+    "plot_eot_extremes_density_map",
     "plot_eot_extremes_frequency_map",
     "plot_eot_sigma_map",
     "plot_eot_threshold_map",

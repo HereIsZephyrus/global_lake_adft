@@ -9,7 +9,7 @@ import numpy as np
 
 from ..config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from ..grid import agg_to_grid_matrix
-from ..grid_map_factory import make_grid_map
+from ..grid_map_factory import make_density_map, make_grid_map
 from ..map_plot import draw_global_grid
 
 log = logging.getLogger(__name__)
@@ -72,6 +72,26 @@ plot_pwm_threshold_low_map = make_grid_map(
     cbar_label="中位数低阈值",
     sub_dir="pwm_extreme",
     filename="median_threshold_low.png",
+)
+
+plot_pwm_high_exceedance_density_map = make_density_map(
+    _fetch_pwm_exceedance_grid_agg,
+    "mean_high_exceedance",
+    title="PWM 高值超越密度",
+    cbar_label="每湖超越月数",
+    sub_dir="pwm_extreme/density",
+    filename="high_exceedance_density.png",
+    extra_fetch_kwargs={"p_high": 0.05, "p_low": 0.05},
+)
+
+plot_pwm_low_exceedance_density_map = make_density_map(
+    _fetch_pwm_exceedance_grid_agg,
+    "mean_low_exceedance",
+    title="PWM 低值超越密度",
+    cbar_label="每湖超越月数",
+    sub_dir="pwm_extreme/density",
+    filename="low_exceedance_density.png",
+    extra_fetch_kwargs={"p_high": 0.05, "p_low": 0.05},
 )
 
 

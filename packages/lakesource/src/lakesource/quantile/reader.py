@@ -1,7 +1,7 @@
 """Unified read interface for quantile-based identification data with SQL-side aggregation.
 
 All global-map queries perform aggregation in PostgreSQL, returning only
-~37k grid cells instead of millions of raw rows.  Results are cached as
+~37k grid cells instead of millions of raw rows. Results are cached as
 parquet in ``data/quantile/``.
 """
 
@@ -87,6 +87,34 @@ ORDER BY 1, 2, 3
     )
 
 
+def _per_lake_stats_grid_agg_sql(tc: TableConfig, resolution: float) -> psql.Composed:
+    return psql.SQL("""
+WITH per_lake AS (
+    SELECT e.hylak_id,
+           SUM(CASE WHEN e.event_type = 'high' THEN 1 ELSE 0 END) AS high_count,
+           SUM(CASE WHEN e.event_type = 'low'  THEN 1 ELSE 0 END) AS low_count
+    FROM   {extremes} e
+    GROUP BY e.hylak_id
+)
+SELECT FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
+       FLOOR(ST_X(l.centroid) / %(res)s) * %(res)s AS cell_lon,
+       COUNT(DISTINCT p.hylak_id)                    AS lake_count,
+       AVG(p.high_count)                             AS mean_high,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.high_count) AS median_high,
+       AVG(p.low_count)                              AS mean_low,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.low_count)  AS median_low,
+       AVG(p.high_count + p.low_count)               AS mean_all,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.high_count + p.low_count) AS median_all
+FROM   per_lake p
+JOIN   {lake_info} l ON l.hylak_id = p.hylak_id
+GROUP BY 1, 2
+ORDER BY 1, 2
+""").format(
+        extremes=psql.Identifier(tc.series_table("quantile_extremes")),
+        lake_info=psql.Identifier(tc.series_table("lake_info")),
+    )
+
+
 def _fetch_and_cache(
     sql: psql.Composed,
     params: dict,
@@ -113,6 +141,13 @@ def _fetch_and_cache(
     for col in ("lake_count", "event_count"):
         if col in df.columns:
             df[col] = df[col].astype(int)
+    for col in (
+        "mean_high", "median_high",
+        "mean_low", "median_low",
+        "mean_all", "median_all",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(cache_path, index=False)
@@ -178,6 +213,22 @@ def fetch_transitions_by_type_grid_agg(
     cache = (data_dir or _DATA_DIR) / f"transitions_by_type_grid_agg_r{resolution}.parquet"
     return _fetch_and_cache(
         _transitions_by_type_grid_agg_sql(config.t, resolution),
+        {"res": resolution},
+        cache,
+        refresh=refresh,
+    )
+
+
+def fetch_per_lake_stats_grid_agg(
+    config: SourceConfig,
+    resolution: float = 0.5,
+    *,
+    refresh: bool = False,
+    data_dir: Path | None = None,
+) -> pd.DataFrame:
+    cache = (data_dir or _DATA_DIR) / f"per_lake_stats_grid_agg_r{resolution}.parquet"
+    return _fetch_and_cache(
+        _per_lake_stats_grid_agg_sql(config.t, resolution),
         {"res": resolution},
         cache,
         refresh=refresh,

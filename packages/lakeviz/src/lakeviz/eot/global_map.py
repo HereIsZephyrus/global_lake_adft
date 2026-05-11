@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import GlobalGridConfig
-from ..grid_map_factory import make_grid_map
+from ..grid_map_factory import make_density_map, make_grid_map
 
 
 def _fetch_eot_convergence_grid_agg(
@@ -130,6 +130,27 @@ def plot_eot_threshold_map(
         cbar_label="中位数阈值",
         sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
         filename="median_threshold.png",
+        extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
+    )
+    return fn(config, refresh=refresh, min_lakes=min_lakes)
+
+
+def plot_eot_extremes_density_map(
+    config: GlobalGridConfig,
+    tail: str,
+    threshold_quantile: float,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 3,
+) -> Path:
+    q_tag = f"q{threshold_quantile:.2f}"
+    fn = make_density_map(
+        _fetch_eot_converged_grid_agg,
+        "mean_extremes_freq",
+        title=f"EOT 极端事件密度 — {tail} tail, {q_tag}",
+        cbar_label="极端事件频率",
+        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        filename="extremes_density.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
     return fn(config, refresh=refresh, min_lakes=min_lakes)

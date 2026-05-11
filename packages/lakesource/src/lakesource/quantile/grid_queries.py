@@ -20,6 +20,13 @@ def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("lake_count", "event_count"):
         if col in df.columns:
             df[col] = df[col].astype(int)
+    for col in (
+        "mean_high", "median_high",
+        "mean_low", "median_low",
+        "mean_all", "median_all",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
     return df
 
 
@@ -154,7 +161,49 @@ class _QuantileTransitionsByTypeQuery:
         return fetch_transitions_by_type_grid_agg(config, resolution, refresh=refresh)
 
 
+class _QuantilePerLakeStatsQuery:
+    name = "quantile.per_lake_stats"
+
+    def fetch_parquet(
+        self, client: Any, cache_dir: Path, resolution: float,
+        *, refresh: bool = False, **kwargs: Any,
+    ) -> pd.DataFrame:
+        cache = cache_dir / "quantile" / f"per_lake_stats_grid_agg_r{resolution}.parquet"
+        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+            client.query_df(f"""
+            WITH per_lake AS (
+                SELECT e.hylak_id,
+                       SUM(CASE WHEN e.event_type = 'high' THEN 1 ELSE 0 END) AS high_count,
+                       SUM(CASE WHEN e.event_type = 'low'  THEN 1 ELSE 0 END) AS low_count
+                FROM   quantile_extremes e
+                GROUP BY e.hylak_id
+            )
+            SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+                   FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+                   COUNT(DISTINCT p.hylak_id)                 AS lake_count,
+                   AVG(p.high_count)                           AS mean_high,
+                   MEDIAN(p.high_count)                        AS median_high,
+                   AVG(p.low_count)                            AS mean_low,
+                   MEDIAN(p.low_count)                         AS median_low,
+                   AVG(p.high_count + p.low_count)             AS mean_all,
+                   MEDIAN(p.high_count + p.low_count)          AS median_all
+            FROM   per_lake p
+            JOIN   lake_info l ON l.hylak_id = p.hylak_id
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+            """)
+        ))
+
+    def fetch_postgres(
+        self, config: Any, resolution: float,
+        *, refresh: bool = False, **kwargs: Any,
+    ) -> pd.DataFrame:
+        from lakesource.quantile.reader import fetch_per_lake_stats_grid_agg
+        return fetch_per_lake_stats_grid_agg(config, resolution, refresh=refresh)
+
+
 register_grid_query(_QuantileExtremesQuery())
 register_grid_query(_QuantileExtremesByTypeQuery())
 register_grid_query(_QuantileTransitionsQuery())
 register_grid_query(_QuantileTransitionsByTypeQuery())
+register_grid_query(_QuantilePerLakeStatsQuery())

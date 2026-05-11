@@ -7,6 +7,8 @@ from .plot import (
 from .global_map import (
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
+    plot_pwm_high_exceedance_density_map,
+    plot_pwm_low_exceedance_density_map,
     plot_pwm_monthly_exceedance_maps,
     plot_pwm_monthly_threshold_maps,
     plot_pwm_threshold_high_map,
@@ -18,6 +20,8 @@ __all__ = [
     "plot_pwm_extreme_threshold_summary",
     "plot_pwm_convergence_map",
     "plot_pwm_exceedance_maps",
+    "plot_pwm_high_exceedance_density_map",
+    "plot_pwm_low_exceedance_density_map",
     "plot_pwm_monthly_exceedance_maps",
     "plot_pwm_monthly_threshold_maps",
     "plot_pwm_threshold_high_map",

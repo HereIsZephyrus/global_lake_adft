@@ -138,9 +138,13 @@ def draw_global_grid(
     cbar = fig.colorbar(mesh, ax=ax, **cbar_kwargs)
     cbar.ax.tick_params(labelsize=10)
 
-    if log_scale and _vmin > 0:
+    if cbar_orientation == "vertical":
         cbar.ax.yaxis.set_major_formatter(
-            mticker.LogFormatterSciNotation(labelOnlyBase=False),
+            mticker.FuncFormatter(lambda x, _: f"{x:.2g}"),
+        )
+    else:
+        cbar.ax.xaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda x, _: f"{x:.2g}"),
         )
 
     if cbar_label:
@@ -178,3 +182,73 @@ def plot_global_grid(
         fig.savefig(output_path, dpi=DEFAULT_VIZ_CONFIG.default_dpi, bbox_inches="tight")
         log.info("Saved figure to %s", output_path)
     return fig
+
+
+def draw_global_density(
+    ax: plt.Axes,
+    lons: np.ndarray,
+    lats: np.ndarray,
+    values: np.ndarray,
+    *,
+    title: str = "",
+    cmap: str = "sequential_warm",
+    log_scale: bool = True,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cbar_label: str = "",
+    cbar_orientation: str = "vertical",
+    n_levels: int = 5,
+    sigma: float = 1.0,
+    target_res: float = 0.1,
+    add_cbar: bool = True,
+) -> dict[str, Any] | None:
+    """Draw a Gaussian-smoothed global density map on *ax*.
+
+    Takes a coarse-resolution (e.g. 0.5°) grid matrix, applies Gaussian
+    smoothing, upsamples to *target_res* via bicubic interpolation, and
+    renders with :func:`draw_global_grid`.
+
+    Parameters match :func:`draw_global_grid` with two additions:
+
+    sigma:
+        Gaussian filter standard deviation in units of input grid cells.
+    target_res:
+        Output resolution in degrees for the rendered grid.
+    """
+    from scipy.ndimage import gaussian_filter, zoom
+
+    filled = np.nan_to_num(values, nan=0.0)
+    if not np.any(filled > 0):
+        stamp_ax(ax, AxKind.GEOGRAPHIC)
+        ax.add_feature(cfeature.OCEAN, facecolor="#e8f4f8", edgecolor="none")
+        ax.add_feature(cfeature.LAND, facecolor="#f0f0f0", edgecolor="none")
+        ax.add_feature(cfeature.LAKES, facecolor="#d4e6f1", edgecolor="#666666", linewidth=0.2)
+        ax.set_global()
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.3, color="#666666")
+        if title:
+            ax.set_title(title, fontsize=14)
+        return None
+
+    smoothed = gaussian_filter(filled, sigma=sigma, mode="constant", cval=0.0)
+
+    scale = float(lons[1] - lons[0]) / target_res
+    upsampled = zoom(smoothed, scale, order=3)
+
+    threshold = np.nanmax(upsampled) * 0.005
+    mask = upsampled < threshold
+    if log_scale and mask.any():
+        upsampled = upsampled.copy()
+        upsampled[mask] = np.nan
+
+    n_lon_up = upsampled.shape[1]
+    n_lat_up = upsampled.shape[0]
+    lons_up = np.linspace(-180 + target_res / 2, 180 - target_res / 2, n_lon_up)
+    lats_up = np.linspace(-90 + target_res / 2, 90 - target_res / 2, n_lat_up)
+
+    return draw_global_grid(
+        ax, lons_up, lats_up, upsampled,
+        title=title, cmap=cmap, log_scale=log_scale,
+        vmin=vmin, vmax=vmax, cbar_label=cbar_label,
+        cbar_orientation=cbar_orientation, n_levels=n_levels,
+        add_cbar=add_cbar,
+    )

@@ -200,8 +200,10 @@ SELECT FLOOR(ST_Y(l.centroid) / %(res)s) * %(res)s AS cell_lat,
        COUNT(DISTINCT e.hylak_id)                  AS lake_count,
        AVG(e.high_count)                            AS mean_high_exceedance,
        AVG(e.low_count)                             AS mean_low_exceedance,
+       AVG(e.high_count + e.low_count)              AS mean_all_exceedance,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.high_count) AS median_high_exceedance,
-       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.low_count)  AS median_low_exceedance
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.low_count)  AS median_low_exceedance,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.high_count + e.low_count) AS median_all_exceedance
 FROM   exceedance e
 JOIN   {lake_info} l ON l.hylak_id = e.hylak_id
 GROUP BY 1, 2

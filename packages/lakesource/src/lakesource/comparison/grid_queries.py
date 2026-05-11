@@ -97,10 +97,12 @@ class _ComparisonExceedanceQuery:
                    qa.q_low_count::float  / NULLIF(qa.q_total_months, 0) AS q_low_rate,
                    pa.pwm_high_count::float / NULLIF(pa.pwm_total_months, 0) AS pwm_high_rate,
                    pa.pwm_low_count::float  / NULLIF(pa.pwm_total_months, 0) AS pwm_low_rate,
-                   (pa.pwm_high_count::float / NULLIF(pa.pwm_total_months, 0))
-                     - (qa.q_high_count::float / NULLIF(qa.q_total_months, 0)) AS diff_high_rate,
-                   (pa.pwm_low_count::float / NULLIF(pa.pwm_total_months, 0))
-                     - (qa.q_low_count::float / NULLIF(qa.q_total_months, 0)) AS diff_low_rate
+                    (pa.pwm_high_count::float / NULLIF(pa.pwm_total_months, 0))
+                      - (qa.q_high_count::float / NULLIF(qa.q_total_months, 0)) AS diff_high_rate,
+                    (pa.pwm_low_count::float / NULLIF(pa.pwm_total_months, 0))
+                      - (qa.q_low_count::float / NULLIF(qa.q_total_months, 0)) AS diff_low_rate,
+                    pa.pwm_high_count - qa.q_high_count AS diff_high_count,
+                    pa.pwm_low_count  - qa.q_low_count  AS diff_low_count
             FROM quantile_agg qa
             JOIN pwm_agg pa ON pa.cell_lat = qa.cell_lat AND pa.cell_lon = qa.cell_lon
             ORDER BY 1, 2

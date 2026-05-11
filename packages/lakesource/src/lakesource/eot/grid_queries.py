@@ -20,7 +20,11 @@ def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("lake_count",):
         if col in df.columns:
             df[col] = df[col].astype(int)
-    for col in ("convergence_rate", "median_xi", "median_sigma", "mean_extremes_freq", "median_threshold"):
+    for col in (
+        "convergence_rate", "median_xi", "median_sigma",
+        "mean_extremes_freq", "median_extremes_freq", "median_threshold",
+        "mean_all_extremes_freq", "median_all_extremes_freq",
+    ):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
     return df
@@ -93,6 +97,7 @@ class _EOTConvergedQuery:
                    MEDIAN(r.xi)                                  AS median_xi,
                    MEDIAN(r.sigma)                               AS median_sigma,
                    AVG(r.n_extremes::float / NULLIF(r.n_observations, 0)) AS mean_extremes_freq,
+                   MEDIAN(r.n_extremes::float / NULLIF(r.n_observations, 0)) AS median_extremes_freq,
                    MEDIAN(r.threshold)                           AS median_threshold
             FROM   eot_results r
             JOIN   lake_info l ON l.hylak_id = r.hylak_id
@@ -115,5 +120,55 @@ class _EOTConvergedQuery:
         )
 
 
+class _EOTConvergedAllQuery:
+    name = "eot.converged_all"
+
+    def fetch_parquet(
+        self, client: Any, cache_dir: Path, resolution: float,
+        *, refresh: bool = False, threshold_quantile: float = 0.95,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        q_tag = f"q{threshold_quantile:.4f}"
+        cache = cache_dir / "eot" / f"eot_converged_all_{q_tag}_r{resolution}.parquet"
+        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+            client.query_df(f"""
+            WITH paired AS (
+                SELECT hi.hylak_id,
+                       (hi.n_extremes::float / NULLIF(hi.n_observations, 0))
+                         + (lo.n_extremes::float / NULLIF(lo.n_observations, 0)) AS all_extremes_freq
+                FROM   eot_results hi
+                JOIN   eot_results lo
+                  ON   lo.hylak_id = hi.hylak_id
+                 AND   lo.tail = 'low'
+                 AND   lo.threshold_quantile = '{threshold_quantile}'
+                 AND   lo.converged IS TRUE
+                WHERE  hi.tail = 'high'
+                  AND  hi.threshold_quantile = '{threshold_quantile}'
+                  AND  hi.converged IS TRUE
+            )
+            SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
+                   FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
+                   COUNT(DISTINCT p.hylak_id)                 AS lake_count,
+                   AVG(p.all_extremes_freq)                   AS mean_all_extremes_freq,
+                   MEDIAN(p.all_extremes_freq)                AS median_all_extremes_freq
+            FROM   paired p
+            JOIN   lake_info l ON l.hylak_id = p.hylak_id
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+            """)
+        ))
+
+    def fetch_postgres(
+        self, config: Any, resolution: float,
+        *, refresh: bool = False, threshold_quantile: float = 0.95,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        from lakesource.eot.reader import fetch_eot_converged_all_grid_agg
+        return fetch_eot_converged_all_grid_agg(
+            config, threshold_quantile, resolution, refresh=refresh
+        )
+
+
 register_grid_query(_EOTConvergenceQuery())
 register_grid_query(_EOTConvergedQuery())
+register_grid_query(_EOTConvergedAllQuery())

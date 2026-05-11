@@ -3,6 +3,7 @@
 from .reader import (
     fetch_extremes_by_type_grid_agg,
     fetch_extremes_grid_agg,
+    fetch_per_lake_stats_grid_agg,
     fetch_transitions_by_type_grid_agg,
     fetch_transitions_grid_agg,
 )
@@ -36,6 +37,7 @@ from .store import (
 __all__ = [
     "fetch_extremes_grid_agg",
     "fetch_extremes_by_type_grid_agg",
+    "fetch_per_lake_stats_grid_agg",
     "fetch_transitions_grid_agg",
     "fetch_transitions_by_type_grid_agg",
     "upsert_extremes",

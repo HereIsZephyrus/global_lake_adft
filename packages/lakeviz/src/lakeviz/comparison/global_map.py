@@ -1,4 +1,4 @@
-"""Comparison global distribution maps: Quantile vs PWM exceedance rates."""
+"""Global density comparison panels for quantile, PWM, EOT, and dataset subsets."""
 
 from __future__ import annotations
 
@@ -7,260 +7,521 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
-from ..config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
+from lakesource.config import Backend, SourceConfig
+from lakesource.provider import create_provider
+
+from ..config import GlobalGridConfig
 from ..grid import agg_to_grid_matrix
 from ..layout import create_figure, save
-from ..map_plot import draw_global_grid
+from ..map_plot import draw_global_density
 
 log = logging.getLogger(__name__)
 
 
-def _fetch_comparison_exceedance_grid_agg(
-    provider, resolution, *, refresh=False, sample_ids=None,
-):
+def _merge_two(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    *,
+    left_map: dict[str, str],
+    right_map: dict[str, str],
+) -> pd.DataFrame:
+    keep_left = ["cell_lat", "cell_lon", "lake_count", *left_map.keys()]
+    keep_right = ["cell_lat", "cell_lon", "lake_count", *right_map.keys()]
+    left_df = left[keep_left].rename(columns={"lake_count": "lake_count_left", **left_map})
+    right_df = right[keep_right].rename(columns={"lake_count": "lake_count_right", **right_map})
+    merged = left_df.merge(right_df, on=["cell_lat", "cell_lon"], how="outer")
+    merged["lake_count_left"] = merged.get("lake_count_left", 0).fillna(0).astype(int)
+    merged["lake_count_right"] = merged.get("lake_count_right", 0).fillna(0).astype(int)
+    merged["lake_count"] = np.maximum(merged["lake_count_left"], merged["lake_count_right"]).astype(int)
+    for col in merged.columns:
+        if col.startswith("left_") or col.startswith("right_"):
+            merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+    return merged
+
+
+def _fetch_quantile_per_lake_stats(provider, resolution, *, refresh=False) -> pd.DataFrame:
+    return provider.fetch_grid_agg("quantile.per_lake_stats", resolution, refresh=refresh)
+
+
+def _fetch_pwm_exceedance(provider, resolution, *, p=0.05, refresh=False) -> pd.DataFrame:
+    return provider.fetch_grid_agg("pwm.exceedance", resolution, p_high=p, p_low=p, refresh=refresh)
+
+
+def _fetch_eot_tail(provider, resolution, *, tail: str, q: float, refresh=False) -> pd.DataFrame:
     return provider.fetch_grid_agg(
-        "comparison.exceedance", resolution, refresh=refresh,
-        sample_ids=sample_ids,
+        "eot.converged", resolution, tail=tail, threshold_quantile=q, refresh=refresh,
     )
 
 
-def _draw_and_save(
-    agg, value_col, resolution, output_dir, sub_dir, filename,
-    title, cmap, log_scale, vmin, vmax, cbar_label,
-):
-    import matplotlib.pyplot as plt
-    import cartopy.crs as ccrs
-
-    if agg.empty or value_col not in agg.columns:
-        log.warning("No data for %s", title)
-        return Path()
-
-    lons, lats, values = agg_to_grid_matrix(agg, value_col, resolution)
-
-    out_path = output_dir / sub_dir / filename
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    fig, ax = plt.subplots(figsize=(14, 7), subplot_kw={"projection": ccrs.Robinson()})
-    draw_global_grid(
-        ax, lons, lats, values,
-        title=title, cmap=cmap, log_scale=log_scale,
-        vmin=vmin, vmax=vmax, cbar_label=cbar_label,
+def _fetch_eot_all(provider, resolution, *, q: float, refresh=False) -> pd.DataFrame:
+    return provider.fetch_grid_agg(
+        "eot.converged_all", resolution, threshold_quantile=q, refresh=refresh,
     )
-    fig.savefig(out_path, dpi=DEFAULT_VIZ_CONFIG.default_dpi, bbox_inches="tight")
-    plt.close(fig)
-    log.info("Saved: %s → %s", title, out_path)
-    return out_path
 
 
-_PLOT_SPECS = [
-    (
-        "q_high_rate", "Quantile 高值超越频率",
-        "超越率", "sequential_warm", True, None, None,
-        "q_high_rate.png",
-    ),
-    (
-        "pwm_high_rate", "PWM 高值超越频率",
-        "超越率", "sequential_warm", True, None, None,
-        "pwm_high_rate.png",
-    ),
-    (
-        "diff_high_rate", "高值超越频率差异 (PWM - Quantile)",
-        "差异", "BlueWhiteOrangeRed", False, None, None,
-        "diff_high_rate.png",
-    ),
-    (
-        "q_low_rate", "Quantile 低值超越频率",
-        "超越率", "sequential_warm", True, None, None,
-        "q_low_rate.png",
-    ),
-    (
-        "pwm_low_rate", "PWM 低值超越频率",
-        "超越率", "sequential_warm", True, None, None,
-        "pwm_low_rate.png",
-    ),
-    (
-        "diff_low_rate", "低值超越频率差异 (PWM - Quantile)",
-        "差异", "BlueWhiteOrangeRed", False, None, None,
-        "diff_low_rate.png",
-    ),
-]
-
-
-def plot_comparison_exceedance_maps(
-    config: GlobalGridConfig,
-    *,
-    sample_ids: set[int] | None = None,
-    refresh: bool = False,
-    min_lakes: int = 1,
-) -> list[Path]:
-    agg = _fetch_comparison_exceedance_grid_agg(
-        config.provider, config.resolution,
-        refresh=refresh, sample_ids=sample_ids,
+def _standardize_quantile_vs_pwm(
+    provider, resolution, *, refresh=False,
+) -> pd.DataFrame:
+    quantile = _fetch_quantile_per_lake_stats(provider, resolution, refresh=refresh)
+    pwm = _fetch_pwm_exceedance(provider, resolution, p=0.05, refresh=refresh)
+    return _merge_two(
+        quantile,
+        pwm,
+        left_map={
+            "mean_high": "left_high_mean",
+            "median_high": "left_high_median",
+            "mean_low": "left_low_mean",
+            "median_low": "left_low_median",
+            "mean_all": "left_all_mean",
+            "median_all": "left_all_median",
+        },
+        right_map={
+            "mean_high_exceedance": "right_high_mean",
+            "median_high_exceedance": "right_high_median",
+            "mean_low_exceedance": "right_low_mean",
+            "median_low_exceedance": "right_low_median",
+            "mean_all_exceedance": "right_all_mean",
+            "median_all_exceedance": "right_all_median",
+        },
     )
-    if min_lakes > 1:
-        agg = agg[agg["lake_count"] >= min_lakes]
-
-    if agg.empty:
-        log.warning("No comparison exceedance data available")
-        return []
-
-    paths: list[Path] = []
-    for value_col, title, cbar_label, cmap, log_scale, vmin, vmax, filename in _PLOT_SPECS:
-        out = _draw_and_save(
-            agg, value_col, config.resolution, config.output_dir,
-            sub_dir="comparison", filename=filename,
-            title=title, cmap=cmap, log_scale=log_scale,
-            vmin=vmin, vmax=vmax, cbar_label=cbar_label,
-        )
-        if out and out.exists():
-            paths.append(out)
-        else:
-            log.warning("Skipped: %s (no data)", value_col)
-
-    return paths
 
 
-def plot_comparison_exceedance_panel(
-    config: GlobalGridConfig,
-    *,
-    sample_ids: set[int] | None = None,
-    refresh: bool = False,
-    min_lakes: int = 1,
-) -> list[Path]:
-    """Generate three 1×2 panels of comparison exceedance maps.
-
-    Each row produces a separate figure with its own colorbar:
-
-        Row 0: q_high_rate  | q_low_rate   [warm cbar]
-        Row 1: pwm_high_rate | pwm_low_rate [warm cbar]
-        Row 2: diff_high_rate | diff_low_rate [div cbar]
-
-    Returns:
-        List of output paths for the three panel figures.
-    """
-    import cartopy.crs as ccrs
-
-    agg = _fetch_comparison_exceedance_grid_agg(
-        config.provider, config.resolution,
-        refresh=refresh, sample_ids=sample_ids,
-    )
-    if min_lakes > 1:
-        agg = agg[agg["lake_count"] >= min_lakes]
-
-    if agg.empty:
-        log.warning("No comparison exceedance data available")
-        return []
-
-    projection = ccrs.Robinson()
-    row_groups: dict[int, list[tuple]] = {0: [], 1: [], 2: []}
-
-    for idx, spec in enumerate(_PLOT_SPECS):
-        row = idx // 2
-        row_groups[row].append(spec)
-
-    row_labels = {
-        0: ("Quantile vs PWM 高值", "quantile_pwm_high.png"),
-        1: ("Quantile vs PWM 低值", "quantile_pwm_low.png"),
-        2: ("超越频率差异", "diff_rate.png"),
+def _standardize_pwm_pvalues(
+    provider, resolution, *, p1=0.01, p2=0.05, refresh=False,
+) -> pd.DataFrame:
+    left = _fetch_pwm_exceedance(provider, resolution, p=p1, refresh=refresh)
+    right = _fetch_pwm_exceedance(provider, resolution, p=p2, refresh=refresh)
+    mapping = {
+        "mean_high_exceedance": "high_mean",
+        "median_high_exceedance": "high_median",
+        "mean_low_exceedance": "low_mean",
+        "median_low_exceedance": "low_median",
+        "mean_all_exceedance": "all_mean",
+        "median_all_exceedance": "all_median",
     }
+    return _merge_two(
+        left,
+        right,
+        left_map={k: f"left_{v}" for k, v in mapping.items()},
+        right_map={k: f"right_{v}" for k, v in mapping.items()},
+    )
 
-    paths: list[Path] = []
 
-    for row, specs in row_groups.items():
-        if not specs:
-            continue
+def _standardize_eot_quantiles(
+    provider, resolution, *, q1=0.95, q2=0.98, refresh=False,
+) -> pd.DataFrame:
+    high_left = _fetch_eot_tail(provider, resolution, tail="high", q=q1, refresh=refresh)
+    high_right = _fetch_eot_tail(provider, resolution, tail="high", q=q2, refresh=refresh)
+    low_left = _fetch_eot_tail(provider, resolution, tail="low", q=q1, refresh=refresh)
+    low_right = _fetch_eot_tail(provider, resolution, tail="low", q=q2, refresh=refresh)
+    all_left = _fetch_eot_all(provider, resolution, q=q1, refresh=refresh)
+    all_right = _fetch_eot_all(provider, resolution, q=q2, refresh=refresh)
 
-        fig, axes = create_figure(
-            [
-                {"name": "left", "row": 0, "col": 0},
-                {"name": "right", "row": 0, "col": 1},
-            ],
-            figsize=(12, 5),
-            width_ratios=[1, 1],
-            projection=projection,
+    merged = _merge_two(
+        high_left,
+        high_right,
+        left_map={
+            "mean_extremes_freq": "left_high_mean",
+            "median_extremes_freq": "left_high_median",
+        },
+        right_map={
+            "mean_extremes_freq": "right_high_mean",
+            "median_extremes_freq": "right_high_median",
+        },
+    )
+    merged = merged.merge(
+        _merge_two(
+            low_left,
+            low_right,
+            left_map={
+                "mean_extremes_freq": "left_low_mean",
+                "median_extremes_freq": "left_low_median",
+            },
+            right_map={
+                "mean_extremes_freq": "right_low_mean",
+                "median_extremes_freq": "right_low_median",
+            },
+        )[[
+            "cell_lat", "cell_lon", "left_low_mean", "left_low_median",
+            "right_low_mean", "right_low_median",
+        ]],
+        on=["cell_lat", "cell_lon"],
+        how="outer",
+    )
+    merged = merged.merge(
+        _merge_two(
+            all_left,
+            all_right,
+            left_map={
+                "mean_all_extremes_freq": "left_all_mean",
+                "median_all_extremes_freq": "left_all_median",
+            },
+            right_map={
+                "mean_all_extremes_freq": "right_all_mean",
+                "median_all_extremes_freq": "right_all_median",
+            },
+        )[[
+            "cell_lat", "cell_lon", "left_all_mean", "left_all_median",
+            "right_all_mean", "right_all_median",
+        ]],
+        on=["cell_lat", "cell_lon"],
+        how="outer",
+    )
+    for col in merged.columns:
+        if col.startswith("left_") or col.startswith("right_"):
+            merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+    return merged
+
+
+def _standardize_pwm_vs_eot(
+    provider, resolution, *, pwm_p=0.05, eot_q=0.95, refresh=False,
+) -> pd.DataFrame:
+    pwm = _fetch_pwm_exceedance(provider, resolution, p=pwm_p, refresh=refresh)
+    eot_high = _fetch_eot_tail(provider, resolution, tail="high", q=eot_q, refresh=refresh)
+    eot_low = _fetch_eot_tail(provider, resolution, tail="low", q=eot_q, refresh=refresh)
+    eot_all = _fetch_eot_all(provider, resolution, q=eot_q, refresh=refresh)
+    merged = _merge_two(
+        pwm,
+        eot_high,
+        left_map={
+            "mean_high_exceedance": "left_high_mean",
+            "median_high_exceedance": "left_high_median",
+            "mean_low_exceedance": "left_low_mean",
+            "median_low_exceedance": "left_low_median",
+            "mean_all_exceedance": "left_all_mean",
+            "median_all_exceedance": "left_all_median",
+        },
+        right_map={
+            "mean_extremes_freq": "right_high_mean",
+            "median_extremes_freq": "right_high_median",
+        },
+    )
+    merged = merged.merge(
+        eot_low[["cell_lat", "cell_lon", "mean_extremes_freq", "median_extremes_freq"]].rename(
+            columns={
+                "mean_extremes_freq": "right_low_mean",
+                "median_extremes_freq": "right_low_median",
+            }
+        ),
+        on=["cell_lat", "cell_lon"],
+        how="outer",
+    )
+    merged = merged.merge(
+        eot_all[["cell_lat", "cell_lon", "mean_all_extremes_freq", "median_all_extremes_freq"]].rename(
+            columns={
+                "mean_all_extremes_freq": "right_all_mean",
+                "median_all_extremes_freq": "right_all_median",
+            }
+        ),
+        on=["cell_lat", "cell_lon"],
+        how="outer",
+    )
+    for col in merged.columns:
+        if col.startswith("left_") or col.startswith("right_"):
+            merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+    return merged
+
+
+def _build_provider_for_parquet(data_dir: Path):
+    provider = create_provider(SourceConfig(backend=Backend.PARQUET, data_dir=data_dir))
+    # `data/parquet` and `data/parquet_gt10` would otherwise both use `data/cache`.
+    # Isolate cache roots so backend-to-backend comparisons can honor `refresh=False`.
+    if hasattr(provider, "_cache_dir"):
+        provider._cache_dir = data_dir.parent / "cache_comparison" / data_dir.name
+        provider._cache_dir.mkdir(parents=True, exist_ok=True)
+    return provider
+
+
+def _standardize_gt10_vs_full(
+    resolution: float,
+    *,
+    domain: str,
+    refresh=False,
+    gt10_dir: Path,
+    full_dir: Path,
+) -> pd.DataFrame:
+    gt10 = _build_provider_for_parquet(gt10_dir)
+    full = _build_provider_for_parquet(full_dir)
+    if domain == "quantile":
+        left = _fetch_quantile_per_lake_stats(gt10, resolution, refresh=refresh)
+        right = _fetch_quantile_per_lake_stats(full, resolution, refresh=refresh)
+        mapping = {
+            "mean_high": "high_mean",
+            "median_high": "high_median",
+            "mean_low": "low_mean",
+            "median_low": "low_median",
+            "mean_all": "all_mean",
+            "median_all": "all_median",
+        }
+    elif domain == "pwm":
+        left = _fetch_pwm_exceedance(gt10, resolution, p=0.05, refresh=refresh)
+        right = _fetch_pwm_exceedance(full, resolution, p=0.05, refresh=refresh)
+        mapping = {
+            "mean_high_exceedance": "high_mean",
+            "median_high_exceedance": "high_median",
+            "mean_low_exceedance": "low_mean",
+            "median_low_exceedance": "low_median",
+            "mean_all_exceedance": "all_mean",
+            "median_all_exceedance": "all_median",
+        }
+    elif domain == "eot":
+        high_left = _fetch_eot_tail(gt10, resolution, tail="high", q=0.95, refresh=refresh)
+        high_right = _fetch_eot_tail(full, resolution, tail="high", q=0.95, refresh=refresh)
+        low_left = _fetch_eot_tail(gt10, resolution, tail="low", q=0.95, refresh=refresh)
+        low_right = _fetch_eot_tail(full, resolution, tail="low", q=0.95, refresh=refresh)
+        all_left = _fetch_eot_all(gt10, resolution, q=0.95, refresh=refresh)
+        all_right = _fetch_eot_all(full, resolution, q=0.95, refresh=refresh)
+        merged = _merge_two(
+            high_left,
+            high_right,
+            left_map={"mean_extremes_freq": "left_high_mean", "median_extremes_freq": "left_high_median"},
+            right_map={"mean_extremes_freq": "right_high_mean", "median_extremes_freq": "right_high_median"},
         )
-
-        metas = []
-        cmap_name = specs[0][3]
-        ax_names = ["left", "right"]
-
-        for col, (
-            value_col, title, cbar_label, cmap, log_scale, vmin, vmax, _fn,
-        ) in enumerate(specs):
-            if value_col not in agg.columns:
-                log.warning("No data for %s", title)
-                continue
-
-            lons, lats, values = agg_to_grid_matrix(
-                agg, value_col, config.resolution,
-            )
-
-            ax = axes[ax_names[col]]
-            meta = draw_global_grid(
-                ax, lons, lats, values,
-                title=title, cmap=cmap, log_scale=log_scale,
-                vmin=vmin, vmax=vmax, cbar_label=cbar_label,
-                add_cbar=False,
-            )
-
-            if meta is not None:
-                metas.append(meta)
-
-        if metas:
-            label = "超越率" if cmap_name == "sequential_warm" else "差异"
-            _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap_name, label=label)
-
-        suptitle, fn = row_labels[row]
-        fig.suptitle(suptitle, fontsize=14, y=0.98)
-
-        out_path = config.output_dir / "comparison" / fn
-        paths.append(save(fig, out_path))
-
-    return paths
+        merged = merged.merge(
+            _merge_two(
+                low_left,
+                low_right,
+                left_map={"mean_extremes_freq": "left_low_mean", "median_extremes_freq": "left_low_median"},
+                right_map={"mean_extremes_freq": "right_low_mean", "median_extremes_freq": "right_low_median"},
+            )[["cell_lat", "cell_lon", "left_low_mean", "left_low_median", "right_low_mean", "right_low_median"]],
+            on=["cell_lat", "cell_lon"],
+            how="outer",
+        )
+        merged = merged.merge(
+            _merge_two(
+                all_left,
+                all_right,
+                left_map={"mean_all_extremes_freq": "left_all_mean", "median_all_extremes_freq": "left_all_median"},
+                right_map={"mean_all_extremes_freq": "right_all_mean", "median_all_extremes_freq": "right_all_median"},
+            )[["cell_lat", "cell_lon", "left_all_mean", "left_all_median", "right_all_mean", "right_all_median"]],
+            on=["cell_lat", "cell_lon"],
+            how="outer",
+        )
+        for col in merged.columns:
+            if col.startswith("left_") or col.startswith("right_"):
+                merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+        return merged
+    else:
+        raise ValueError(f"Unsupported domain: {domain}")
+    return _merge_two(
+        left,
+        right,
+        left_map={k: f"left_{v}" for k, v in mapping.items()},
+        right_map={k: f"right_{v}" for k, v in mapping.items()},
+    )
 
 
 def _add_row_cbar(fig, right_ax, metas, *, cmap_name, label=""):
-    """Add a shared vertical colorbar placed to the right of *right_ax*.
-
-    Position is derived from ``right_ax.get_position()`` — no GridSpec dependency.
-    """
     import matplotlib.colors as mcolors
     import matplotlib.ticker as mticker
 
     from ..style.presets import resolve_cmap
 
     resolved_cmap = resolve_cmap(cmap_name)
-
     vmin_shared = min(m["vmin"] for m in metas)
     vmax_shared = max(m["vmax"] for m in metas)
     log_scale = metas[0]["log_scale"]
-
     n_levels = len(metas[0]["bounds"]) - 1
     if log_scale and vmin_shared > 0:
-        bounds = np.logspace(
-            np.log10(vmin_shared), np.log10(vmax_shared), n_levels + 1,
-        )
+        bounds = np.logspace(np.log10(vmin_shared), np.log10(vmax_shared), n_levels + 1)
     else:
         bounds = np.linspace(vmin_shared, vmax_shared, n_levels + 1)
     norm = mcolors.BoundaryNorm(bounds, ncolors=n_levels)
-
     for meta in metas:
         meta["mesh"].set_norm(norm)
         meta["mesh"].set_cmap(resolved_cmap)
-
     bbox = right_ax.get_position()
-    cbar_width = 0.015
-    gap = 0.01
-    cbar_ax = fig.add_axes([bbox.x1 + gap, bbox.y0, cbar_width, bbox.y1 - bbox.y0])
+    cbar_ax = fig.add_axes([bbox.x1 + 0.01, bbox.y0, 0.015, bbox.y1 - bbox.y0])
     sm = plt.cm.ScalarMappable(cmap=resolved_cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, cax=cbar_ax, extendrect=True, extendfrac="auto")
     cbar.set_ticks(bounds)
     cbar.ax.tick_params(labelsize=8)
-    if log_scale and vmin_shared > 0:
-        cbar.ax.yaxis.set_major_formatter(
-            mticker.LogFormatterSciNotation(labelOnlyBase=False),
-        )
+    cbar.ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.2g}"))
     if label:
         cbar.ax.set_ylabel(label, fontsize=9)
+
+
+def _render_two_panel(
+    config: GlobalGridConfig,
+    df: pd.DataFrame,
+    *,
+    left_col: str,
+    right_col: str,
+    left_title: str,
+    right_title: str,
+    cmap: str,
+    log_scale: bool,
+    label: str,
+    out_path: Path,
+    sigma: float = 1.0,
+    target_res: float = 0.1,
+) -> Path | None:
+    import cartopy.crs as ccrs
+
+    if df.empty or left_col not in df.columns or right_col not in df.columns:
+        return None
+    fig, axes = create_figure(
+        [{"name": "left", "row": 0, "col": 0}, {"name": "right", "row": 0, "col": 1}],
+        figsize=(12, 5), width_ratios=[1, 1], projection=ccrs.Robinson(),
+    )
+    metas = []
+    for ax_name, value_col, title in (("left", left_col, left_title), ("right", right_col, right_title)):
+        lons, lats, values = agg_to_grid_matrix(df, value_col, config.resolution)
+        meta = draw_global_density(
+            axes[ax_name], lons, lats, values,
+            title=title, cmap=cmap, log_scale=log_scale,
+            cbar_label=label, sigma=sigma, target_res=target_res,
+            add_cbar=False,
+        )
+        if meta is not None:
+            metas.append(meta)
+    if metas:
+        _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap, label=label)
+    return save(fig, out_path)
+
+
+def _render_six_panels(
+    config: GlobalGridConfig,
+    df: pd.DataFrame,
+    *,
+    sub_dir: str,
+    left_label: str,
+    right_label: str,
+    min_lakes: int = 1,
+) -> list[Path]:
+    if min_lakes > 1 and "lake_count" in df.columns:
+        df = df[df["lake_count"] >= min_lakes]
+    if df.empty:
+        return []
+    specs = [
+        ("high", "mean", "sequential_warm", True, "均值"),
+        ("high", "median", "sequential_warm", True, "中位数"),
+        ("low", "mean", "sequential_cool", True, "均值"),
+        ("low", "median", "sequential_cool", True, "中位数"),
+        ("all", "mean", "sequential_warm", True, "均值"),
+        ("all", "median", "sequential_warm", True, "中位数"),
+    ]
+    stat_label = {"high": "高值异常", "low": "低值异常", "all": "全部异常"}
+    outputs: list[Path] = []
+    for stat, agg, cmap, log_scale, agg_label in specs:
+        out_path = config.output_dir / sub_dir / f"{stat}_{agg}.png"
+        result = _render_two_panel(
+            config,
+            df,
+            left_col=f"left_{stat}_{agg}",
+            right_col=f"right_{stat}_{agg}",
+            left_title=f"{left_label} {stat_label[stat]} {agg_label}",
+            right_title=f"{right_label} {stat_label[stat]} {agg_label}",
+            cmap=cmap,
+            log_scale=log_scale,
+            label=agg_label,
+            out_path=out_path,
+        )
+        if result is not None:
+            outputs.append(result)
+    return outputs
+
+
+def plot_pwm_pvalue_panels(
+    config: GlobalGridConfig,
+    *,
+    p1: float = 0.01,
+    p2: float = 0.05,
+    refresh: bool = False,
+    min_lakes: int = 1,
+) -> list[Path]:
+    df = _standardize_pwm_pvalues(config.provider, config.resolution, p1=p1, p2=p2, refresh=refresh)
+    return _render_six_panels(
+        config, df,
+        sub_dir="comparison/pwm_pvalue",
+        left_label=f"PWM p={p1}",
+        right_label=f"PWM p={p2}",
+        min_lakes=min_lakes,
+    )
+
+
+def plot_eot_quantile_panels(
+    config: GlobalGridConfig,
+    *,
+    q1: float = 0.95,
+    q2: float = 0.98,
+    refresh: bool = False,
+    min_lakes: int = 3,
+) -> list[Path]:
+    df = _standardize_eot_quantiles(config.provider, config.resolution, q1=q1, q2=q2, refresh=refresh)
+    return _render_six_panels(
+        config, df,
+        sub_dir="comparison/eot_quantile",
+        left_label=f"EOT q={q1}",
+        right_label=f"EOT q={q2}",
+        min_lakes=min_lakes,
+    )
+
+
+def plot_quantile_vs_pwm_panels(
+    config: GlobalGridConfig,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 1,
+) -> list[Path]:
+    df = _standardize_quantile_vs_pwm(config.provider, config.resolution, refresh=refresh)
+    return _render_six_panels(
+        config, df,
+        sub_dir="comparison/quantile_vs_pwm",
+        left_label="Quantile",
+        right_label="PWM",
+        min_lakes=min_lakes,
+    )
+
+
+def plot_pwm_vs_eot_panels(
+    config: GlobalGridConfig,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 1,
+) -> list[Path]:
+    df = _standardize_pwm_vs_eot(config.provider, config.resolution, refresh=refresh)
+    return _render_six_panels(
+        config, df,
+        sub_dir="comparison/pwm_vs_eot",
+        left_label="PWM",
+        right_label="EOT",
+        min_lakes=min_lakes,
+    )
+
+
+def plot_gt10_vs_full_panels(
+    config: GlobalGridConfig,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 1,
+    gt10_dir: Path,
+    full_dir: Path,
+) -> list[Path]:
+    outputs: list[Path] = []
+    for domain in ("quantile", "pwm", "eot"):
+        df = _standardize_gt10_vs_full(
+            config.resolution,
+            domain=domain,
+            refresh=refresh,
+            gt10_dir=gt10_dir,
+            full_dir=full_dir,
+        )
+        domain_outputs = _render_six_panels(
+            config,
+            df,
+            sub_dir="comparison/gt10_vs_full",
+            left_label="gt10",
+            right_label="full",
+            min_lakes=min_lakes,
+        )
+        renamed_outputs: list[Path] = []
+        for path in domain_outputs:
+            target = path.with_name(f"{domain}_{path.name}")
+            path.rename(target)
+            renamed_outputs.append(target)
+        outputs.extend(renamed_outputs)
+    return outputs

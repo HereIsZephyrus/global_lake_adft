@@ -23,6 +23,8 @@ from lakeviz.config import GlobalGridConfig
 from lakeviz.pwm_extreme import (
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
+    plot_pwm_high_exceedance_density_map,
+    plot_pwm_low_exceedance_density_map,
     plot_pwm_monthly_exceedance_maps,
     plot_pwm_monthly_threshold_maps,
     plot_pwm_threshold_high_map,
@@ -62,6 +64,8 @@ def main() -> None:
             ("convergence_rate", lambda: plot_pwm_convergence_map(grid_config, refresh=args.refresh)),
             ("threshold_high", lambda: plot_pwm_threshold_high_map(grid_config, refresh=args.refresh)),
             ("threshold_low", lambda: plot_pwm_threshold_low_map(grid_config, refresh=args.refresh)),
+            ("high_exceedance_density", lambda: plot_pwm_high_exceedance_density_map(grid_config, refresh=args.refresh)),
+            ("low_exceedance_density", lambda: plot_pwm_low_exceedance_density_map(grid_config, refresh=args.refresh)),
         ]
 
         for name, fn in plot_fns:

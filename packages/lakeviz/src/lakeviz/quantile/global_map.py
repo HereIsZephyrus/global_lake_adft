@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import GlobalGridConfig
-from ..grid_map_factory import make_grid_map
+from ..grid_map_factory import make_density_map, make_grid_map
 
 
 def _fetch_extremes_grid_agg(provider, resolution, *, refresh=False):
@@ -94,3 +94,22 @@ def plot_transition_by_type_map(
         pre_filter_fn=_filter_by_type,
     )
     return fn(config, refresh=refresh, min_lakes=min_lakes)
+
+
+plot_extremes_event_density_map = make_density_map(
+    _fetch_extremes_grid_agg,
+    "event_count",
+    title="分位数识别极端事件密度 (事件总数)",
+    cbar_label="事件数",
+    sub_dir="quantile/extremes",
+    filename="event_density.png",
+)
+
+plot_transition_event_density_map = make_density_map(
+    _fetch_transitions_grid_agg,
+    "event_count",
+    title="分位数识别旱涝突变密度 (事件总数)",
+    cbar_label="事件数",
+    sub_dir="quantile/transitions",
+    filename="event_density.png",
+)
