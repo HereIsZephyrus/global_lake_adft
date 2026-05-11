@@ -32,7 +32,7 @@ from . import comparison as _comparison
 from . import spatial as _spatial
 from . import shift as _shift
 from . import plot as _plot
-from . import export as _export
+from . import sync as _sync
 
 app.add_typer(_entropy.app, name="entropy", help="Apportionment Entropy pipeline")
 app.add_typer(_quality.app, name="quality", help="Data quality assessment & anomaly detection")
@@ -43,4 +43,4 @@ app.add_typer(_comparison.app, name="comparison", help="Algorithm comparison")
 app.add_typer(_spatial.app, name="spatial", help="Spatial / topological pipelines")
 app.add_typer(_shift.app, name="shift", help="Structural shift detection")
 app.add_typer(_plot.app, name="plot", help="Visualisation figures")
-app.add_typer(_export.app, name="export", help="Data export utilities")
+app.add_typer(_sync.app, name="sync", help="Parquet ↔ PostgreSQL data sync")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, DATA_DIR, LimitIdOpt, setup_logging
+from ._common import ChunkSizeOpt, LimitIdOpt, setup_logging
 
 app = typer.Typer(help="Structural shift detection", no_args_is_help=True)
 
@@ -20,7 +20,6 @@ def compute(
 ) -> None:
     """Compute structural shift labels via batch engine."""
     setup_logging("shift-labels")
-    from pathlib import Path
     from lakeanalysis.batch import Engine, RangeFilter, build_provider_batch_reader, build_provider_batch_writer
     from lakeanalysis.quality.shift_labels_calculator import ShiftLabelsCalculator
     from lakeanalysis.quality.shift_labels_runner import upsert_shift_labels_from_parquet, sync_shift_to_anomalies
@@ -28,8 +27,7 @@ def compute(
     from lakesource.provider.factory import create_provider
 
     config = SourceConfig()
-    data_dir = DATA_DIR / "parquet"
-    output_parquet = data_dir / "area_shift_labels.parquet"
+    output_parquet = config.data_dir / "area_shift_labels.parquet"
 
     if not skip_compute:
         provider = create_provider(config)
@@ -60,7 +58,7 @@ def sample(
     top_n: int = typer.Option(100, "--top-n", help="Top N candidates to export"),
     p_value_thresh: float = typer.Option(0.05, "--p-thresh", help="Pettitt p-value threshold"),
     smooth_window: int = typer.Option(12, "--smooth-window", help="Rolling smooth window in months"),
-    output_dir: str = typer.Option(str(DATA_DIR / "comparison" / "shift_candidates"), help="Output directory"),
+    output_dir: str = typer.Option(None, help="Output directory (default: data/comparison/shift_candidates)"),
 ) -> None:
     """Scan and export top structural shift candidate lakes."""
     setup_logging("shift-sample")
@@ -68,11 +66,17 @@ def sample(
 
     from lakeanalysis.quality.filters.shift import ShiftConfig, ShiftFilter
     from lakeanalysis.quality.filters import LakeContext
+    from lakesource.config import SourceConfig
     from lakesource.postgres import fetch_lake_area_chunk, series_db
     import pandas as pd
 
+    if output_dir is None:
+        config = SourceConfig()
+        out = config.data_dir.parent / "comparison" / "shift_candidates"
+    else:
+        out = Path(output_dir)
+
     sf = ShiftFilter(ShiftConfig(p_value_thresh=p_value_thresh, smooth_window=smooth_window))
-    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     all_rows: list[dict] = []
@@ -97,7 +101,7 @@ def sample(
 @app.command()
 def inspect(
     hylak_ids: list[int] = typer.Option([170137, 170009], "--hylak-id", help="Lake IDs to inspect"),
-    output_dir: str = typer.Option(str(DATA_DIR / "figures" / "quality"), help="Output directory for plots"),
+    output_dir: str = typer.Option(None, help="Output directory for plots (default: data/figures/quality)"),
     p_value_thresh: float = typer.Option(0.05, "--p-thresh"),
     smooth_window: int = typer.Option(12, "--smooth-window"),
 ) -> None:
@@ -107,11 +111,17 @@ def inspect(
 
     from lakeanalysis.quality.filters.shift import ShiftConfig, ShiftFilter
     from lakeanalysis.quality.filters import LakeContext
+    from lakesource.config import SourceConfig
     from lakesource.postgres import fetch_lake_area_by_ids, fetch_frozen_year_months_by_ids, series_db
     import matplotlib.pyplot as plt
 
+    if output_dir is None:
+        config = SourceConfig()
+        out = config.data_dir.parent / "figures" / "quality"
+    else:
+        out = Path(output_dir)
+
     sf = ShiftFilter(ShiftConfig(p_value_thresh=p_value_thresh, smooth_window=smooth_window))
-    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     with series_db.connection_context() as conn:

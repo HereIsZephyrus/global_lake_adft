@@ -21,13 +21,11 @@ from lakeanalysis.logger import Logger
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot flat lake area series.")
     parser.add_argument("--n-distinct", type=int, default=5, help="Max distinct water_area values to include.")
-    parser.add_argument("--output-dir", type=Path, default=DATA_DIR / "figures" / "quality")
+    parser.add_argument("--output-dir", type=Path, default=None, help="Output directory for figures.")
     return parser.parse_args()
 
 
@@ -37,12 +35,22 @@ def main() -> None:
 
     import matplotlib.pyplot as plt
     from lakeviz.style.presets import Theme
+    from lakesource.config import SourceConfig
     Theme.apply()
+
+    config = SourceConfig()
+    parquet_dir = config.data_dir
+
+    if args.output_dir:
+        output_dir = args.output_dir
+    else:
+        output_dir = parquet_dir.parent / "figures" / "quality"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect()
     con.execute("SET threads=1")
-    con.execute("CREATE VIEW lake_area AS SELECT * FROM read_parquet('data/parquet/lake_area/*.parquet')")
-    con.execute("CREATE VIEW area_quality AS SELECT * FROM read_parquet('data/parquet/area_quality/*.parquet')")
+    con.execute(f"CREATE VIEW lake_area AS SELECT * FROM read_parquet('{parquet_dir}/lake_area/*.parquet')")
+    con.execute(f"CREATE VIEW area_quality AS SELECT * FROM read_parquet('{parquet_dir}/area_quality/*.parquet')")
 
     lakes = con.execute(f"""
         WITH lake_stats AS (
@@ -93,8 +101,8 @@ def main() -> None:
     fig.suptitle(f"Flat Lake Area Series (n_distinct ≤ {args.n_distinct})", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    path = args.output_dir / f"flat_lake_series_ndist{args.n_distinct}.png"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"flat_lake_series_ndist{args.n_distinct}.png"
     fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     log.info("Saved: %s", path)

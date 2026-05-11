@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 
 import numpy as np
@@ -161,9 +160,11 @@ def config_to_dict(cfg: AgreementConfig) -> dict[str, float]:
 
 def run(args: argparse.Namespace) -> None:
     """Execute the area comparison analysis pipeline."""
-    data_dir = Path(args.data_dir) if args.data_dir else Path(
-        os.environ.get("DATA_DIR", "data/parquet")
-    )
+    if args.data_dir:
+        data_dir = Path(args.data_dir)
+    else:
+        from lakesource.config import SourceConfig
+        data_dir = SourceConfig().data_dir
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

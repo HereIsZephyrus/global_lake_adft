@@ -28,10 +28,6 @@ from lakeanalysis.quality.interpolation_runner import (
     run_interpolation_detect,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_DATA_DIR = Path("/mnt/repo/lake/global_lake_adft/data")
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -96,9 +92,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     Logger("run_interpolation_detect")
+
+    from lakesource.config import SourceConfig
+    data_dir = Path(args.data_dir) if args.data_dir else SourceConfig().data_dir
+
     run_interpolation_detect(
         InterpolationRunConfig(
-            data_dir=args.data_dir or DEFAULT_DATA_DIR,
+            data_dir=data_dir,
             chunk_size=args.chunk_size,
             limit_id=args.limit_id,
             id_start=args.id_start,

@@ -32,7 +32,7 @@ def run_interpolation_detect(config: InterpolationRunConfig) -> pd.DataFrame:
     interpolation_config = InterpolationConfig(
         min_collinear_points=config.min_collinear_points
     )
-    parquet_dir = config.data_dir / "parquet"
+    parquet_dir = config.data_dir
     if not parquet_dir.exists():
         raise FileNotFoundError(f"Parquet data directory not found: {parquet_dir}")
 
