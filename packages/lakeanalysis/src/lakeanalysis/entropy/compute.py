@@ -45,8 +45,12 @@ def ae_from_values(values: np.ndarray) -> float:
         values: 1-D array of non-negative monthly water area values.
 
     Returns:
-        AE as a float, or nan if the total is zero or non-positive.
+        AE as a float, or nan if the total is zero, non-positive,
+        or any element is negative.
     """
+    if len(values) > 0 and np.any(values < 0):
+        log.debug("ae_from_values: negative values detected, returning nan")
+        return float("nan")
     total = float(np.sum(values))
     if total <= 0:
         log.debug("ae_from_values: total <= 0, returning nan")
