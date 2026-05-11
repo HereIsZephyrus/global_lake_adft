@@ -227,19 +227,18 @@ def draw_global_density(
 
     smoothed = gaussian_filter(filled, sigma=sigma, mode="constant", cval=0.0)
 
-    # Normalized convolution: divide by smoothed weight so that empty cells
-    # (NaN → 0) do not dilute neighbouring data values.
+    # Mask regions far from any data so smoothed signal does not bleed
+    # into empty areas, but keep the Gaussian diffusion between data cells.
     valid_mask = (~np.isnan(values)).astype(float)
     weight = gaussian_filter(valid_mask, sigma=sigma, mode="constant", cval=0.0)
-    weight[weight < 1e-10] = np.nan
-    smoothed = smoothed / weight
+    smoothed[weight < 0.05] = np.nan
 
     scale = float(lons[1] - lons[0]) / target_res
     upsampled = zoom(np.nan_to_num(smoothed, nan=0.0), scale, order=3)
 
-    # Re-apply NaN mask: upsample the weight field and mask where negligible
-    weight_up = zoom(np.nan_to_num(weight, nan=0.0), scale, order=1)
-    upsampled[weight_up < 1e-10] = np.nan
+    # Re-apply NaN mask at upsampled resolution
+    weight_up = zoom(weight, scale, order=1)
+    upsampled[weight_up < 0.05] = np.nan
 
     threshold = np.nanmax(upsampled) * 0.005 if np.any(~np.isnan(upsampled)) else 0.0
     mask = upsampled < threshold
