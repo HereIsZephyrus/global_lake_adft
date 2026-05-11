@@ -50,7 +50,14 @@ class LakeProvider(ABC):
     def fetch_max_hylak_id(self) -> int:
         ...
 
-    def fetch_done_ids(self, table_name: str, chunk_start: int, chunk_end: int) -> set[int]:
+    def fetch_done_ids(
+        self,
+        table_name: str,
+        chunk_start: int,
+        chunk_end: int,
+        *,
+        status: str | None = None,
+    ) -> set[int]:
         raise NotImplementedError(f"{self.__class__.__name__} does not support done-id reads")
 
     def fetch_atlas_area_chunk(self, chunk_start: int, chunk_end: int) -> dict[int, float]:

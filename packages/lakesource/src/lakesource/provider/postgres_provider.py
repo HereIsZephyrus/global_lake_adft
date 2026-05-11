@@ -32,6 +32,7 @@ def _ensure_queries_registered() -> None:
 # ------------------------------------------------------------------
 
 _ENSURE_DISPATCH = {
+    # Algorithm-level keys (legacy)
     "area_quality": ("quality", "ensure_area_quality_table"),
     "area_anomalies": ("anomalies", "ensure_area_anomalies_table"),
     "area_shift_labels": ("shift_labels", "ensure_area_shift_labels_table"),
@@ -42,6 +43,21 @@ _ENSURE_DISPATCH = {
     "hawkes": ("hawkes", "ensure_hawkes_results_table"),
     "eot": ("eot", "ensure_eot_results_table"),
     "comparison": ("comparison", "ensure_comparison_tables"),
+    # Individual table-level keys (used by batch engine ensure_schema)
+    "quantile_labels": ("quantile", "ensure_quantile_tables"),
+    "quantile_extremes": ("quantile", "ensure_quantile_tables"),
+    "quantile_abrupt_transitions": ("quantile", "ensure_quantile_tables"),
+    "quantile_run_status": ("quantile", "ensure_quantile_tables"),
+    "pwm_extreme_thresholds": ("pwm", "ensure_pwm_extreme_tables"),
+    "pwm_extreme_labels": ("pwm", "ensure_pwm_extreme_tables"),
+    "pwm_extreme_extremes": ("pwm", "ensure_pwm_extreme_tables"),
+    "pwm_extreme_abrupt_transitions": ("pwm", "ensure_pwm_extreme_tables"),
+    "pwm_extreme_run_status": ("pwm", "ensure_pwm_extreme_tables"),
+    "pwm_hawkes_run_status": ("hawkes", "ensure_hawkes_results_table"),
+    "eot_results": ("eot", "ensure_eot_results_table"),
+    "eot_extremes": ("eot", "ensure_eot_results_table"),
+    "eot_run_status": ("eot", "ensure_eot_results_table"),
+    "comparison_run_status": ("comparison", "ensure_comparison_tables"),
 }
 
 _UPSERT_DISPATCH = {
@@ -208,13 +224,28 @@ class PostgresLakeProvider(LakeProvider):
     def fetch_area_statuses(self) -> dict[int, tuple[str, int]]:
         return self._be.quality_read.fetch_area_statuses()
 
-    def fetch_done_ids(self, table_name: str, chunk_start: int, chunk_end: int) -> set[int]:
+    def fetch_done_ids(
+        self,
+        table_name: str,
+        chunk_start: int,
+        chunk_end: int,
+        *,
+        status: str | None = None,
+    ) -> set[int]:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT DISTINCT hylak_id FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s",
-                    (chunk_start, chunk_end),
-                )
+                if status is None:
+                    cur.execute(
+                        f"SELECT DISTINCT hylak_id FROM {table_name} "
+                        f"WHERE hylak_id >= %s AND hylak_id < %s",
+                        (chunk_start, chunk_end),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT DISTINCT hylak_id FROM {table_name} "
+                        f"WHERE hylak_id >= %s AND hylak_id < %s AND status = %s",
+                        (chunk_start, chunk_end, status),
+                    )
                 return {int(row[0]) for row in cur.fetchall()}
 
     def fetch_zero_quantile_flags(self) -> dict[int, int]:

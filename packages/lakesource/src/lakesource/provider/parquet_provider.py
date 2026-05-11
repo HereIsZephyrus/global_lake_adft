@@ -166,11 +166,20 @@ class ParquetLakeProvider(LakeProvider):
             for row in df.itertuples(index=False)
         }
 
-    def fetch_done_ids(self, table_name: str, chunk_start: int, chunk_end: int) -> set[int]:
+    def fetch_done_ids(
+        self,
+        table_name: str,
+        chunk_start: int,
+        chunk_end: int,
+        *,
+        status: str | None = None,
+    ) -> set[int]:
         df = self._read_table_df(table_name)
         if df.empty or "hylak_id" not in df.columns:
             return set()
         mask = (df["hylak_id"] >= chunk_start) & (df["hylak_id"] < chunk_end)
+        if status is not None and "status" in df.columns:
+            mask &= df["status"] == status
         return set(df.loc[mask, "hylak_id"].astype(int).tolist())
 
     def fetch_seasonal_amplitude_chunk(

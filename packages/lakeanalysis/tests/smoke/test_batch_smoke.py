@@ -1,32 +1,46 @@
 """End-to-end smoke tests for the batch engine (single-process mode).
 
-Tests run against both PostgreSQL and Parquet backends.
-
-Requires env vars: SERIES_DB, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT.
+Tests run against both PostgreSQL and Parquet backends via fixture parametrization.
 
 Run with:
-    pytest tests/smoke/test_batch_smoke.py -v -s
+    uv run pytest tests/smoke/test_batch_smoke.py -v
 """
 
 from __future__ import annotations
 
-from lakesource.config import Backend, SourceConfig
+import pytest
 
 from lakeanalysis.batch import Engine, RangeFilter, build_batch_reader, build_batch_writer
 from lakeanalysis.batch.calculator import CalculatorFactory
+from lakeanalysis.batch.task_spec import get_batch_task_spec
 
 
-def _run_algorithm_smoke(
-    algorithm: str,
-    id_start: int,
-    id_end: int,
-    source_config: SourceConfig,
-    cleanup_algorithm_rows=None,
-    **calc_kwargs,
-) -> None:
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _clear_run_status(algorithm, source_config, id_range):
+    """Remove stale run_status records before a fresh smoke run."""
+    from lakesource.provider.factory import create_provider
+
+    spec = get_batch_task_spec(algorithm)
+    if spec.done_table is None:
+        return
+    provider = create_provider(source_config)
+    id_start, id_end = id_range
+    if source_config.backend.value == "parquet":
+        # For parquet, just delete the run_status file
+        table_path = provider._data_dir / f"{spec.done_table}.parquet"  # type: ignore[attr-defined]
+        table_path.unlink(missing_ok=True)
+    else:
+        # For postgres, delete rows in the id range
+        provider.delete_ids(spec.done_table, list(range(id_start, id_end)))
+
+
+def _build_engine(algorithm, id_range, source_config, **calc_kwargs):
     calculator = CalculatorFactory.create(algorithm, **calc_kwargs)
-    lake_filter = RangeFilter(start=id_start, end=id_end)
-    engine = Engine(
+    lake_filter = RangeFilter(start=id_range[0], end=id_range[1])
+    return Engine(
         reader=build_batch_reader(source_config),
         writer=build_batch_writer(source_config),
         calculator=calculator,
@@ -35,8 +49,10 @@ def _run_algorithm_smoke(
         chunk_size=10_000,
     )
 
-    if cleanup_algorithm_rows is not None:
-        cleanup_algorithm_rows.register(algorithm)
+
+def _run_algorithm_smoke(algorithm, id_range, source_config, **calc_kwargs):
+    _clear_run_status(algorithm, source_config, id_range)
+    engine = _build_engine(algorithm, id_range, source_config, **calc_kwargs)
     report = engine.run()
 
     assert report is not None, "Engine.run() returned None (MPI rank > 0?)"
@@ -44,57 +60,38 @@ def _run_algorithm_smoke(
     assert report.success_lakes >= 1, (
         f"No lakes succeeded for {algorithm}: {report}"
     )
+    return report
 
 
-# --- PostgreSQL backend ---
+# ------------------------------------------------------------------
+# Algorithm smoke tests (parametrized × backend)
+# ------------------------------------------------------------------
 
-def test_a_quantile_smoke(id_range, provider, cleanup_algorithm_rows):
-    _run_algorithm_smoke(
-        "quantile",
-        id_range[0],
-        id_range[1],
-        provider._config,
-        cleanup_algorithm_rows,
-    )
-
-
-def test_b_pwm_extreme_smoke(id_range, provider, cleanup_algorithm_rows):
-    _run_algorithm_smoke(
-        "pwm_extreme",
-        id_range[0],
-        id_range[1],
-        provider._config,
-        cleanup_algorithm_rows,
-    )
+@pytest.mark.parametrize("algorithm,calc_kwargs", [
+    ("quantile", {}),
+    ("eot", {"tails": ["high"], "quantiles": [0.95]}),
+])
+def test_algorithm_smoke(algorithm, calc_kwargs, source_config, id_range, cleanup):
+    """Run algorithm end-to-end; at least 1 lake must succeed."""
+    cleanup.register(algorithm)
+    _run_algorithm_smoke(algorithm, id_range, source_config, **calc_kwargs)
 
 
-def test_c_eot_smoke(id_range, provider, cleanup_algorithm_rows):
-    _run_algorithm_smoke(
-        "eot",
-        id_range[0],
-        id_range[1],
-        provider._config,
-        cleanup_algorithm_rows,
-        tails=["high"],
-        quantiles=[0.95],
-    )
+def test_pwm_extreme_smoke(source_config, pwm_id_range, cleanup_pwm):
+    """Run pwm_extreme end-to-end with a dedicated id range."""
+    cleanup_pwm.register("pwm_extreme")
+    _run_algorithm_smoke("pwm_extreme", pwm_id_range, source_config)
 
 
-def test_incremental_skip_smoke(id_range, provider, cleanup_algorithm_rows):
-    """Run quantile twice on the same range; second run should skip all lakes."""
-    id_start, id_end = id_range
-    cleanup_algorithm_rows.register("quantile")
+# ------------------------------------------------------------------
+# Incremental skip test
+# ------------------------------------------------------------------
 
-    calculator = CalculatorFactory.create("quantile")
-    lake_filter = RangeFilter(start=id_start, end=id_end)
-    engine = Engine(
-        reader=build_batch_reader(provider._config),
-        writer=build_batch_writer(provider._config),
-        calculator=calculator,
-        algorithm="quantile",
-        lake_filter=lake_filter,
-        chunk_size=10_000,
-    )
+def test_incremental_skip(source_config, id_range, cleanup):
+    """Run quantile twice; second run should skip all lakes."""
+    cleanup.register("quantile")
+    _clear_run_status("quantile", source_config, id_range)
+    engine = _build_engine("quantile", id_range, source_config)
 
     report1 = engine.run()
     assert report1 is not None
@@ -110,85 +107,19 @@ def test_incremental_skip_smoke(id_range, provider, cleanup_algorithm_rows):
     )
 
 
-def test_error_handling_smoke(id_range, provider, cleanup_algorithm_rows):
-    """Run with deliberately bad min_valid_observations to trigger errors."""
-    id_start, id_end = id_range
-    cleanup_algorithm_rows.register("quantile")
+# ------------------------------------------------------------------
+# Error handling test
+# ------------------------------------------------------------------
 
-    calculator = CalculatorFactory.create(
-        "quantile",
+def test_error_handling(source_config, id_range, cleanup):
+    """Run with impossible min_valid_observations to trigger errors."""
+    cleanup.register("quantile")
+    _clear_run_status("quantile", source_config, id_range)
+    engine = _build_engine(
+        "quantile", id_range, source_config,
         min_valid_observations=999_999,
-    )
-    lake_filter = RangeFilter(start=id_start, end=id_end)
-    engine = Engine(
-        reader=build_batch_reader(provider._config),
-        writer=build_batch_writer(provider._config),
-        calculator=calculator,
-        algorithm="quantile",
-        lake_filter=lake_filter,
-        chunk_size=10_000,
     )
 
     report = engine.run()
-    assert report is not None
-    assert report.error_lakes >= 0, "Engine completed without crashing"
-
-
-# --- Parquet backend ---
-
-def test_d_parquet_quantile_smoke(parquet_id_range, parquet_provider):
-    (parquet_provider._data_dir / "quantile_run_status.parquet").unlink(missing_ok=True)
-    _run_algorithm_smoke(
-        "quantile",
-        parquet_id_range[0],
-        parquet_id_range[1],
-        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
-    )
-
-
-def test_e_parquet_pwm_extreme_smoke(parquet_pwm_id_range, parquet_provider):
-    (parquet_provider._data_dir / "pwm_extreme_run_status.parquet").unlink(missing_ok=True)
-    _run_algorithm_smoke(
-        "pwm_extreme",
-        parquet_pwm_id_range[0],
-        parquet_pwm_id_range[1],
-        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
-    )
-
-
-def test_f_parquet_eot_smoke(parquet_id_range, parquet_provider):
-    (parquet_provider._data_dir / "eot_run_status.parquet").unlink(missing_ok=True)
-    _run_algorithm_smoke(
-        "eot",
-        parquet_id_range[0],
-        parquet_id_range[1],
-        SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir),
-        tails=["high"],
-        quantiles=[0.95],
-    )
-
-
-def test_parquet_incremental_skip_smoke(parquet_id_range, parquet_provider, parquet_data_dir):
-    """Run quantile twice on parquet; second run should skip all lakes."""
-    (parquet_data_dir / "quantile_run_status.parquet").unlink(missing_ok=True)
-    id_start, id_end = parquet_id_range
-    calculator = CalculatorFactory.create("quantile")
-    lake_filter = RangeFilter(start=id_start, end=id_end)
-    engine = Engine(
-        reader=build_batch_reader(SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir)),
-        writer=build_batch_writer(SourceConfig(backend=Backend.PARQUET, data_dir=parquet_provider._data_dir)),
-        calculator=calculator,
-        algorithm="quantile",
-        lake_filter=lake_filter,
-        chunk_size=10_000,
-    )
-
-    report1 = engine.run()
-    assert report1 is not None
-    assert report1.success_lakes >= 1
-
-    report2 = engine.run()
-    assert report2 is not None
-    assert report2.skipped_lakes >= 1, (
-        f"Second run should skip done lakes: {report2}"
-    )
+    assert report is not None, "Engine completed without crashing"
+    assert report.error_lakes >= 0
