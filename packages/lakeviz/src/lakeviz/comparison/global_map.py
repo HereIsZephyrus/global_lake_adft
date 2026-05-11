@@ -397,6 +397,7 @@ def _render_two_panel(
     target_res: float = 0.1,
     use_int_bounds: bool = False,
     min_lakes: int = 1,
+    draw_hatch: bool = False,
 ) -> Path | None:
     import cartopy.crs as ccrs
 
@@ -408,16 +409,17 @@ def _render_two_panel(
 
     no_lakes_mask = None
     if "lake_count" in df.columns:
-        from scipy.ndimage import binary_dilation
+        from scipy.ndimage import gaussian_filter
         _, _, lake_counts = agg_to_grid_matrix(df, "lake_count", config.resolution)
         has_data = (~np.isnan(lake_counts)) & (lake_counts >= min_lakes)
-        dilated = binary_dilation(has_data, iterations=3)
         land_mask = _get_land_mask(lons, lats, config.resolution)
-        hatch_cells = ~has_data & dilated & land_mask
+        # Exclude Antarctica (treat as ocean: no hatch)
+        land_no_antarctica = land_mask & (lats[:, None] >= -60)
+        # Match density boundary: same sigma / threshold as draw_global_density
+        weight = gaussian_filter(has_data.astype(float), sigma=sigma, mode="constant", cval=0.0)
+        hatch_cells = ~has_data & land_no_antarctica & (weight < 0.05)
         if np.any(hatch_cells):
-            no_lakes_mask = np.where(hatch_cells, 1.0, np.nan)
-        else:
-            no_lakes_mask = None
+            no_lakes_mask = hatch_cells
 
     fig, axes = create_figure(
         [{"name": "left", "row": 0, "col": 0}, {"name": "right", "row": 0, "col": 1}],
@@ -435,19 +437,21 @@ def _render_two_panel(
         )
         if meta is not None:
             metas.append(meta)
-        if no_lakes_mask is not None:
-            import matplotlib.colors as mcolors
-            hatch_cmap = mcolors.ListedColormap(["none"])
-            axes[ax_name].pcolormesh(
-                lons, lats, no_lakes_mask,
-                transform=ccrs.PlateCarree(),
-                cmap=hatch_cmap, hatch="//////",
-                edgecolors="#999999", linewidths=0,
-                zorder=2,
-            )
+        if draw_hatch and no_lakes_mask is not None:
+            with plt.rc_context({"hatch.linewidth": 0.35}):
+                axes[ax_name].contourf(
+                    lons,
+                    lats,
+                    no_lakes_mask.astype(float),
+                    levels=[0.5, 1.5],
+                    hatches=["///"],
+                    colors="none",
+                    transform=ccrs.PlateCarree(),
+                    zorder=5,
+                )
     if metas:
         _add_row_cbar(fig, axes["right"], metas, cmap_name=cmap, label=label, use_int_bounds=use_int_bounds)
-    return save(fig, out_path)
+    return save(fig, out_path, bbox_inches=None)
 
 
 def _render_six_panels(
@@ -459,6 +463,7 @@ def _render_six_panels(
     right_label: str,
     min_lakes: int = 1,
     use_int_bounds: bool = False,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     if df.empty:
         return []
@@ -487,6 +492,7 @@ def _render_six_panels(
             out_path=out_path,
             use_int_bounds=use_int_bounds,
             min_lakes=min_lakes,
+            draw_hatch=draw_hatch,
         )
         if result is not None:
             outputs.append(result)
@@ -500,6 +506,7 @@ def plot_pwm_pvalue_panels(
     p2: float = 0.05,
     refresh: bool = False,
     min_lakes: int = 1,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     df = _standardize_pwm_pvalues(config.provider, config.resolution, p1=p1, p2=p2, refresh=refresh)
     return _render_six_panels(
@@ -508,6 +515,7 @@ def plot_pwm_pvalue_panels(
         left_label=f"PWM p={p1}",
         right_label=f"PWM p={p2}",
         min_lakes=min_lakes,
+        draw_hatch=draw_hatch,
         use_int_bounds=True,
     )
 
@@ -519,6 +527,7 @@ def plot_eot_quantile_panels(
     q2: float = 0.98,
     refresh: bool = False,
     min_lakes: int = 3,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     df = _standardize_eot_quantiles(config.provider, config.resolution, q1=q1, q2=q2, refresh=refresh)
     return _render_six_panels(
@@ -527,6 +536,7 @@ def plot_eot_quantile_panels(
         left_label=f"EOT q={q1}",
         right_label=f"EOT q={q2}",
         min_lakes=min_lakes,
+        draw_hatch=draw_hatch,
     )
 
 
@@ -535,6 +545,7 @@ def plot_quantile_vs_pwm_panels(
     *,
     refresh: bool = False,
     min_lakes: int = 1,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     df = _standardize_quantile_vs_pwm(config.provider, config.resolution, refresh=refresh)
     return _render_six_panels(
@@ -544,6 +555,7 @@ def plot_quantile_vs_pwm_panels(
         right_label="PWM",
         min_lakes=min_lakes,
         use_int_bounds=True,
+        draw_hatch=draw_hatch,
     )
 
 
@@ -552,6 +564,7 @@ def plot_pwm_vs_eot_panels(
     *,
     refresh: bool = False,
     min_lakes: int = 1,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     df = _standardize_pwm_vs_eot(config.provider, config.resolution, refresh=refresh)
     return _render_six_panels(
@@ -560,6 +573,7 @@ def plot_pwm_vs_eot_panels(
         left_label="PWM",
         right_label="EOT",
         min_lakes=min_lakes,
+        draw_hatch=draw_hatch,
     )
 
 
@@ -570,6 +584,7 @@ def plot_gt10_vs_full_panels(
     min_lakes: int = 1,
     gt10_dir: Path,
     full_dir: Path,
+    draw_hatch: bool = False,
 ) -> list[Path]:
     outputs: list[Path] = []
     int_bounds_map = {"quantile": True, "pwm": True, "eot": False}
@@ -589,6 +604,7 @@ def plot_gt10_vs_full_panels(
             right_label="full",
             min_lakes=min_lakes,
             use_int_bounds=int_bounds_map[domain],
+            draw_hatch=draw_hatch,
         )
         renamed_outputs: list[Path] = []
         for path in domain_outputs:

@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eot-q2", type=float, default=0.98)
     parser.add_argument("--gt10-dir", type=Path, default=DATA_DIR / "parquet_gt10")
     parser.add_argument("--full-dir", type=Path, default=DATA_DIR / "parquet")
+    parser.add_argument("--hatch", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -65,6 +66,7 @@ def main() -> None:
             p1=args.pwm_p1,
             p2=args.pwm_p2,
             refresh=args.refresh,
+            draw_hatch=args.hatch,
         ),
     )
     _log_outputs(
@@ -74,15 +76,16 @@ def main() -> None:
             q1=args.eot_q1,
             q2=args.eot_q2,
             refresh=args.refresh,
+            draw_hatch=args.hatch,
         ),
     )
     _log_outputs(
         "quantile_vs_pwm",
-        plot_quantile_vs_pwm_panels(grid_config, refresh=args.refresh),
+        plot_quantile_vs_pwm_panels(grid_config, refresh=args.refresh, draw_hatch=args.hatch),
     )
     _log_outputs(
         "pwm_vs_eot",
-        plot_pwm_vs_eot_panels(grid_config, refresh=args.refresh),
+        plot_pwm_vs_eot_panels(grid_config, refresh=args.refresh, draw_hatch=args.hatch),
     )
     _log_outputs(
         "gt10_vs_full",
@@ -91,6 +94,7 @@ def main() -> None:
             refresh=args.refresh,
             gt10_dir=args.gt10_dir,
             full_dir=args.full_dir,
+            draw_hatch=args.hatch,
         ),
     )
 

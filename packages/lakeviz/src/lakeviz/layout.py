@@ -94,13 +94,15 @@ def save(
     *,
     dpi: int | None = None,
     close: bool = True,
+    bbox_inches: str | None = "tight",
+    pad_inches: float = 0.0,
 ) -> Path:
     """Save a Figure to disk."""
     if dpi is None:
         dpi = DEFAULT_VIZ_CONFIG.default_dpi
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    fig.savefig(path, dpi=dpi, bbox_inches=bbox_inches, pad_inches=pad_inches)
     log.info("Saved figure to %s", path)
     if close:
         plt.close(fig)
