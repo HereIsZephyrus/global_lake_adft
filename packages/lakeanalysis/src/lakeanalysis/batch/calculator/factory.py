@@ -34,6 +34,9 @@ def _lazy_register(algorithm: str) -> None:
     elif algorithm == "eot":
         from .eot import EOTCalculator
         CalculatorFactory._registry["eot"] = EOTCalculator
+    elif algorithm == "eot_hawkes":
+        from .eot_hawkes import EOTHawkesCalculator
+        CalculatorFactory._registry["eot_hawkes"] = EOTHawkesCalculator
     elif algorithm == "comparison":
         from lakeanalysis.comparison.calculator import ComparisonCalculator
         CalculatorFactory._registry["comparison"] = ComparisonCalculator
