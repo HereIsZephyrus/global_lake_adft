@@ -1,6 +1,13 @@
 """Public API for Hawkes modelling utilities."""
 
 from .bridge import build_events_from_eot
+from .mining import (
+    build_overall_stats,
+    load_events_from_case,
+    load_summary,
+    safe_series_divide,
+    select_transition_lakes,
+)
 from .fit import (
     HawkesFitter,
     LikelihoodRatioTest,
@@ -42,6 +49,11 @@ __all__ = [
     "run_model_comparison",
     "evaluate_intensity_decomposition",
     "build_events_from_eot",
+    "load_summary",
+    "safe_series_divide",
+    "select_transition_lakes",
+    "build_overall_stats",
+    "load_events_from_case",
     "plot_event_timeline",
     "plot_intensity_decomposition",
     "plot_kernel_matrix",
