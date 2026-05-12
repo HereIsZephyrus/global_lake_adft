@@ -79,6 +79,7 @@ class PWMExtremeServiceConfig:
     pwm_config: PWMExtremeConfig = PWMExtremeConfig()
     min_valid_per_month: int | None = 10
     min_valid_observations: int | None = 120
+    method: str = "stl"
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class PWMExtremeBatchConfig:
     pwm_config: PWMExtremeConfig = PWMExtremeConfig()
     min_valid_per_month: int | None = None
     min_valid_observations: int | None = None
+    method: str = "stl"
     build_summary_cache: bool = True
     plot_summary: bool = True
 
@@ -101,6 +103,7 @@ class PWMExtremeBatchConfig:
             pwm_config=self.pwm_config,
             min_valid_per_month=self.min_valid_per_month,
             min_valid_observations=self.min_valid_observations,
+            method=self.method,
         )
 
 

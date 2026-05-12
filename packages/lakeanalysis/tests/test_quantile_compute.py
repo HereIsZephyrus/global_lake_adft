@@ -1,6 +1,8 @@
 import pandas as pd
 import pytest
+import warnings
 
+from lakeanalysis.decomposition import MonthlyClimatologyMethod
 from lakeanalysis.quantile import (
     detect_abrupt_transitions,
     run_monthly_anomaly_transition,
@@ -42,8 +44,15 @@ def test_validate_monthly_series_deduplicates_months() -> None:
 
 
 def test_run_monthly_anomaly_transition_computes_expected_extremes() -> None:
+    series_df = build_five_year_series()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        method = MonthlyClimatologyMethod()
+        decomp = method.decompose(series_df)
+
     result = run_monthly_anomaly_transition(
-        build_five_year_series(),
+        decomp,
         hylak_id=101,
         min_valid_per_month=5,
         min_valid_observations=60,
@@ -64,10 +73,24 @@ def test_run_monthly_anomaly_transition_computes_expected_extremes() -> None:
 
 def test_frozen_months_are_excluded_from_outputs() -> None:
     frozen_keys = {200001, 200402}
+    series_df = build_five_year_series()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        method = MonthlyClimatologyMethod()
+        decomp = method.decompose(series_df)
+
+    # Apply frozen filtering manually (pre-decomposition in real pipeline)
+    df = decomp.index_df
+    year_month = df["year"].astype(int) * 100 + df["month"].astype(int)
+    df = df.loc[~year_month.isin(frozen_keys)].reset_index(drop=True)
+
+    from lakeanalysis.decomposition.base import DecompositionResult
+    decomp_filtered = DecompositionResult(index_df=df, metadata=decomp.metadata)
+
     result = run_monthly_anomaly_transition(
-        build_five_year_series(),
+        decomp_filtered,
         hylak_id=101,
-        frozen_year_months=frozen_keys,
         min_valid_per_month=4,
         min_valid_observations=58,
     )
@@ -84,7 +107,7 @@ def test_detect_abrupt_transitions_requires_true_calendar_adjacency() -> None:
                 "year": 2000,
                 "month": 1,
                 "month_ordinal": 2000 * 12,
-                "anomaly": -5.0,
+                "index_value": -5.0,
                 "extreme_label": "extreme_low",
             },
             {

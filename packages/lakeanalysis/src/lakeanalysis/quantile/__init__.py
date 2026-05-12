@@ -3,8 +3,6 @@
 from .compute import (
     assign_extreme_labels,
     compute_anomaly_thresholds,
-    compute_monthly_anomalies,
-    compute_monthly_climatology,
     detect_abrupt_transitions,
     extract_extreme_events,
     run_monthly_anomaly_transition,
@@ -53,8 +51,6 @@ __all__ = [
     "QuantileBatchConfig",
     "QuantileResult",
     "validate_monthly_series",
-    "compute_monthly_climatology",
-    "compute_monthly_anomalies",
     "compute_anomaly_thresholds",
     "assign_extreme_labels",
     "extract_extreme_events",

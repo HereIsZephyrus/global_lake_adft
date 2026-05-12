@@ -1,6 +1,8 @@
 import pandas as pd
 import pytest
+import warnings
 
+from lakeanalysis.decomposition import MonthlyClimatologyMethod
 from lakeanalysis.quantile import (
     RUN_STATUS_DONE,
     make_run_status_row,
@@ -26,8 +28,15 @@ def _build_series() -> pd.DataFrame:
 
 
 def test_result_row_shapers_emit_expected_keys() -> None:
+    series_df = _build_series()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        method = MonthlyClimatologyMethod()
+        decomp = method.decompose(series_df)
+
     result = run_monthly_anomaly_transition(
-        _build_series(),
+        decomp,
         hylak_id=123,
         min_valid_per_month=3,
         min_valid_observations=36,
@@ -57,6 +66,7 @@ def test_result_row_shapers_emit_expected_keys() -> None:
         "water_area",
         "monthly_climatology",
         "anomaly",
+        "index_value",
         "threshold",
     }
     assert isinstance(transition_rows, list)

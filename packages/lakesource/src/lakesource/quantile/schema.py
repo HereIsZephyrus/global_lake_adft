@@ -32,6 +32,7 @@ class QuantileServiceConfig:
 
     min_valid_per_month: int | None = 20
     min_valid_observations: int | None = 240
+    method: str = "stl"
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class QuantileBatchConfig:
     limit_id: int | None = None
     min_valid_per_month: int | None = None
     min_valid_observations: int | None = None
+    method: str = "stl"
     build_summary_cache: bool = True
     plot_summary: bool = True
 
@@ -52,6 +54,7 @@ class QuantileBatchConfig:
         return QuantileServiceConfig(
             min_valid_per_month=self.min_valid_per_month,
             min_valid_observations=self.min_valid_observations,
+            method=self.method,
         )
 
 

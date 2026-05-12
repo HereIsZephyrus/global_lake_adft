@@ -746,6 +746,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pymannkendall" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "statsmodels" },
     { name = "typer" },
 ]
@@ -773,6 +774,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=23.0,<25" },
     { name = "pymannkendall", specifier = ">=1.4.3" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "statsmodels", specifier = ">=0.14.0" },
     { name = "typer", extras = ["all"], specifier = ">=0.25.1" },
 ]

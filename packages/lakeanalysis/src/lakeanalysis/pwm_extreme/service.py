@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .compute import compute_monthly_thresholds
+from lakeanalysis.quality.frozen import filter_frozen_rows
+from lakeanalysis.quantile.compute import validate_monthly_series
+from lakeanalysis.decomposition.base import DecompositionMethod
+from lakeanalysis.decomposition.monthly_climatology import MonthlyClimatologyMethod
+from lakeanalysis.decomposition.stl_percentile import STLPercentileMethod
+
+from .compute import compute_pooled_pwm_thresholds
 from lakesource.pwm_extreme.schema import (
     PWMExtremeResult,
     PWMExtremeServiceConfig,
 )
+
+
+def _create_method(method: str | None) -> DecompositionMethod:
+    if method is None or method == "stl":
+        return STLPercentileMethod()
+    if method == "legacy":
+        return MonthlyClimatologyMethod()
+    raise ValueError(f"Unknown decomposition method: {method!r}")
 
 
 def run_single_lake_service(
@@ -21,10 +35,21 @@ def run_single_lake_service(
 ) -> PWMExtremeResult:
     """Run one lake through the PWM extreme quantile workflow."""
     cfg = config or PWMExtremeServiceConfig()
-    applied_frozen = frozen_year_months if use_frozen_mask else None
-    return compute_monthly_thresholds(
-        series_df,
+
+    method = _create_method(cfg.method)
+
+    valid_df = validate_monthly_series(series_df)
+
+    if frozen_year_months and use_frozen_mask:
+        valid_df = filter_frozen_rows(valid_df, frozen_year_months)
+
+    if valid_df.empty:
+        raise ValueError("No valid observations remain after filtering")
+
+    result = method.decompose(valid_df)
+
+    return compute_pooled_pwm_thresholds(
+        result,
         hylak_id=hylak_id,
         config=cfg.pwm_config,
-        frozen_year_months=applied_frozen,
     )

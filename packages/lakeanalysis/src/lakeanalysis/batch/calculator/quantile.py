@@ -26,10 +26,12 @@ class QuantileCalculator(Calculator):
         *,
         min_valid_per_month: int | None = None,
         min_valid_observations: int | None = None,
+        method: str = "stl",
     ) -> None:
         self._service_config = QuantileServiceConfig(
             min_valid_per_month=min_valid_per_month,
             min_valid_observations=min_valid_observations,
+            method=method,
         )
 
     def run(self, task: LakeTask) -> Any:
