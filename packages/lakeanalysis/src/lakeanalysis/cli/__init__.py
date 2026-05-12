@@ -13,6 +13,10 @@ Groups are organised by algorithm domain.  Each group is a separate
 
 from __future__ import annotations
 
+from lakesource.env import ensure_env_loaded
+
+ensure_env_loaded()
+
 import typer
 
 app = typer.Typer(
