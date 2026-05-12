@@ -54,6 +54,7 @@ class Manager:
         while len(self._done_workers) < self._n_workers:
             self._poll_and_dispatch()
 
+        self._drain_data()
         self._flush()
         self._comm.bcast(None, root=0)
         log.info(
@@ -73,6 +74,7 @@ class Manager:
         while len(self._done_workers) < self._n_workers:
             self._poll_and_dispatch()
 
+        self._drain_data()
         self._flush()
         self._comm.bcast(None, root=0)
         log.info(
@@ -147,6 +149,12 @@ class Manager:
             self._queued_workers.discard(worker)
             self._comm.send(TRIGGER_READ, dest=worker, tag=TAG_TRIGGER)
             self._io_active += 1
+
+    def _drain_data(self) -> None:
+        from mpi4py import MPI
+        while self._comm.iprobe(source=MPI.ANY_SOURCE, tag=TAG_DATA):
+            data = self._comm.recv(source=MPI.ANY_SOURCE, tag=TAG_DATA)
+            self._merge_rows(data)
 
     def _merge_rows(self, data: dict[str, list[dict]]) -> None:
         for table_name, rows in data.items():
