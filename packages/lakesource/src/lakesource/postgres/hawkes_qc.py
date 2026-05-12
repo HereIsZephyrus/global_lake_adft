@@ -187,7 +187,7 @@ def fetch_hawkes_qc_summary_by_quantile(
     Returns:
         DataFrame with columns including n_rows, qc_pass_rate, converged_rate.
     """
-    return pd.read_sql(_hawkes_qc_summary_by_quantile_sql(table_config), conn)
+    return pd.read_sql(_hawkes_qc_summary_by_quantile_sql(table_config).as_string(), conn)
 
 
 def fetch_hawkes_error_message_counts(
@@ -206,7 +206,7 @@ def fetch_hawkes_error_message_counts(
         DataFrame with columns [error_prefix, n].
     """
     return pd.read_sql(
-        _hawkes_error_message_counts_sql(table_config), conn, params={"limit": limit}
+        _hawkes_error_message_counts_sql(table_config).as_string(), conn, params={"limit": limit}
     )
 
 
@@ -238,7 +238,7 @@ def fetch_hawkes_results(
     if limit is not None:
         params["limit_n"] = int(limit)
         sql += psql.SQL("\nLIMIT %(limit_n)s")
-    return pd.read_sql(sql, conn, params=params or None)
+    return pd.read_sql(sql.as_string(), conn, params=params or None)
 
 
 def fetch_hawkes_lrt(
@@ -260,7 +260,7 @@ def fetch_hawkes_lrt(
     if limit is not None:
         params["limit_n"] = int(limit)
         sql += psql.SQL("\nLIMIT %(limit_n)s")
-    return pd.read_sql(sql, conn, params=params or None)
+    return pd.read_sql(sql.as_string(), conn, params=params or None)
 
 
 def fetch_hawkes_lrt_summary_by_test(
@@ -274,7 +274,7 @@ def fetch_hawkes_lrt_summary_by_test(
     sql = _hawkes_lrt_summary_by_test_sql(table_config)
     sql = _append_quantile_filter(sql, params, threshold_quantile)
     sql += psql.SQL("\nGROUP BY test_name\nORDER BY test_name")
-    return pd.read_sql(sql, conn, params=params or None)
+    return pd.read_sql(sql.as_string(), conn, params=params or None)
 
 
 def fetch_eot_hawkes_coverage(
@@ -300,7 +300,7 @@ def fetch_eot_hawkes_coverage(
         params["threshold_quantile"] = threshold_quantile
         sql += psql.SQL(" AND h.threshold_quantile = %(threshold_quantile)s")
     sql += psql.SQL("\nGROUP BY h.threshold_quantile\nORDER BY h.threshold_quantile")
-    return pd.read_sql(sql, conn, params=params if params else None)
+    return pd.read_sql(sql.as_string(), conn, params=params if params else None)
 
 
 def fetch_hawkes_transition_monthly(
@@ -322,4 +322,4 @@ def fetch_hawkes_transition_monthly(
     if limit is not None:
         params["limit_n"] = int(limit)
         sql += psql.SQL("\nLIMIT %(limit_n)s")
-    return pd.read_sql(sql, conn, params=params or None)
+    return pd.read_sql(sql.as_string(), conn, params=params or None)
