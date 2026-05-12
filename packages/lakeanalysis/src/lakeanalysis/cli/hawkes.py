@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, DATA_DIR, IdEndOpt, IdStartOpt, IoBudgetOpt, LimitIdOpt, run_batch_engine, setup_logging
+from ._common import ChunkSizeOpt, IdEndOpt, IdStartOpt, IoBudgetOpt, LimitIdOpt, run_batch_engine, setup_logging
 
 app = typer.Typer(help="Hawkes process modelling", no_args_is_help=True)
 
@@ -111,7 +111,7 @@ def eot_batch(
 
 @app.command()
 def qc(
-    output_dir: str = typer.Option(str(DATA_DIR / "hawkes" / "qc"), help="Output directory"),
+    output_dir: str | None = typer.Option(None, "--output-dir", help="Output directory"),
     threshold_quantile: float | None = typer.Option(None, help="Filter by quantile"),
     results_limit: int = typer.Option(200_000, help="Results sample size"),
     errors_top_n: int = typer.Option(30, help="Top N error messages"),
@@ -120,11 +120,14 @@ def qc(
     """Run production QA on Hawkes batch results."""
     setup_logging("hawkes-qc")
     from pathlib import Path
+    from lakesource.config import SourceConfig
     from lakesource.postgres import (
         fetch_hawkes_qc_summary_by_quantile, fetch_hawkes_error_message_counts,
         fetch_hawkes_lrt_summary_by_test, fetch_hawkes_results, series_db,
     )
 
+    if output_dir is None:
+        output_dir = str(SourceConfig().data_dir.parent / "hawkes" / "qc")
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -143,8 +146,8 @@ def qc(
 
 @app.command()
 def mining(
-    input_summary: str = typer.Option(str(DATA_DIR / "hawkes" / "batch" / "summary.csv"), help="Path to summary CSV"),
-    output_dir: str = typer.Option(str(DATA_DIR / "hawkes" / "batch" / "mining"), help="Output directory"),
+    input_summary: str | None = typer.Option(None, "--input-summary", help="Path to summary CSV"),
+    output_dir: str | None = typer.Option(None, "--output-dir", help="Output directory"),
     p_threshold: float = typer.Option(0.05, help="LRT p-value threshold"),
     alpha_min: float = typer.Option(1e-3, "--alpha-min", help="Minimum cross-alpha magnitude"),
     min_events: int = typer.Option(12, "--min-events", help="Minimum events"),
@@ -159,6 +162,13 @@ def mining(
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
+
+    from lakesource.config import SourceConfig
+    source = SourceConfig()
+    if input_summary is None:
+        input_summary = str(source.data_dir.parent / "hawkes" / "batch" / "summary.csv")
+    if output_dir is None:
+        output_dir = str(source.data_dir.parent / "hawkes" / "batch" / "mining")
 
     from lakeanalysis.hawkes.mining import (
         load_summary, safe_series_divide,

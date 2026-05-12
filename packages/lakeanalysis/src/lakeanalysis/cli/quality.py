@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, DATA_DIR, DryRunOpt, LimitIdOpt, setup_logging
+from ._common import ChunkSizeOpt, DryRunOpt, LimitIdOpt, setup_logging
 
 app = typer.Typer(help="Data quality assessment & anomaly detection", no_args_is_help=True)
 
@@ -57,9 +57,10 @@ def interpolation(
     """Detect linear interpolation in lake area time series."""
     setup_logging("interpolation-detect")
     from lakeanalysis.quality.interpolation_runner import InterpolationRunConfig, run_interpolation_detect
+    from lakesource.config import SourceConfig
 
     config = InterpolationRunConfig(
-        data_dir=DATA_DIR,
+        data_dir=SourceConfig().data_dir.parent,
         chunk_size=chunk_size,
         limit_id=limit_id,
         id_start=id_start,

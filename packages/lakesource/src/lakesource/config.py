@@ -38,6 +38,8 @@ class SourceConfig:
         backend: Which data backend to use (postgres or parquet).
         data_dir: Path to parquet files directory (required when backend=parquet).
         data_path: Path where raw water-balance datasets are stored / downloaded.
+        figures_dir: Path for plot/visualisation output (FIGURES_DIR env,
+            or data_dir.parent / "figures", or cwd / "data" / "figures").
         workflow_version: Workflow version string for monthly transition data.
         year_start: Optional start year filter (None = no filter).
         year_end: Optional end year filter (None = no filter).
@@ -53,6 +55,7 @@ class SourceConfig:
     backend: Backend | None = None
     data_dir: Path | None = None
     data_path: Path | None = None
+    figures_dir: Path | None = None
     workflow_version: str = "monthly-transition-v1"
     year_start: int | None = None
     year_end: int | None = None
@@ -94,6 +97,15 @@ class SourceConfig:
             dp = _env("DATA_PATH")
             if dp:
                 object.__setattr__(self, "data_path", Path(dp))
+
+        if self.figures_dir is None:
+            fd = _env("FIGURES_DIR")
+            if fd:
+                object.__setattr__(self, "figures_dir", Path(fd))
+            elif self.data_dir is not None:
+                object.__setattr__(self, "figures_dir", self.data_dir.parent / "figures")
+            else:
+                object.__setattr__(self, "figures_dir", Path.cwd() / "data" / "figures")
 
         if self.db_host is None:
             h = _env("DB_HOST")
