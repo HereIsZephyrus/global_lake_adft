@@ -7,14 +7,25 @@ for backward compatibility but delegates to typed domain repositories.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from psycopg import sql as psql
 
 from lakesource.config import SourceConfig
 
 from .base import LakeProvider
+
+_SAFE_TABLE_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _table_ident(table_name: str) -> psql.Identifier:
+    """Validate and wrap a table name for safe SQL composition."""
+    if not _SAFE_TABLE_NAME.match(table_name):
+        raise ValueError(f"Invalid table name: {table_name!r}")
+    return psql.Identifier(table_name)
 
 
 def _ensure_queries_registered() -> None:
@@ -202,7 +213,9 @@ class PostgresLakeProvider(LakeProvider):
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT * FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s",
+                    psql.SQL("SELECT * FROM {} WHERE hylak_id >= %s AND hylak_id < %s").format(
+                        _table_ident(table_name)
+                    ),
                     (chunk_start, chunk_end),
                 )
                 rows = cur.fetchall()
@@ -214,7 +227,12 @@ class PostgresLakeProvider(LakeProvider):
             return
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(f"DELETE FROM {table_name} WHERE hylak_id = ANY(%s)", [hylak_ids])
+                cur.execute(
+                    psql.SQL("DELETE FROM {} WHERE hylak_id = ANY(%s)").format(
+                        _table_ident(table_name)
+                    ),
+                    [hylak_ids],
+                )
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -234,16 +252,21 @@ class PostgresLakeProvider(LakeProvider):
     ) -> set[int]:
         with self._conn() as conn:
             with conn.cursor() as cur:
+                table = _table_ident(table_name)
                 if status is None:
                     cur.execute(
-                        f"SELECT DISTINCT hylak_id FROM {table_name} "
-                        f"WHERE hylak_id >= %s AND hylak_id < %s",
+                        psql.SQL(
+                            "SELECT DISTINCT hylak_id FROM {} "
+                            "WHERE hylak_id >= %s AND hylak_id < %s"
+                        ).format(table),
                         (chunk_start, chunk_end),
                     )
                 else:
                     cur.execute(
-                        f"SELECT DISTINCT hylak_id FROM {table_name} "
-                        f"WHERE hylak_id >= %s AND hylak_id < %s AND status = %s",
+                        psql.SQL(
+                            "SELECT DISTINCT hylak_id FROM {} "
+                            "WHERE hylak_id >= %s AND hylak_id < %s AND status = %s"
+                        ).format(table),
                         (chunk_start, chunk_end, status),
                     )
                 return {int(row[0]) for row in cur.fetchall()}
@@ -399,5 +422,5 @@ class PostgresLakeProvider(LakeProvider):
 def exec_raw_truncate(table_name: str, conn_factory) -> None:
     with conn_factory() as conn:
         with conn.cursor() as cur:
-            cur.execute(f"TRUNCATE {table_name}")
+            cur.execute(psql.SQL("TRUNCATE {}").format(_table_ident(table_name)))
         conn.commit()
