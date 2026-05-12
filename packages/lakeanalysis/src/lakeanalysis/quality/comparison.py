@@ -99,8 +99,8 @@ def summarize_comparison(
     if n_total == 0:
         return {"n_total": 0}
 
-    ratio = compute_area_ratio(valid[rs_col].values, valid[atlas_col].values)
-    log2_r = compute_log2_ratio(valid[rs_col].values, valid[atlas_col].values)
+    ratio = compute_area_ratio(valid[rs_col].to_numpy(), valid[atlas_col].to_numpy())
+    log2_r = compute_log2_ratio(valid[rs_col].to_numpy(), valid[atlas_col].to_numpy())
     agreement = classify_agreement(ratio, config)
 
     ratio_clean = ratio[~np.isnan(ratio)]

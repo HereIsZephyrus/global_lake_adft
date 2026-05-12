@@ -111,7 +111,7 @@ class TestPrepareSeries:
         })
         result = _prepare_series(df)
         assert len(result) == 2
-        assert 0.0 not in result["water_area"].values
+        assert 0.0 not in result["water_area"].to_numpy()
 
     def test_filters_frozen_months(self):
         df = pd.DataFrame({
@@ -121,8 +121,8 @@ class TestPrepareSeries:
         })
         result = _prepare_series(df, frozen_year_months={200002, 200004})
         assert len(result) == 2
-        assert 2 not in result["month"].values
-        assert 4 not in result["month"].values
+        assert 2 not in result["month"].to_numpy()
+        assert 4 not in result["month"].to_numpy()
 
     def test_frozen_and_zeros_combined(self):
         df = pd.DataFrame({

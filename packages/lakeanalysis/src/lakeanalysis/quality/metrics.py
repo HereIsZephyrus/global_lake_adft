@@ -113,7 +113,7 @@ def compute_penalized_volatility(
     n_distinct = len(vc)
     dominant_ratio = float(vc.iloc[0]) / float(n_obs)
 
-    p = vc.values / n_obs
+    p = vc.to_numpy() / n_obs
     H = float(-np.sum(p * np.log2(p)))
 
     mean_a = float(values.mean())

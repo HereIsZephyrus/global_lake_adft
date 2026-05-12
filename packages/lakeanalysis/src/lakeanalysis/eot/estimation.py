@@ -50,7 +50,7 @@ class NHPPFitter:
         """Initialise sigma and xi from a stationary GPD fit."""
         excesses = extremes["value"].to_numpy(dtype=float) - float(threshold)
         excesses = excesses[excesses >= 0.0]
-        if excesses.size >= 3 and np.ptp(excesses) > 0.0:
+        if excesses.size >= 3 and (excesses.max() - excesses.min()) > 0.0:
             try:
                 shape, _, scale = genpareto.fit(excesses, floc=0.0)
                 sigma = max(float(scale), EPSILON)

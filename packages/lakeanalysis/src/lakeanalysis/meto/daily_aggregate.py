@@ -44,7 +44,7 @@ def aggregate_daily_meteo_to_monthly(
             raise ValueError(f"Column {col!r} not in DataFrame")
 
     work = df.copy()
-    work["_dt"] = pd.to_datetime(work[date_col], utc=True, errors="coerce")
+    work["_dt"] = pd.to_datetime(work[date_col], errors="coerce").dt.tz_localize("UTC")
     if work["_dt"].isna().any():
         raise ValueError(f"Invalid dates in column {date_col!r}")
     work["year"] = work["_dt"].dt.year

@@ -132,7 +132,7 @@ def test_outside_range_vs_agreement_overlap(area_quality_df, lake_range_df):
     assert len(merged) > 0
 
     config = AgreementConfig()
-    ratio = compute_area_ratio(merged["rs_area_median"].values, merged["atlas_area"].values)
+    ratio = compute_area_ratio(merged["rs_area_median"].to_numpy(), merged["atlas_area"].to_numpy())
     agreement = classify_agreement(ratio, config)
 
     outside_set = set()
