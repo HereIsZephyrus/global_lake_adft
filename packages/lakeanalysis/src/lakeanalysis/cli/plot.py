@@ -13,13 +13,9 @@ from pathlib import Path
 
 import typer
 
-from ._common import DATA_DIR, setup_logging
+from ._common import setup_logging
 
 app = typer.Typer(help="Visualisation figure generation", no_args_is_help=True)
-
-# ── Shared defaults ─────────────────────────────────────────────────────────
-
-FIGURES_DIR = DATA_DIR / "figures"
 
 
 # ── Global distribution maps ────────────────────────────────────────────────
@@ -30,7 +26,7 @@ def eot_global(
     tail: str | None = typer.Option(None, help="Filter tail: high or low"),
     quantile: float | None = typer.Option(None, help="Filter threshold quantile"),
     refresh: bool = typer.Option(False, "--refresh", help="Force recompute grid cache"),
-    output_dir: Path = typer.Option(FIGURES_DIR, help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     resolution: float = typer.Option(0.5, help="Grid resolution in degrees"),
     data_dir: Path | None = typer.Option(None, "--data-dir", help="Parquet data dir (for gt10 subset)"),
 ) -> None:
@@ -50,6 +46,10 @@ def eot_global(
     Theme.apply()
 
     source = SourceConfig(data_dir=data_dir) if data_dir else SourceConfig()
+
+    if output_dir is None:
+        output_dir = source.figures_dir
+
     provider = create_provider(source)
     grid_config = GlobalGridConfig(provider=provider, resolution=resolution, output_dir=output_dir)
 
@@ -83,7 +83,7 @@ def pwm_global(
     monthly_only: bool = typer.Option(False, "--monthly-only", help="Only monthly threshold maps"),
     exceedance_only: bool = typer.Option(False, "--exceedance-only", help="Only exceedance maps"),
     p_values: list[float] = typer.Option([0.01, 0.025, 0.05, 0.10], "--p-values", help="Exceedance p-values"),
-    output_dir: Path = typer.Option(FIGURES_DIR, help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     resolution: float = typer.Option(0.5, help="Grid resolution"),
     data_dir: Path | None = typer.Option(None, "--data-dir", help="Parquet data dir"),
 ) -> None:
@@ -102,6 +102,10 @@ def pwm_global(
     Theme.apply()
 
     source = SourceConfig(data_dir=data_dir) if data_dir else SourceConfig()
+
+    if output_dir is None:
+        output_dir = source.figures_dir
+
     provider = create_provider(source)
     grid_config = GlobalGridConfig(provider=provider, resolution=resolution, output_dir=output_dir)
 
@@ -120,7 +124,7 @@ def pwm_global(
 @app.command()
 def quantile_global(
     refresh: bool = typer.Option(False, "--refresh"),
-    output_dir: Path = typer.Option(FIGURES_DIR, help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     resolution: float = typer.Option(0.5, help="Grid resolution"),
     data_dir: Path | None = typer.Option(None, "--data-dir"),
 ) -> None:
@@ -135,6 +139,10 @@ def quantile_global(
     Theme.apply()
 
     source = SourceConfig(data_dir=data_dir) if data_dir else SourceConfig()
+
+    if output_dir is None:
+        output_dir = source.figures_dir
+
     provider = create_provider(source)
     grid_config = GlobalGridConfig(provider=provider, resolution=resolution, output_dir=output_dir)
     plot_quantile_global_maps(grid_config, refresh=refresh)
@@ -145,10 +153,10 @@ def quantile_global(
 @app.command()
 def comparison_global(
     refresh: bool = typer.Option(False, "--refresh"),
-    output_dir: Path = typer.Option(FIGURES_DIR, help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     resolution: float = typer.Option(0.5, help="Grid resolution"),
-    gt10_dir: Path = typer.Option(DATA_DIR / "parquet_gt10", "--gt10-dir", help="gt10 parquet directory"),
-    full_dir: Path = typer.Option(DATA_DIR / "parquet", "--full-dir", help="Full parquet directory"),
+    gt10_dir: Path | None = typer.Option(None, "--gt10-dir", help="gt10 parquet directory"),
+    full_dir: Path | None = typer.Option(None, "--full-dir", help="Full parquet directory"),
     pwm_p1: float = typer.Option(0.01, "--pwm-p1"),
     pwm_p2: float = typer.Option(0.05, "--pwm-p2"),
     eot_q1: float = typer.Option(0.95, "--eot-q1"),
@@ -168,6 +176,14 @@ def comparison_global(
     Theme.apply()
 
     source = SourceConfig()
+
+    if output_dir is None:
+        output_dir = source.figures_dir
+    if gt10_dir is None:
+        gt10_dir = source.data_dir.parent / "parquet_gt10"
+    if full_dir is None:
+        full_dir = source.data_dir
+
     provider = create_provider(source)
     grid_config = GlobalGridConfig(provider=provider, resolution=resolution, output_dir=output_dir)
 
@@ -182,11 +198,14 @@ def comparison_global(
 
 @app.command()
 def comparison_zonal(
-    output_dir: Path = typer.Option(FIGURES_DIR / "comparison", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     data_dir: Path | None = typer.Option(None, "--data-dir"),
 ) -> None:
     """Generate comparison latitude-profile figures."""
     setup_logging("plot-comparison-zonal")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "comparison"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_comparison_zonal import main as _main
@@ -202,14 +221,19 @@ def comparison_zonal(
 
 @app.command()
 def extremes_scatter(
-    output_dir: Path = typer.Option(FIGURES_DIR, help="Output directory"),
-    parquet_dir: Path = typer.Option(DATA_DIR / "parquet", "--parquet-dir", help="Parquet data dir (use parquet_gt10 for gt10)"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
+    parquet_dir: Path | None = typer.Option(None, "--parquet-dir", help="Parquet data dir (use parquet_gt10 for gt10)"),
     dpi: int = typer.Option(300, help="Figure DPI"),
     point_size: float = typer.Option(0.8, "--point-size"),
     alpha: float = typer.Option(0.4),
 ) -> None:
     """Scatter plot of extreme event counts on global Robinson projection."""
     setup_logging("plot-extremes-scatter")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir
+    if parquet_dir is None:
+        parquet_dir = SourceConfig().data_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_extremes_scatter import main as _main
@@ -239,12 +263,15 @@ def area_histogram(
 
 @app.command()
 def upset(
-    output_dir: Path = typer.Option(FIGURES_DIR / "upset", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     min_size: int = typer.Option(5, "--min-size", help="Minimum intersection size to display"),
     limit: int | None = typer.Option(None, "--limit", help="Limit number of lakes"),
 ) -> None:
     """Generate UpSet + donut anomaly intersection plot."""
     setup_logging("plot-upset")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "upset"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_anomaly_upset import main as _main
@@ -260,11 +287,14 @@ def upset(
 
 @app.command()
 def interpolation_sample(
-    output_dir: Path = typer.Option(FIGURES_DIR / "interpolation", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     n_samples: int = typer.Option(20, "--n-samples", help="Number of sample lakes"),
 ) -> None:
     """Plot sample lakes with detected interpolation segments."""
     setup_logging("plot-interpolation-sample")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "interpolation"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_interpolation_sample import main as _main
@@ -276,10 +306,13 @@ def interpolation_sample(
 @app.command()
 def interpolation_hq(
     hylak_ids: str = typer.Option(..., "--hylak-ids", help="Comma-separated lake IDs"),
-    output_dir: Path = typer.Option(FIGURES_DIR / "interpolation", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
 ) -> None:
     """High-quality interpolation figures for specified lakes."""
     setup_logging("plot-interpolation-hq")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "interpolation"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_interpolation_hq import main as _main
@@ -296,10 +329,13 @@ def eot_extremes(
     hylak_id: int = typer.Option(..., "--hylak-id", help="Lake ID"),
     threshold_quantile: float = typer.Option(0.95, help="Threshold quantile"),
     tail: str | None = typer.Option(None, help="Tail: high or low"),
-    output_dir: Path = typer.Option(FIGURES_DIR / "eot", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
 ) -> None:
     """Plot single-lake EOT extremes timeline from database."""
     setup_logging("plot-eot-extremes")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "eot"
     import matplotlib.pyplot as plt
     from lakesource.postgres import fetch_eot_extremes_by_id, fetch_lake_area_by_ids, series_db
     from lakeanalysis.eot import plot_eot_extremes
@@ -324,10 +360,13 @@ def eot_extremes(
 def pwm_hawkes_lake(
     hylak_id: int = typer.Option(..., "--hylak-id", help="Lake ID"),
     annotate_top_n: int = typer.Option(8, help="Top N events to annotate"),
-    output_dir: Path = typer.Option(FIGURES_DIR / "pwm_hawkes", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
 ) -> None:
     """Plot single-lake PWM-Hawkes timeline with events and transitions."""
     setup_logging("plot-pwm-hawkes-lake")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "pwm_hawkes"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pwm_hawkes_lake import main as _main
@@ -339,10 +378,13 @@ def pwm_hawkes_lake(
 
 @app.command()
 def pwm_hawkes_summary(
-    output_dir: Path = typer.Option(FIGURES_DIR / "pwm_hawkes", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
 ) -> None:
     """Plot PWM-Hawkes summary statistics (QC pie, event histograms, parameters)."""
     setup_logging("plot-pwm-hawkes-summary")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "pwm_hawkes"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pwm_hawkes_summary import main as _main
@@ -358,10 +400,13 @@ def pwm_hawkes_summary(
 def shift_candidates(
     candidate_file: Path = typer.Option(..., "--candidate-file", help="CSV or Parquet with candidate IDs"),
     top_n: int = typer.Option(20, "--top-n", help="Number of candidates to plot"),
-    output_dir: Path = typer.Option(FIGURES_DIR / "shift", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
 ) -> None:
     """Plot time series for structural shift candidate lakes."""
     setup_logging("plot-shift-candidates")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "shift"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_shift_candidate_lakes import main as _main
@@ -376,11 +421,14 @@ def shift_candidates(
 
 @app.command()
 def flat_series(
-    output_dir: Path = typer.Option(FIGURES_DIR / "quality", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     top_n: int = typer.Option(20, "--top-n", help="Number of lakes to plot"),
 ) -> None:
     """Plot time series for flat-flagged lakes."""
     setup_logging("plot-flat-series")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "quality"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_flat_lake_series import main as _main
@@ -391,11 +439,14 @@ def flat_series(
 
 @app.command()
 def hcv_series(
-    output_dir: Path = typer.Option(FIGURES_DIR / "quality", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     top_n: int = typer.Option(20, "--top-n", help="Number of lakes to plot"),
 ) -> None:
     """Plot time series for low H*CV lakes."""
     setup_logging("plot-hcv-series")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "quality"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_hcv_lake_series import main as _main
@@ -406,11 +457,14 @@ def hcv_series(
 
 @app.command()
 def hcv_mid_series(
-    output_dir: Path = typer.Option(FIGURES_DIR / "quality", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     top_n: int = typer.Option(20, "--top-n", help="Number of lakes to plot"),
 ) -> None:
     """Plot time series for mid-range H*CV lakes."""
     setup_logging("plot-hcv-mid-series")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "quality"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_hcv_mid_lake_series import main as _main
@@ -421,11 +475,14 @@ def hcv_mid_series(
 
 @app.command()
 def pv_series(
-    output_dir: Path = typer.Option(FIGURES_DIR / "quality", help="Output directory"),
+    output_dir: Path | None = typer.Option(None, "--output-dir", help="Output directory"),
     top_n: int = typer.Option(20, "--top-n", help="Number of lakes to plot"),
 ) -> None:
     """Plot time series for PV-anomalous lakes."""
     setup_logging("plot-pv-series")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = SourceConfig().figures_dir / "quality"
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pv_lake_series import main as _main

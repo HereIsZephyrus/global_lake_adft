@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, DATA_DIR, IoBudgetOpt, setup_logging
+from ._common import ChunkSizeOpt, IoBudgetOpt, setup_logging
 
 app = typer.Typer(help="Algorithm comparison pipelines", no_args_is_help=True)
 
@@ -44,7 +44,7 @@ def run(
 
 @app.command()
 def area(
-    data_dir: str = typer.Option(str(DATA_DIR / "parquet"), help="Parquet data directory"),
+    data_dir: str | None = typer.Option(None, help="Parquet data directory"),
     output_dir: str = typer.Option("data/area_comparison", help="Output directory"),
     good_threshold: float = typer.Option(2.0, help="Good agreement: ratio in [1/G, G]"),
     moderate_threshold: float = typer.Option(5.0, help="Moderate agreement threshold"),
@@ -53,6 +53,9 @@ def area(
 ) -> None:
     """Compare rs_area vs atlas_area from area_quality."""
     setup_logging("area-comparison")
+    from lakesource.config import SourceConfig
+    if data_dir is None:
+        data_dir = str(SourceConfig().data_dir)
     import duckdb
     from pathlib import Path
     from lakeanalysis.quality.comparison import enrich_comparison_df, summarize_comparison
@@ -88,14 +91,16 @@ def area(
 
 @app.command()
 def grid_agg(
-    sample_file: str = typer.Option(str(DATA_DIR / "comparison" / "sample_lakes.parquet"), help="Sample file path"),
+    sample_file: str | None = typer.Option(None, help="Sample file path"),
     resolution: float = typer.Option(0.5, help="Grid resolution in degrees"),
     refresh: bool = typer.Option(False, "--refresh", help="Force recompute even if cached"),
 ) -> None:
     """Grid-level exceedance rate aggregation."""
     setup_logging("comparison-grid")
-    import pandas as pd
     from lakesource.config import SourceConfig
+    if sample_file is None:
+        sample_file = str(SourceConfig().data_dir.parent / "comparison" / "sample_lakes.parquet")
+    import pandas as pd
     from lakesource.provider.factory import create_provider
 
     sample = pd.read_parquet(sample_file)
@@ -108,11 +113,14 @@ def grid_agg(
 @app.command()
 def sample_lakes(
     n_samples: int = typer.Option(50_000, help="Target total sampled lakes"),
-    output_dir: str = typer.Option(str(DATA_DIR / "comparison"), help="Output directory"),
+    output_dir: str | None = typer.Option(None, help="Output directory"),
     seed: int = typer.Option(42, help="Random seed"),
 ) -> None:
     """Geographic stratified lake sampling for comparison benchmarks."""
     setup_logging("sample-lakes")
+    from lakesource.config import SourceConfig
+    if output_dir is None:
+        output_dir = str(SourceConfig().data_dir.parent / "comparison")
     from pathlib import Path
     from lakesource.postgres import series_db
     import pandas as pd

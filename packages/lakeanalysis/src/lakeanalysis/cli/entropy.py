@@ -18,11 +18,11 @@ def run(
     """Run the AE pipeline in resumable chunks."""
     setup_logging("entropy")
     from lakeanalysis.entropy.service import EntropyRunConfig, run_entropy
-    from ._common import DATA_DIR
+    from lakesource.config import SourceConfig
 
     run_entropy(
         EntropyRunConfig(
-            data_dir=DATA_DIR / "entropy",
+            data_dir=SourceConfig().data_dir.parent / "entropy",
             limit_id=limit_id,
             chunk_size=chunk_size,
             show_plot=plot,
@@ -37,9 +37,9 @@ def update_amplitude(
     """Refresh mean_seasonal_amplitude only (no AE recompute)."""
     setup_logging("entropy-amplitude")
     from lakeanalysis.entropy.service import run_update_amplitude_only
-    from ._common import DATA_DIR
+    from lakesource.config import SourceConfig
 
-    run_update_amplitude_only(DATA_DIR / "entropy", show_plot=plot)
+    run_update_amplitude_only(SourceConfig().data_dir.parent / "entropy", show_plot=plot)
 
 
 @app.command()
@@ -47,6 +47,6 @@ def plot_only() -> None:
     """Load existing parquet data and generate plots (no computation)."""
     setup_logging("entropy-plot")
     from lakeanalysis.entropy.runner import show_entropy_plots
-    from ._common import DATA_DIR
+    from lakesource.config import SourceConfig
 
-    show_entropy_plots(DATA_DIR / "entropy", limit_id=None)
+    show_entropy_plots(SourceConfig().data_dir.parent / "entropy", limit_id=None)

@@ -9,8 +9,6 @@ from lakeanalysis.batch import Engine, RangeFilter, build_provider_batch_reader,
 from lakeanalysis.logger import Logger
 from lakesource.config import SourceConfig
 
-DATA_DIR = (Path(__file__).resolve().parents[3] / "data").resolve()
-
 
 def setup_logging(name: str) -> None:
     """Unified Logger initialisation for all CLI commands.

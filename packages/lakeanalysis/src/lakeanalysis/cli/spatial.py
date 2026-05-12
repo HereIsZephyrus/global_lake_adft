@@ -41,10 +41,10 @@ def similarity(
 ) -> None:
     """Compute Pearson + ACF cosine similarity for lake pairs."""
     setup_logging("similarity")
-    from ._common import DATA_DIR
+    from lakesource.config import SourceConfig
     from lakeanalysis.artificial.similarity.runner import SimilarityRunConfig, run_similarity
 
-    data_dir = DATA_DIR / "similarity"
+    data_dir = SourceConfig().data_dir.parent / "similarity"
     if plot_only:
         from lakeanalysis.artificial.similarity.runner import show_similarity_plots
         show_similarity_plots(data_dir)
@@ -61,10 +61,10 @@ def impact(
 ) -> None:
     """Compute human-impact metrics for artificial-natural lake pairs."""
     setup_logging("impact")
-    from ._common import DATA_DIR
+    from lakesource.config import SourceConfig
     from lakeanalysis.artificial.impact.runner import ImpactRunConfig, run_impact
 
-    data_dir = DATA_DIR / "impact"
+    data_dir = SourceConfig().data_dir.parent / "impact"
     if plot_only:
         from lakeanalysis.artificial.impact.runner import load_impact_csv, show_impact_plots
         rows = load_impact_csv(data_dir)
