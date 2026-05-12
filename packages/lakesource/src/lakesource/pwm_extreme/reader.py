@@ -180,8 +180,8 @@ WITH deduped_area AS (
 ),
 quantile_thresholds AS (
     SELECT t.hylak_id, t.month,
-           """ + psql.SQL(th_high).sql.decode() + """ AS threshold_high,
-           """ + psql.SQL(th_low).sql.decode() + """ AS threshold_low
+           """ + th_high + """ AS threshold_high,
+           """ + th_low + """ AS threshold_low
     FROM   {thresholds} t
     WHERE  t.converged IS TRUE
 ),
@@ -225,8 +225,8 @@ WITH deduped_area AS (
 ),
 quantile_thresholds AS (
     SELECT t.hylak_id, t.month,
-           """ + psql.SQL(th_high).sql.decode() + """ AS threshold_high,
-           """ + psql.SQL(th_low).sql.decode() + """ AS threshold_low
+           """ + th_high + """ AS threshold_high,
+           """ + th_low + """ AS threshold_low
     FROM   {thresholds} t
     WHERE  t.converged IS TRUE
 )
