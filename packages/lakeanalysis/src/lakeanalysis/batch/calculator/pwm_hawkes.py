@@ -272,9 +272,9 @@ class PWMExtremeHawkesCalculator(Calculator):
 
     def result_to_rows(self, result: PWMHawkesFitResult) -> dict[str, list[dict]]:
         return {
-            "hawkes_results": result.hawkes_result_rows,
-            "hawkes_lrt": result.lrt_rows,
-            "hawkes_transition_monthly": result.transition_monthly_rows,
+            "pwm_hawkes_results": result.hawkes_result_rows,
+            "pwm_hawkes_lrt": result.lrt_rows,
+            "pwm_hawkes_transition_monthly": result.transition_monthly_rows,
             "pwm_hawkes_run_status": [
                 make_pwm_hawkes_run_status_row(
                     hylak_id=result.hylak_id,
@@ -295,7 +295,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                     error_message=str(error)[:500],
                 )
             ],
-            "hawkes_results": [
+            "pwm_hawkes_results": [
                 build_hawkes_result_row(self._build_error_summary(hylak_id, str(error)))
             ],
         }

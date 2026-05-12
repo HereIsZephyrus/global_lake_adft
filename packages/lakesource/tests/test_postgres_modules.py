@@ -37,6 +37,17 @@ class TestLakeModulesImport:
         assert hasattr(lake_hawkes, "upsert_hawkes_results")
         assert hasattr(lake_hawkes, "upsert_hawkes_lrt")
         assert hasattr(lake_hawkes, "upsert_hawkes_transition_monthly")
+        # PWM-Hawkes
+        assert hasattr(lake_hawkes, "ensure_pwm_hawkes_tables")
+        assert hasattr(lake_hawkes, "upsert_pwm_hawkes_results")
+        assert hasattr(lake_hawkes, "upsert_pwm_hawkes_lrt")
+        assert hasattr(lake_hawkes, "upsert_pwm_hawkes_transition_monthly")
+        # EOT-Hawkes
+        assert hasattr(lake_hawkes, "ensure_eot_hawkes_tables")
+        assert hasattr(lake_hawkes, "upsert_eot_hawkes_results")
+        assert hasattr(lake_hawkes, "upsert_eot_hawkes_lrt")
+        assert hasattr(lake_hawkes, "upsert_eot_hawkes_transition_monthly")
+        assert hasattr(lake_hawkes, "upsert_eot_hawkes_run_status")
 
     def test_lake_pwm_imports(self) -> None:
         from lakesource.postgres import lake_pwm

@@ -89,7 +89,7 @@ class TestUpsertSQLTemplates:
         assert "lambda_" in query
 
     def test_upsert_hawkes_results_sql_builds(self, table_config: TableConfig) -> None:
-        sql = _upsert_hawkes_results_sql(table_config)
+        sql = _upsert_hawkes_results_sql(table_config, "pwm_hawkes_results")
         query = sql.as_string()
         assert "INSERT INTO" in query
         assert "VALUES" in query

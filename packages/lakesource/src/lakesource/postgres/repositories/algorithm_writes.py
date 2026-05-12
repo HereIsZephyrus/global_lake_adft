@@ -147,3 +147,50 @@ class PostgresHawkesWriteRepository:
         from lakesource.postgres import lake_hawkes as _mod
         with self._conn_factory() as conn:
             _mod.upsert_hawkes_transition_monthly(conn, rows, table_config=self._tc)
+
+    # PWM-Hawkes
+    def ensure_pwm_hawkes_tables(self):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.ensure_pwm_hawkes_tables(conn, table_config=self._tc)
+
+    def upsert_pwm_hawkes_results(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_hawkes_results(conn, rows, table_config=self._tc)
+
+    def upsert_pwm_hawkes_lrt(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_hawkes_lrt(conn, rows, table_config=self._tc)
+
+    def upsert_pwm_hawkes_transition_monthly(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_hawkes_transition_monthly(conn, rows, table_config=self._tc)
+
+    # EOT-Hawkes
+    def ensure_eot_hawkes_tables(self):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.ensure_eot_hawkes_tables(conn, table_config=self._tc)
+
+    def upsert_eot_hawkes_results(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_eot_hawkes_results(conn, rows, table_config=self._tc)
+
+    def upsert_eot_hawkes_lrt(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_eot_hawkes_lrt(conn, rows, table_config=self._tc)
+
+    def upsert_eot_hawkes_transition_monthly(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_eot_hawkes_transition_monthly(conn, rows, table_config=self._tc)
+
+    def upsert_eot_hawkes_run_status(self, rows):
+        from lakesource.postgres import lake_hawkes as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_eot_hawkes_run_status(conn, rows, table_config=self._tc)

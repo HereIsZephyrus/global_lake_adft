@@ -67,7 +67,7 @@ def _run_batch(
         done_requires_status=True,
     )
     writer = build_provider_batch_writer(
-        source_config, ensure_tables=["pwm_extreme", "hawkes"],
+        source_config,         ensure_tables=["pwm_extreme", "pwm_hawkes"],
     )
     calculator = CalculatorFactory.create(
         "pwm_hawkes",
@@ -102,9 +102,9 @@ def _fetch_diagnosis(limit_id: int) -> pd.DataFrame:
     """Read hawkes_results from parquet."""
     config = SourceConfig()
     data_dir = config.data_dir
-    parquet_path = data_dir / "hawkes_results.parquet"
+    parquet_path = data_dir / "pwm_hawkes_results.parquet"
     if not parquet_path.exists():
-        log.warning("hawkes_results.parquet not found at %s", parquet_path)
+        log.warning("pwm_hawkes_results.parquet not found at %s", parquet_path)
         return pd.DataFrame()
     df = pd.read_parquet(parquet_path)
     df = df[df["hylak_id"] < limit_id]

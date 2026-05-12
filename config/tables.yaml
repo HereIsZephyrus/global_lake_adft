@@ -19,9 +19,13 @@ series_db:
   eot_results: eot_results
   eot_extremes: eot_extremes
   eot_run_status: eot_run_status
-  hawkes_results: hawkes_results
-  hawkes_lrt: hawkes_lrt
-  hawkes_transition_monthly: hawkes_transition_monthly
+  pwm_hawkes_results: pwm_hawkes_results
+  pwm_hawkes_lrt: pwm_hawkes_lrt
+  pwm_hawkes_transition_monthly: pwm_hawkes_transition_monthly
+  eot_hawkes_results: eot_hawkes_results
+  eot_hawkes_lrt: eot_hawkes_lrt
+  eot_hawkes_transition_monthly: eot_hawkes_transition_monthly
+  eot_hawkes_run_status: eot_hawkes_run_status
   interpolation_detect: interpolation_detect
   quantile_labels: quantile_labels
   quantile_extremes: quantile_extremes
@@ -59,7 +63,8 @@ parquet:
   area_shift_labels: area_shift_labels
   af_nearest: af_nearest
   eot_extremes: eot_extremes
-  hawkes_results: hawkes_results
+  pwm_hawkes_results: pwm_hawkes_results
+  eot_hawkes_results: eot_hawkes_results
   interpolation_detect: interpolation_detect
   quantile_extremes: quantile_extremes
   quantile_abrupt_transitions: quantile_abrupt_transitions
