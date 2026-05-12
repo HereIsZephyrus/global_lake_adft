@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-valid-per-month", type=int, default=None)
     parser.add_argument("--min-valid-observations", type=int, default=None)
     parser.add_argument("--io-budget", type=int, default=4, help="Max concurrent DB IO workers.")
+    parser.add_argument("--method", default="stl", choices=["stl", "legacy"],
+                       help="Decomposition method.")
     return parser.parse_args()
 
 
@@ -92,6 +94,7 @@ def main() -> None:
         "quantile",
         min_valid_per_month=args.min_valid_per_month,
         min_valid_observations=args.min_valid_observations,
+        method=args.method,
     )
 
     id_start = args.id_start
