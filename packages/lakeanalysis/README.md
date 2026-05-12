@@ -27,7 +27,7 @@ uv run --package lakeanalysis pylint packages/lakeanalysis/src/lakeanalysis
 | `spatial` | 空间聚合与区域统计 |
 | `shift` | 突变检测与标签计算 |
 | `plot` | 绘图（18 个子命令，按图形内容命名） |
-| `export` | 数据导出 |
+| `sync` | Parquet ↔ PostgreSQL 数据同步 |
 
 ### 使用方式
 
@@ -39,7 +39,7 @@ lake_adft --help
 lake_adft plot --help
 
 # 运行具体命令
-lake_adft plot bindiff --data-dir data/output
+lake_adft plot comparison-global --data-dir data/output
 lake_adft hawkes mine --limit-id 100
 lake_adft eot run --chunk-size 5000
 ```
