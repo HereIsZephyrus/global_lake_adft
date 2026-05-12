@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
     water_area          DOUBLE PRECISION,
+    index_value         DOUBLE PRECISION,
     threshold_low       DOUBLE PRECISION,
     threshold_high      DOUBLE PRECISION,
     extreme_label       TEXT,
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     month               INTEGER      NOT NULL,
     event_type          TEXT,
     water_area          DOUBLE PRECISION,
+    index_value         DOUBLE PRECISION,
     threshold           DOUBLE PRECISION,
     severity            DOUBLE PRECISION,
     extreme_label       TEXT,
@@ -175,15 +177,16 @@ def _upsert_pwm_extreme_labels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, year, month,
-    water_area,
+    water_area, index_value,
     threshold_low, threshold_high, extreme_label, computed_at
 ) VALUES (
     %(hylak_id)s, %(year)s, %(month)s,
-    %(water_area)s,
+    %(water_area)s, %(index_value)s,
     %(threshold_low)s, %(threshold_high)s, %(extreme_label)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     water_area      = EXCLUDED.water_area,
+    index_value     = EXCLUDED.index_value,
     threshold_low   = EXCLUDED.threshold_low,
     threshold_high  = EXCLUDED.threshold_high,
     extreme_label   = EXCLUDED.extreme_label,
@@ -200,16 +203,17 @@ def _upsert_pwm_extreme_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, year, month,
-    event_type, water_area,
+    event_type, water_area, index_value,
     threshold, severity, extreme_label, computed_at
 ) VALUES (
     %(hylak_id)s, %(year)s, %(month)s,
-    %(event_type)s, %(water_area)s,
+    %(event_type)s, %(water_area)s, %(index_value)s,
     %(threshold)s, %(severity)s, %(extreme_label)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     event_type      = EXCLUDED.event_type,
     water_area      = EXCLUDED.water_area,
+    index_value     = EXCLUDED.index_value,
     threshold       = EXCLUDED.threshold,
     severity        = EXCLUDED.severity,
     extreme_label   = EXCLUDED.extreme_label,

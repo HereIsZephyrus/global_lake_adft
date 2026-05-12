@@ -1,4 +1,8 @@
-"""PWMExtremeHawkesCalculator: PWM event -> decluster -> Hawkes fit."""
+"""PWMExtremeHawkesCalculator: PWM event -> decluster -> Hawkes fit.
+
+Uses ``run_single_lake_service`` (STL decomposition + pooled PWM) so that
+the event-detection math is identical to the standalone PWM batch pipeline.
+"""
 
 from __future__ import annotations
 
@@ -23,16 +27,14 @@ from lakeanalysis.hawkes.pipeline import (
     compute_qc_metrics,
     quantile_string,
 )
-from lakeanalysis.pwm_extreme.compute import (
-    compute_monthly_thresholds,
-    extract_pwm_extreme_events,
-)
 from lakeanalysis.pwm_extreme.events import (
     build_hawkes_event_series_from_pwm_events,
     run_runs_declustering,
 )
+from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
+    PWMExtremeServiceConfig,
 )
 
 from ..engine import Calculator, LakeTask
@@ -65,10 +67,15 @@ class PWMExtremeHawkesCalculator(Calculator):
         min_event_rate: float = 0.01,
         max_event_rate: float = 0.30,
         min_relative_amplitude: float = 0.05,
-        min_median_severity: float = 1.0,
+        min_median_severity: float = 5.0,
         monthly_significance_quantile: float = 0.95,
+        method: str = "stl",
     ) -> None:
         self._pwm_config = pwm_config or PWMExtremeConfig()
+        self._service_config = PWMExtremeServiceConfig(
+            pwm_config=self._pwm_config,
+            method=method,
+        )
         self._decluster_run_length = decluster_run_length
         self._hawkes_window_months = hawkes_window_months
         self._min_events = min_events
@@ -84,13 +91,13 @@ class PWMExtremeHawkesCalculator(Calculator):
             series_df = task.series_df
             frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
 
-            pwm_result = compute_monthly_thresholds(
+            pwm_result = run_single_lake_service(
                 series_df,
                 hylak_id=hylak_id,
-                config=self._pwm_config,
+                config=self._service_config,
                 frozen_year_months=frozen or None,
             )
-            raw_events = extract_pwm_extreme_events(pwm_result.labels_df)
+            raw_events = pwm_result.extremes_df
             if len(raw_events) < self._min_events:
                 return self._fail_qc(
                     hylak_id, f"only {len(raw_events)} raw extreme months < min {self._min_events}"

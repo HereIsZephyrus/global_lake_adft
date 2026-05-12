@@ -97,6 +97,8 @@ class EOTCalculator(Calculator):
                     "month": int(row["month"]),
                     "water_area": float(row["original_value"]),
                     "threshold_at_event": float(row["threshold"]),
+                    "time": float(row["time"]),
+                    "value": float(row["value"]),
                 }
                 for _, row in fit.extremes.iterrows()
             ])
