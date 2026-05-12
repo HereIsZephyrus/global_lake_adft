@@ -1,11 +1,16 @@
-"""Pure compute helpers for monthly anomaly transition detection."""
+"""Pure compute helpers for monthly anomaly transition detection.
+
+These functions consume a :class:`~lakeanalysis.decomposition.DecompositionResult`
+produced by any decomposition method and are agnostic to how ``index_value``
+was computed.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.quality.frozen import filter_frozen_rows
+from lakeanalysis.decomposition.base import DecompositionResult
 from lakesource.quantile.schema import QuantileResult
 
 REQUIRED_COLUMNS = ("year", "month", "water_area")
@@ -34,54 +39,39 @@ def validate_monthly_series(series_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def compute_monthly_climatology(valid_df: pd.DataFrame) -> pd.DataFrame:
-    """Compute monthly climatology for one lake."""
-    climatology_df = (
-        valid_df.groupby("month", as_index=False)["water_area"]
-        .mean()
-        .rename(columns={"water_area": "monthly_climatology"})
-    )
-    return climatology_df.sort_values("month").reset_index(drop=True)
+def compute_anomaly_thresholds(
+    index_df: pd.DataFrame,
+    q_low_pct: float = 10.0,
+    q_high_pct: float = 90.0,
+) -> tuple[float, float]:
+    """Compute global quantile thresholds on ``index_value``.
 
+    Args:
+        index_df: Must contain column ``index_value``.
+        q_low_pct: Lower quantile percentile (default 10).
+        q_high_pct: Upper quantile percentile (default 90).
 
-def compute_monthly_anomalies(
-    series_df: pd.DataFrame,
-    frozen_year_months: set[int] | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute filtered monthly anomalies and the corresponding climatology."""
-    valid_df = validate_monthly_series(series_df)
-    if frozen_year_months:
-        valid_df = filter_frozen_rows(valid_df, frozen_year_months)
-
-    if valid_df.empty:
-        raise ValueError("No valid observations remain after filtering")
-
-    climatology_df = compute_monthly_climatology(valid_df)
-    labels_df = valid_df.merge(climatology_df, on="month", how="left", validate="many_to_one")
-    labels_df["anomaly"] = labels_df["water_area"] - labels_df["monthly_climatology"]
-    return labels_df.reset_index(drop=True), climatology_df
-
-
-def compute_anomaly_thresholds(labels_df: pd.DataFrame) -> tuple[float, float]:
-    """Compute lake-relative anomaly thresholds with a fixed quantile rule."""
-    anomalies = labels_df["anomaly"].to_numpy(dtype=float)
-    q_low, q_high = np.quantile(anomalies, [0.10, 0.90], method="linear")
+    Returns:
+        (q_low, q_high) threshold tuple.
+    """
+    values = index_df["index_value"].to_numpy(dtype=float)
+    q_low, q_high = np.quantile(values, [q_low_pct / 100, q_high_pct / 100], method="linear")
     return float(q_low), float(q_high)
 
 
 def assign_extreme_labels(
-    labels_df: pd.DataFrame,
+    index_df: pd.DataFrame,
     q_low: float,
     q_high: float,
 ) -> pd.DataFrame:
-    """Assign extreme-low, normal, and extreme-high labels."""
-    labeled_df = labels_df.copy()
+    """Assign extreme-low / normal / extreme-high labels."""
+    labeled_df = index_df.copy()
     labeled_df["q_low"] = q_low
     labeled_df["q_high"] = q_high
     labeled_df["extreme_label"] = np.select(
         [
-            labeled_df["anomaly"] <= q_low,
-            labeled_df["anomaly"] >= q_high,
+            labeled_df["index_value"] <= q_low,
+            labeled_df["index_value"] >= q_high,
         ],
         ["extreme_low", "extreme_high"],
         default="normal",
@@ -102,6 +92,7 @@ def extract_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
                 "water_area",
                 "monthly_climatology",
                 "anomaly",
+                "index_value",
                 "threshold",
             ]
         )
@@ -124,6 +115,7 @@ def extract_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
         "water_area",
         "monthly_climatology",
         "anomaly",
+        "index_value",
         "threshold",
     ]
     return extreme_df.reindex(columns=columns)
@@ -175,8 +167,8 @@ def detect_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
                 "low_to_high",
                 "high_to_low",
             ),
-            "from_anomaly": ordered_df.loc[transition_mask, "anomaly"].to_numpy(dtype=float),
-            "to_anomaly": next_df.loc[transition_mask, "anomaly"].to_numpy(dtype=float),
+            "from_anomaly": ordered_df.loc[transition_mask, "index_value"].to_numpy(dtype=float),
+            "to_anomaly": next_df.loc[transition_mask, "index_value"].to_numpy(dtype=float),
             "from_label": ordered_df.loc[transition_mask, "extreme_label"].to_numpy(),
             "to_label": next_df.loc[transition_mask, "extreme_label"].to_numpy(),
         }
@@ -185,18 +177,21 @@ def detect_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_monthly_anomaly_transition(
-    series_df: pd.DataFrame,
+    result: DecompositionResult,
     *,
     hylak_id: int | None = None,
-    frozen_year_months: set[int] | None = None,
     min_valid_per_month: int | None = 20,
     min_valid_observations: int | None = 240,
 ) -> QuantileResult:
-    """Run the one-lake workflow end to end."""
-    labels_df, climatology_df = compute_monthly_anomalies(
-        series_df,
-        frozen_year_months=frozen_year_months,
-    )
+    """Run the one-lake anomaly labelling workflow.
+
+    Args:
+        result: Decomposition result with ``index_df`` containing ``index_value``.
+        hylak_id: Optional lake identifier.
+        min_valid_per_month: Minimum observations per calendar month (None = skip).
+        min_valid_observations: Minimum total observations (None = skip).
+    """
+    labels_df = result.index_df
 
     month_counts = labels_df.groupby("month").size().reindex(range(1, 13), fill_value=0)
     if min_valid_per_month is not None and (month_counts < min_valid_per_month).any():
@@ -206,20 +201,22 @@ def run_monthly_anomaly_transition(
 
     q_low, q_high = compute_anomaly_thresholds(labels_df)
     labeled_df = assign_extreme_labels(labels_df, q_low=q_low, q_high=q_high)
+
+    # backward-compat aliases for store layer
+    labeled_df["anomaly"] = labeled_df["index_value"]
+    labeled_df["monthly_climatology"] = labeled_df["index_value"]
+
     if hylak_id is not None:
         labeled_df.insert(0, "hylak_id", hylak_id)
-        climatology_df.insert(0, "hylak_id", hylak_id)
     else:
         labeled_df.insert(0, "hylak_id", pd.Series([pd.NA] * len(labeled_df), dtype="Int64"))
-        climatology_df.insert(
-            0, "hylak_id", pd.Series([pd.NA] * len(climatology_df), dtype="Int64")
-        )
 
     extremes_df = extract_extreme_events(labeled_df)
     transitions_df = detect_abrupt_transitions(labeled_df)
+
     return QuantileResult(
         hylak_id=hylak_id,
-        climatology_df=climatology_df,
+        climatology_df=pd.DataFrame({"month": range(1, 13), "hylak_id": [hylak_id] * 12}),
         labels_df=labeled_df,
         extremes_df=extremes_df,
         transitions_df=transitions_df,

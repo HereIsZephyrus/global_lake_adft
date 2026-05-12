@@ -30,6 +30,7 @@ except ImportError:
 
 
 from lakeanalysis.quality.frozen import filter_frozen_rows
+from lakeanalysis.decomposition.base import DecompositionResult
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
     PWMExtremeMonthResult,
@@ -248,19 +249,19 @@ def compute_one_month_thresholds(
 
 
 def assign_pwm_extreme_labels(
-    series_df: pd.DataFrame,
+    index_df: pd.DataFrame,
     thresholds: dict[int, tuple[float, float]],
 ) -> pd.DataFrame:
     """Assign extreme labels based on PWM cross-entropy thresholds.
 
     Args:
-        series_df: DataFrame with columns year, month, water_area.
+        index_df: DataFrame with columns year, month, index_value.
         thresholds: Dict mapping month → (threshold_low, threshold_high).
 
     Returns:
         DataFrame with added columns threshold_low, threshold_high, extreme_label.
     """
-    labeled_df = series_df.copy()
+    labeled_df = index_df.copy()
     labeled_df["threshold_low"] = labeled_df["month"].map(
         lambda m: thresholds.get(m, (np.nan, np.nan))[0]
     )
@@ -269,13 +270,187 @@ def assign_pwm_extreme_labels(
     )
     labeled_df["extreme_label"] = np.select(
         [
-            labeled_df["water_area"] <= labeled_df["threshold_low"],
-            labeled_df["water_area"] >= labeled_df["threshold_high"],
+            labeled_df["index_value"] <= labeled_df["threshold_low"],
+            labeled_df["index_value"] >= labeled_df["threshold_high"],
         ],
         ["extreme_low", "extreme_high"],
         default="normal",
     )
     return labeled_df
+
+
+def compute_pooled_pwm_thresholds(
+    result: DecompositionResult,
+    *,
+    hylak_id: int | None = None,
+    config: PWMExtremeConfig | None = None,
+) -> PWMExtremeResult:
+    """Compute pooled PWM cross-entropy thresholds on ``index_value``.
+
+    Uses a single PWM fit over all observations (all months pooled),
+    then broadcasts the same thresholds across all 12 calendar months.
+
+    Args:
+        result: Decomposition result with ``index_df`` containing ``index_value``.
+        hylak_id: Optional lake identifier.
+        config: PWM configuration.
+
+    Returns:
+        A PWMExtremeResult with uniform per-month thresholds.
+    """
+    if config is None:
+        config = PWMExtremeConfig()
+
+    index_df = result.index_df
+    index_values = index_df["index_value"].to_numpy(dtype=float)
+
+    if len(index_values) < config.min_observations_per_month:
+        raise ValueError(
+            "Insufficient observations for PWM estimation: "
+            f"{len(index_values)} < {config.min_observations_per_month}"
+        )
+
+    month_results: list[PWMExtremeMonthResult] = []
+    thresholds: dict[int, tuple[float, float]] = {}
+
+    mean_area = float(np.mean(index_values))
+    if mean_area <= 0.0:
+        raise ValueError(f"Mean index_value must be positive; got {mean_area}")
+
+    z = index_values / mean_area
+    z_sorted = np.sort(z)
+    epsilon = float(z_sorted[0])
+    K = config.n_pwm
+
+    b = compute_pwm_beta(z_sorted, K)
+    lam_opt, converged, obj_val = solve_lagrange_multipliers(b, K, epsilon, config)
+
+    u_high = 1.0 - config.p_high
+    u_low = config.p_low
+    x_high = float(crossent_quantile(np.array([u_high]), lam_opt, epsilon)[0])
+    x_low = float(crossent_quantile(np.array([u_low]), lam_opt, epsilon)[0])
+
+    threshold_high = mean_area * x_high
+    threshold_low = mean_area * x_low
+
+    for month in range(1, 13):
+        mr = PWMExtremeMonthResult(
+            hylak_id=hylak_id,
+            month=month,
+            mean_area=mean_area,
+            epsilon=epsilon,
+            lambda_opt=lam_opt,
+            pwm_coefficients=b,
+            threshold_high=threshold_high,
+            threshold_low=threshold_low,
+            converged=converged,
+            objective_value=obj_val,
+        )
+        month_results.append(mr)
+        thresholds[month] = (threshold_low, threshold_high)
+
+    labeled_df = assign_pwm_extreme_labels(index_df, thresholds)
+    if hylak_id is not None:
+        labeled_df.insert(0, "hylak_id", hylak_id)
+    else:
+        labeled_df.insert(
+            0, "hylak_id", pd.Series([pd.NA] * len(labeled_df), dtype="Int64")
+        )
+
+    extremes_df = _extract_events_index(labeled_df)
+    transitions_df = _detect_transitions_index(labeled_df)
+
+    return PWMExtremeResult(
+        hylak_id=hylak_id,
+        month_results=month_results,
+        labels_df=labeled_df,
+        extremes_df=extremes_df,
+        transitions_df=transitions_df,
+    )
+
+
+def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract extreme events from labelled raw-water_area data (legacy compat)."""
+    return _extract_events_raw(labeled_df)
+
+
+def detect_pwm_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
+    """Detect abrupt transitions from labelled raw-water_area data (legacy compat)."""
+    return _detect_transitions_raw(labeled_df)
+
+
+def _assign_labels_raw(
+    series_df: pd.DataFrame,
+    thresholds: dict[int, tuple[float, float]],
+) -> pd.DataFrame:
+    """Assign extreme labels on raw water_area (legacy compat)."""
+    df = series_df.copy()
+    df["threshold_low"] = df["month"].map(lambda m: thresholds.get(m, (np.nan, np.nan))[0])
+    df["threshold_high"] = df["month"].map(lambda m: thresholds.get(m, (np.nan, np.nan))[1])
+    df["extreme_label"] = np.select(
+        [df["water_area"] <= df["threshold_low"], df["water_area"] >= df["threshold_high"]],
+        ["extreme_low", "extreme_high"],
+        default="normal",
+    )
+    return df
+
+
+def _extract_events_raw(labeled_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract extreme events on raw water_area (legacy compat)."""
+    extreme_df = labeled_df.loc[labeled_df["extreme_label"] != "normal"].copy()
+    if extreme_df.empty:
+        return pd.DataFrame(
+            columns=["hylak_id", "year", "month", "event_type", "water_area",
+                     "threshold", "severity", "extreme_label"]
+        )
+    extreme_df["event_type"] = np.where(
+        extreme_df["extreme_label"] == "extreme_high", "high", "low"
+    )
+    extreme_df["threshold"] = np.where(
+        extreme_df["event_type"] == "high",
+        extreme_df["threshold_high"],
+        extreme_df["threshold_low"],
+    )
+    extreme_df["severity"] = np.abs(extreme_df["water_area"] - extreme_df["threshold"])
+    return extreme_df.reindex(
+        columns=["hylak_id", "year", "month", "event_type", "water_area",
+                 "threshold", "severity", "extreme_label"]
+    ).reset_index(drop=True)
+
+
+def _detect_transitions_raw(labeled_df: pd.DataFrame) -> pd.DataFrame:
+    """Detect abrupt transitions on raw water_area (legacy compat)."""
+    ordered_df = labeled_df.sort_values(["year", "month"]).reset_index(drop=True)
+    next_df = ordered_df.shift(-1)
+    adjacency_mask = (next_df["month_ordinal"] - ordered_df["month_ordinal"]) == 1
+    low_to_high = (
+        (ordered_df["extreme_label"] == "extreme_low")
+        & (next_df["extreme_label"] == "extreme_high") & adjacency_mask
+    )
+    high_to_low = (
+        (ordered_df["extreme_label"] == "extreme_high")
+        & (next_df["extreme_label"] == "extreme_low") & adjacency_mask
+    )
+    transition_mask = low_to_high | high_to_low
+    if not transition_mask.any():
+        return pd.DataFrame(columns=[
+            "hylak_id", "from_year", "from_month", "to_year", "to_month",
+            "transition_type", "from_water_area", "to_water_area", "from_label", "to_label",
+        ])
+    return pd.DataFrame({
+        "hylak_id": ordered_df.loc[transition_mask, "hylak_id"].to_numpy(),
+        "from_year": ordered_df.loc[transition_mask, "year"].to_numpy(dtype=int),
+        "from_month": ordered_df.loc[transition_mask, "month"].to_numpy(dtype=int),
+        "to_year": next_df.loc[transition_mask, "year"].to_numpy(dtype=int),
+        "to_month": next_df.loc[transition_mask, "month"].to_numpy(dtype=int),
+        "transition_type": np.where(
+            low_to_high.loc[transition_mask].to_numpy(), "low_to_high", "high_to_low",
+        ),
+        "from_water_area": ordered_df.loc[transition_mask, "water_area"].to_numpy(dtype=float),
+        "to_water_area": next_df.loc[transition_mask, "water_area"].to_numpy(dtype=float),
+        "from_label": ordered_df.loc[transition_mask, "extreme_label"].to_numpy(),
+        "to_label": next_df.loc[transition_mask, "extreme_label"].to_numpy(),
+    }).reset_index(drop=True)
 
 
 def compute_monthly_thresholds(
@@ -285,22 +460,27 @@ def compute_monthly_thresholds(
     config: PWMExtremeConfig | None = None,
     frozen_year_months: set[int] | None = None,
 ) -> PWMExtremeResult:
-    """Compute PWM cross-entropy thresholds for all 12 months of one lake.
+    """Compute per-month PWM thresholds on raw water_area (deprecated).
 
-    Args:
-        series_df: DataFrame with columns year, month, water_area.
-        hylak_id: Optional lake identifier.
-        config: Configuration.
-        frozen_year_months: Optional set of YYYYMM keys to exclude.
-
-    Returns:
-        A PWMExtremeResult with per-month thresholds and labelled series.
+    .. deprecated::
+        Use ``compute_pooled_pwm_thresholds`` with an STL decomposition result.
+        This method is retained for backward compatibility with code that
+        operates on raw water_area (e.g. PWM-Hawkes, legacy tests).
     """
+    import warnings as _warnings
+
+    _warnings.warn(
+        "compute_monthly_thresholds is deprecated; use compute_pooled_pwm_thresholds",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     if config is None:
         config = PWMExtremeConfig()
 
     df = series_df.copy()
-    df = filter_frozen_rows(df, frozen_year_months)
+    if frozen_year_months:
+        df = filter_frozen_rows(df, frozen_year_months)
 
     if df.empty:
         raise ValueError("No observations remain after filtering frozen months")
@@ -319,9 +499,11 @@ def compute_monthly_thresholds(
             )
             continue
         try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=IntegrationWarning)
-                warnings.filterwarnings("ignore", category=RuntimeWarning)
+            import warnings as _w
+
+            with _w.catch_warnings():
+                _w.filterwarnings("ignore", category=IntegrationWarning)
+                _w.filterwarnings("ignore", category=RuntimeWarning)
                 mr = compute_one_month_thresholds(
                     month_values,
                     month,
@@ -336,7 +518,7 @@ def compute_monthly_thresholds(
     if not month_results:
         raise ValueError("No month had sufficient observations for PWM estimation")
 
-    labeled_df = assign_pwm_extreme_labels(df, thresholds)
+    labeled_df = _assign_labels_raw(df, thresholds)
     if hylak_id is not None:
         labeled_df.insert(0, "hylak_id", hylak_id)
     else:
@@ -347,8 +529,8 @@ def compute_monthly_thresholds(
     labeled_df["year_month_key"] = labeled_df["year"] * 100 + labeled_df["month"]
     labeled_df["month_ordinal"] = labeled_df["year"] * 12 + (labeled_df["month"] - 1)
 
-    extremes_df = extract_pwm_extreme_events(labeled_df)
-    transitions_df = detect_pwm_abrupt_transitions(labeled_df)
+    extremes_df = _extract_events_raw(labeled_df)
+    transitions_df = _detect_transitions_raw(labeled_df)
 
     return PWMExtremeResult(
         hylak_id=hylak_id,
@@ -359,17 +541,17 @@ def compute_monthly_thresholds(
     )
 
 
-def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
+def _extract_events_index(labeled_df: pd.DataFrame) -> pd.DataFrame:
     """Extract one row per extreme month from PWM-labelled data.
 
     Args:
         labeled_df: DataFrame from ``assign_pwm_extreme_labels``, containing
-            hylak_id, year, month, water_area, threshold_low, threshold_high,
-            extreme_label.
+            hylak_id, year, month, water_area, index_value, threshold_low,
+            threshold_high, extreme_label.
 
     Returns:
         DataFrame with columns: hylak_id, year, month, event_type, water_area,
-        threshold, severity, extreme_label.
+        index_value, threshold, severity, extreme_label.
     """
     extreme_df = labeled_df.loc[labeled_df["extreme_label"] != "normal"].copy()
     if extreme_df.empty:
@@ -380,6 +562,7 @@ def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
                 "month",
                 "event_type",
                 "water_area",
+                "index_value",
                 "threshold",
                 "severity",
                 "extreme_label",
@@ -396,7 +579,7 @@ def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
         extreme_df["threshold_high"],
         extreme_df["threshold_low"],
     )
-    extreme_df["severity"] = np.abs(extreme_df["water_area"] - extreme_df["threshold"])
+    extreme_df["severity"] = np.abs(extreme_df["index_value"] - extreme_df["threshold"])
 
     columns = [
         "hylak_id",
@@ -404,6 +587,7 @@ def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
         "month",
         "event_type",
         "water_area",
+        "index_value",
         "threshold",
         "severity",
         "extreme_label",
@@ -411,7 +595,7 @@ def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
     return extreme_df.reindex(columns=columns).reset_index(drop=True)
 
 
-def detect_pwm_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
+def _detect_transitions_index(labeled_df: pd.DataFrame) -> pd.DataFrame:
     """Detect one-step low-to-high and high-to-low transitions in PWM labels.
 
     Uses ``month_ordinal`` to ensure strict adjacency between consecutive
@@ -420,11 +604,11 @@ def detect_pwm_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
 
     Args:
         labeled_df: DataFrame from ``assign_pwm_extreme_labels``, containing
-            hylak_id, year, month, month_ordinal, water_area, extreme_label.
+            hylak_id, year, month, month_ordinal, index_value, extreme_label.
 
     Returns:
         DataFrame with columns: hylak_id, from_year, from_month, to_year,
-        to_month, transition_type, from_water_area, to_water_area,
+        to_month, transition_type, from_index, to_index,
         from_label, to_label.
     """
     ordered_df = labeled_df.sort_values(["year", "month"]).reset_index(drop=True)
@@ -471,10 +655,10 @@ def detect_pwm_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
                 "low_to_high",
                 "high_to_low",
             ),
-            "from_water_area": ordered_df.loc[transition_mask, "water_area"].to_numpy(
+            "from_water_area": ordered_df.loc[transition_mask, "index_value"].to_numpy(
                 dtype=float
             ),
-            "to_water_area": next_df.loc[transition_mask, "water_area"].to_numpy(
+            "to_water_area": next_df.loc[transition_mask, "index_value"].to_numpy(
                 dtype=float
             ),
             "from_label": ordered_df.loc[transition_mask, "extreme_label"].to_numpy(),

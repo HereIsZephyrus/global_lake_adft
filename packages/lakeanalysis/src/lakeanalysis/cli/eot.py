@@ -91,6 +91,7 @@ def quantile(
     io_budget: IoBudgetOpt = 4,
     min_valid_per_month: int | None = typer.Option(None, help="Min valid obs per month"),
     min_valid_observations: int | None = typer.Option(None, help="Min total valid obs"),
+    method: str = typer.Option("stl", help="Decomposition method: stl | legacy"),
 ) -> None:
     """Run batch quantile computation."""
     run_batch_engine(
@@ -106,5 +107,6 @@ def quantile(
         calculator_kwargs=dict(
             min_valid_per_month=min_valid_per_month,
             min_valid_observations=min_valid_observations,
+            method=method,
         ),
     )

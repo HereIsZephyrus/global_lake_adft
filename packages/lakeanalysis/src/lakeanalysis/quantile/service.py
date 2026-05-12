@@ -4,8 +4,21 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .compute import run_monthly_anomaly_transition
+from lakeanalysis.quality.frozen import filter_frozen_rows
+from lakeanalysis.decomposition.base import DecompositionMethod
+from lakeanalysis.decomposition.monthly_climatology import MonthlyClimatologyMethod
+from lakeanalysis.decomposition.stl_percentile import STLPercentileMethod
+
+from .compute import run_monthly_anomaly_transition, validate_monthly_series
 from lakesource.quantile.schema import QuantileResult, QuantileServiceConfig
+
+
+def _create_method(method: str | None) -> DecompositionMethod:
+    if method is None or method == "stl":
+        return STLPercentileMethod()
+    if method == "legacy":
+        return MonthlyClimatologyMethod()
+    raise ValueError(f"Unknown decomposition method: {method!r}")
 
 
 def run_single_lake_service(
@@ -18,11 +31,22 @@ def run_single_lake_service(
 ) -> QuantileResult:
     """Run one lake through the shared monthly transition workflow service."""
     cfg = config or QuantileServiceConfig()
-    applied_frozen = frozen_year_months if use_frozen_mask else None
+
+    method = _create_method(cfg.method)
+
+    valid_df = validate_monthly_series(series_df)
+
+    if frozen_year_months and use_frozen_mask:
+        valid_df = filter_frozen_rows(valid_df, frozen_year_months)
+
+    if valid_df.empty:
+        raise ValueError("No valid observations remain after filtering")
+
+    result = method.decompose(valid_df)
+
     return run_monthly_anomaly_transition(
-        series_df,
+        result,
         hylak_id=hylak_id,
-        frozen_year_months=applied_frozen,
         min_valid_per_month=cfg.min_valid_per_month,
         min_valid_observations=cfg.min_valid_observations,
     )
