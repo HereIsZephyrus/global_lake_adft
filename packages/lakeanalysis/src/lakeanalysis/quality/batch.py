@@ -125,6 +125,9 @@ class QualityBatchWriter(BatchWriter):
             self._provider.truncate_table("quality_run_status")
         self._initialized = True
 
+    def truncate_run_status(self, algorithm: str) -> None:
+        self._provider.truncate_table("quality_run_status")
+
 
 class QualityCalculator(Calculator):
     def __init__(self, config: QualityRunConfig) -> None:

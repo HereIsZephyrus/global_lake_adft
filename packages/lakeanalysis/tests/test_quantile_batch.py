@@ -121,6 +121,9 @@ class FakeWriter(BatchWriter):
     def ensure_schema(self, algorithm):
         self.ensured.append(algorithm)
 
+    def truncate_run_status(self, algorithm):
+        pass
+
 
 def test_quantile_calculator_run() -> None:
     calc = QuantileCalculator(

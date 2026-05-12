@@ -38,6 +38,14 @@ class BatchWriter(ABC):
     @abstractmethod
     def ensure_schema(self, algorithm: str) -> None: ...
 
+    @abstractmethod
+    def truncate_run_status(self, algorithm: str) -> None:
+        """Truncate the run_status table for *algorithm* after a full run.
+
+        This clears incremental progress so the next run starts fresh.
+        Only called when running without a lake filter (full run).
+        """
+
 
 class ProviderBatchReader(BatchReader):
     def __init__(
@@ -79,6 +87,15 @@ class ProviderBatchReader(BatchReader):
 
 
 class ProviderBatchWriter(BatchWriter):
+    _RUN_STATUS_TABLES: dict[str, str] = {
+        "quantile": "quantile_run_status",
+        "pwm_extreme": "pwm_extreme_run_status",
+        "pwm_hawkes": "pwm_hawkes_run_status",
+        "eot": "eot_run_status",
+        "comparison": "comparison_run_status",
+        "area_quality": "quality_run_status",
+    }
+
     def __init__(
         self,
         provider: LakeProvider,
@@ -100,6 +117,11 @@ class ProviderBatchWriter(BatchWriter):
         ensure_tables = self._ensure_tables or list(spec.ensure_tables)
         for table_name in ensure_tables:
             self._provider.ensure_table(table_name)
+
+    def truncate_run_status(self, algorithm: str) -> None:
+        table = self._RUN_STATUS_TABLES.get(algorithm)
+        if table:
+            self._provider.truncate_table(table)
 
 
 def build_batch_reader(config: SourceConfig | None = None) -> BatchReader:
