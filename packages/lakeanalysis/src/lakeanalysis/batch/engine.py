@@ -91,6 +91,11 @@ class Engine:
             return self._lake_filter.start, self._lake_filter.end
         return 0, None
 
+    def _maybe_truncate(self) -> None:
+        """Truncate run_status after a full (unfiltered) run completes."""
+        if self._lake_filter is None:
+            self._writer.truncate_run_status(self._algorithm)
+
     def run(self) -> RunReport | None:
         try:
             from mpi4py import MPI
@@ -107,7 +112,7 @@ class Engine:
             if size <= 1:
                 from .single_process import SingleProcessIdBatchRunner
 
-                return SingleProcessIdBatchRunner(
+                result = SingleProcessIdBatchRunner(
                     self._reader,
                     self._writer,
                     self._calculator,
@@ -115,6 +120,8 @@ class Engine:
                     lake_filter=self._lake_filter,
                     chunk_size=self._chunk_size,
                 ).run()
+                self._maybe_truncate()
+                return result
             from .manager import Manager
             from .worker import Worker
 
@@ -122,7 +129,9 @@ class Engine:
                 self._writer.ensure_schema(self._algorithm)
                 sorted_ids = sorted(self._lake_filter.ids)
                 manager = Manager(comm, size, self._io_budget, self._lake_filter, self._writer)
-                return manager.run_id_batch(sorted_ids, self._chunk_size)
+                result = manager.run_id_batch(sorted_ids, self._chunk_size)
+                self._maybe_truncate()
+                return result
 
             assignments = comm.bcast(None, root=0)
             worker = Worker(
@@ -136,7 +145,7 @@ class Engine:
         if size <= 1:
             from .single_process import SingleProcessRunner
 
-            return SingleProcessRunner(
+            result = SingleProcessRunner(
                 self._reader,
                 self._writer,
                 self._calculator,
@@ -144,6 +153,8 @@ class Engine:
                 lake_filter=self._lake_filter,
                 chunk_size=self._chunk_size,
             ).run()
+            self._maybe_truncate()
+            return result
 
         from .manager import Manager
         from .worker import Worker
@@ -152,7 +163,9 @@ class Engine:
             self._writer.ensure_schema(self._algorithm)
             max_id = self._reader.fetch_max_hylak_id()
             manager = Manager(comm, size, self._io_budget, self._lake_filter, self._writer)
-            return manager.run(max_id, self._chunk_size)
+            result = manager.run(max_id, self._chunk_size)
+            self._maybe_truncate()
+            return result
 
         assignments = comm.bcast(None, root=0)
         worker = Worker(

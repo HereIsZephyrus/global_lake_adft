@@ -108,6 +108,9 @@ class _FakeWriter(BatchWriter):
     def ensure_schema(self, algorithm):
         self._provider.ensured.append(algorithm)
 
+    def truncate_run_status(self, algorithm):
+        pass
+
 
 class _FakeCalculator:
     def run(self, task):
