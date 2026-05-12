@@ -38,12 +38,12 @@ class SourceConfig:
         backend: Which data backend to use (postgres or parquet).
         data_dir: Path to parquet files directory (required when backend=parquet).
         data_path: Path where raw water-balance datasets are stored / downloaded.
-        figures_dir: Path for plot/visualisation output (FIGURES_DIR env,
-            or data_dir.parent / "figures", or cwd / "data" / "figures").
-        workflow_version: Workflow version string for monthly transition data.
+        figures_dir: Path for plot/visualisation output.
         year_start: Optional start year filter (None = no filter).
         year_end: Optional end year filter (None = no filter).
-        tables: Table name mapping. None → auto-load from default config.toml.
+        chunk_size: Batch chunk size (default 10_000 from adapter.yaml / env).
+        limit_id: Optional upper hylak_id bound for testing.
+        tables: Table name mapping. None -> auto-load from config/tables.yaml.
         db_host: PostgreSQL host (default from DB_HOST env, or localhost).
         db_port: PostgreSQL port (default from DB_PORT env, or 5432).
         db_user: PostgreSQL user (default from DB_USER env).
@@ -56,9 +56,10 @@ class SourceConfig:
     data_dir: Path | None = None
     data_path: Path | None = None
     figures_dir: Path | None = None
-    workflow_version: str = "monthly-transition-v1"
     year_start: int | None = None
     year_end: int | None = None
+    chunk_size: int = 10_000
+    limit_id: int | None = None
     tables: TableConfig | None = None
     db_host: str | None = None
     db_port: int | None = None
@@ -68,11 +69,6 @@ class SourceConfig:
     series_db_name: str | None = None
 
     def __post_init__(self) -> None:
-        normalized = self.workflow_version.strip()
-        if not normalized:
-            raise ValueError("workflow_version must not be empty")
-        object.__setattr__(self, "workflow_version", normalized)
-
         if self.backend is None:
             b = _env("DATA_BACKEND")
             if b:
@@ -81,14 +77,19 @@ class SourceConfig:
                 except ValueError:
                     raise ValueError(f"Invalid DATA_BACKEND: {b!r}") from None
             else:
-                object.__setattr__(self, "backend", Backend.POSTGRES)
+                from .config_loader import adapter_config
+                adapter = adapter_config()
+                default_backend = adapter.get("backend", "parquet")
+                object.__setattr__(self, "backend", Backend(default_backend))
 
         if self.backend == Backend.PARQUET and self.data_dir is None:
             d = _env("PARQUET_DATA_DIR")
             if d:
                 object.__setattr__(self, "data_dir", Path(d))
             else:
-                raise ValueError("data_dir is required when backend=parquet (set PARQUET_DATA_DIR)")
+                raise ValueError(
+                    "data_dir is required when backend=parquet (set PARQUET_DATA_DIR)"
+                )
 
         if self.tables is None:
             object.__setattr__(self, "tables", TableConfig.default())

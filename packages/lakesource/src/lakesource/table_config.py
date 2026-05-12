@@ -1,18 +1,16 @@
-"""Table name configuration loaded from config.toml.
+"""Table name configuration loaded from config/tables.yaml.
 
 Provides ``TableConfig`` — a frozen dataclass that maps logical table names
 to actual PostgreSQL table names and Parquet file names.  The mapping is
-loaded from a TOML file (default: ``config.toml`` bundled with the package).
+loaded from a YAML file (default: ``config/tables.yaml``).
 """
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import ClassVar
 
-_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent.parent / "lakesource" / "config.toml"
+from .config_loader import tables_config
 
 
 @dataclass(frozen=True)
@@ -50,45 +48,29 @@ class TableConfig:
         return self.parquet.get(logical, logical)
 
     @classmethod
-    def from_toml(cls, path: Path) -> TableConfig:
-        """Load table configuration from a TOML file.
-
-        The file must contain a ``[tables]`` section with optional
-        ``series_db``, ``atlas_db``, and ``parquet`` sub-sections.
-
-        Args:
-            path: Path to the TOML file.
-
-        Raises:
-            FileNotFoundError: If the file does not exist.
-            ValueError: If the file is missing the ``[tables]`` section.
-        """
-        if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {path}")
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        tables = data.get("tables")
-        if tables is None:
-            raise ValueError(f"Missing [tables] section in {path}")
-        atlas = dict(tables.get("atlas_db", {}))
-        id_col = atlas.pop("lake_geometry_id_column", "hylak_id")
-        geom_col = atlas.pop("lake_geometry_geom_column", "geom")
-        simplify = float(atlas.pop("lake_geometry_simplify_meters", 0))
+    def from_yaml(cls) -> TableConfig:
+        """Load table configuration from ``config/tables.yaml``."""
+        data = tables_config()
+        atlas_section = data.get("atlas_db", {})
+        atlas = dict(atlas_section)
+        geometry = atlas.pop("geometry", {})
         return cls(
-            series_db=dict(tables.get("series_db", {})),
+            series_db=dict(data.get("series_db", {})),
             atlas_db=atlas,
-            parquet=dict(tables.get("parquet", {})),
-            lake_geometry_id_column=id_col,
-            lake_geometry_geom_column=geom_col,
-            lake_geometry_simplify_meters=simplify,
+            parquet=dict(data.get("parquet", {})),
+            lake_geometry_id_column=geometry.get("id_column", "hylak_id"),
+            lake_geometry_geom_column=geometry.get("geom_column", "geom"),
+            lake_geometry_simplify_meters=float(
+                geometry.get("simplify_meters", 0)
+            ),
         )
 
     @classmethod
     def default(cls) -> TableConfig:
-        """Load the default ``config.toml`` bundled with the package.
+        """Load the default ``config/tables.yaml``.
 
         The result is cached, so subsequent calls return the same instance.
         """
         if cls._cached_default is None:
-            cls._cached_default = cls.from_toml(_DEFAULT_CONFIG_PATH)
+            cls._cached_default = cls.from_yaml()
         return cls._cached_default

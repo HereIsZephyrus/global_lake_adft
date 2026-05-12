@@ -15,15 +15,12 @@ from lakesource.pwm_extreme.schema import (
     PWMExtremeResult,
 )
 from lakesource.pwm_extreme.store import (
-    _attach_workflow_version,
     make_run_status_row,
     result_to_extreme_rows,
     result_to_label_rows,
     result_to_threshold_rows,
     result_to_transition_rows,
 )
-
-_WF = "pwm-extreme-v1"
 
 
 def _make_month_result(
@@ -126,7 +123,7 @@ class TestResultToThresholdRows:
             extremes_df=_make_extremes_df(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_threshold_rows(result, workflow_version=_WF)
+        rows = result_to_threshold_rows(result)
         assert len(rows) == 1
         row = rows[0]
         assert row["hylak_id"] == 1
@@ -135,7 +132,6 @@ class TestResultToThresholdRows:
         assert row["epsilon"] == 0.0
         assert row["converged"] is True
         assert row["objective_value"] == 0.123
-        assert row["workflow_version"] == _WF
 
     def test_lambda_and_pwm_keys(self) -> None:
         result = PWMExtremeResult(
@@ -145,7 +141,7 @@ class TestResultToThresholdRows:
             extremes_df=_make_extremes_df(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_threshold_rows(result, workflow_version=_WF)
+        rows = result_to_threshold_rows(result)
         row = rows[0]
         assert row["lambda_0"] == 1.0
         assert row["lambda_1"] == 2.0
@@ -163,7 +159,7 @@ class TestResultToThresholdRows:
             extremes_df=_make_extremes_df(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_threshold_rows(result, workflow_version=_WF)
+        rows = result_to_threshold_rows(result)
         assert rows == []
 
     def test_different_lambda_length(self) -> None:
@@ -175,7 +171,7 @@ class TestResultToThresholdRows:
             extremes_df=_make_extremes_df(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_threshold_rows(result, workflow_version=_WF)
+        rows = result_to_threshold_rows(result)
         row = rows[0]
         assert row["lambda_0"] == 1.0
         assert row["lambda_1"] == 2.0
@@ -195,7 +191,7 @@ class TestResultToThresholdRows:
             extremes_df=_make_extremes_df(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_threshold_rows(result, workflow_version=_WF)
+        rows = result_to_threshold_rows(result)
         assert len(rows) == 3
         assert [r["month"] for r in rows] == [1, 2, 3]
 
@@ -209,10 +205,8 @@ class TestResultToLabelRows:
             extremes_df=pd.DataFrame(),
             transitions_df=pd.DataFrame(),
         )
-        rows = result_to_label_rows(result, workflow_version=_WF)
+        rows = result_to_label_rows(result)
         assert len(rows) == 2
-        assert all("workflow_version" in r for r in rows)
-        assert all(r["workflow_version"] == _WF for r in rows)
         assert rows[0]["extreme_label"] == "none"
         assert rows[1]["extreme_label"] == "high"
 
@@ -226,10 +220,9 @@ class TestResultToExtremeRows:
             extremes_df=_make_extremes_df(),
             transitions_df=pd.DataFrame(),
         )
-        rows = result_to_extreme_rows(result, workflow_version=_WF)
+        rows = result_to_extreme_rows(result)
         assert len(rows) == 1
         assert rows[0]["event_type"] == "high"
-        assert rows[0]["workflow_version"] == _WF
 
     def test_empty(self) -> None:
         result = PWMExtremeResult(
@@ -244,7 +237,7 @@ class TestResultToExtremeRows:
             ),
             transitions_df=pd.DataFrame(),
         )
-        rows = result_to_extreme_rows(result, workflow_version=_WF)
+        rows = result_to_extreme_rows(result)
         assert rows == []
 
 
@@ -257,10 +250,9 @@ class TestResultToTransitionRows:
             extremes_df=pd.DataFrame(),
             transitions_df=_make_transitions_df(),
         )
-        rows = result_to_transition_rows(result, workflow_version=_WF)
+        rows = result_to_transition_rows(result)
         assert len(rows) == 1
         assert rows[0]["transition_type"] == "none->high"
-        assert rows[0]["workflow_version"] == _WF
 
     def test_empty(self) -> None:
         result = PWMExtremeResult(
@@ -276,26 +268,8 @@ class TestResultToTransitionRows:
                 ]
             ),
         )
-        rows = result_to_transition_rows(result, workflow_version=_WF)
+        rows = result_to_transition_rows(result)
         assert rows == []
-
-
-class TestAttachWorkflowVersion:
-    def test_attaches(self) -> None:
-        rows = _attach_workflow_version([{"a": 1}], workflow_version="v2")
-        assert rows == [{"a": 1, "workflow_version": "v2"}]
-
-    def test_strips(self) -> None:
-        rows = _attach_workflow_version([{"a": 1}], workflow_version="  v2  ")
-        assert rows == [{"a": 1, "workflow_version": "v2"}]
-
-    def test_rejects_empty_after_strip(self) -> None:
-        with pytest.raises(ValueError, match="workflow_version must not be empty"):
-            _attach_workflow_version([{"a": 1}], workflow_version="   ")
-
-    def test_rejects_empty_string(self) -> None:
-        with pytest.raises(ValueError, match="workflow_version must not be empty"):
-            _attach_workflow_version([{"a": 1}], workflow_version="")
 
 
 class TestMakeRunStatusRow:
@@ -304,7 +278,6 @@ class TestMakeRunStatusRow:
             hylak_id=1,
             chunk_start=0,
             chunk_end=100,
-            workflow_version=_WF,
             status="done",
         )
         assert row["hylak_id"] == 1
@@ -316,7 +289,6 @@ class TestMakeRunStatusRow:
             hylak_id=1,
             chunk_start=0,
             chunk_end=100,
-            workflow_version=_WF,
             status="error",
             error_message="something broke",
         )
@@ -329,6 +301,5 @@ class TestMakeRunStatusRow:
                 hylak_id=1,
                 chunk_start=0,
                 chunk_end=100,
-                workflow_version=_WF,
-                status="unknown",
+                    status="unknown",
             )

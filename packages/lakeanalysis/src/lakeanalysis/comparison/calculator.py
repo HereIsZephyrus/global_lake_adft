@@ -7,13 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from lakesource.comparison.schema import (
-    CURRENT_COMPARISON_WORKFLOW_VERSION,
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
 )
 from lakesource.comparison.store import make_run_status_row
 from lakesource.pwm_extreme.schema import (
-    CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
     PWMExtremeResult,
     RUN_STATUS_DONE as PWM_DONE,
     RUN_STATUS_ERROR as PWM_ERROR,
@@ -23,7 +21,6 @@ from lakesource.pwm_extreme.store import (
     result_to_threshold_rows,
 )
 from lakesource.quantile.schema import (
-    CURRENT_QUANTILE_WORKFLOW_VERSION,
     QuantileResult,
     RUN_STATUS_DONE as Q_DONE,
     RUN_STATUS_ERROR as Q_ERROR,
@@ -55,11 +52,9 @@ class ComparisonCalculator(Calculator):
         *,
         min_valid_per_month: int | None = None,
         min_valid_observations: int | None = None,
-        workflow_version: str = CURRENT_COMPARISON_WORKFLOW_VERSION,
     ) -> None:
         self._min_valid_per_month = min_valid_per_month
         self._min_valid_observations = min_valid_observations
-        self._workflow_version = workflow_version
 
     def run(self, task: LakeTask) -> ComparisonResult:
         frozen = set(task.frozen_year_months) or None
@@ -102,22 +97,18 @@ class ComparisonCalculator(Calculator):
         if isinstance(result.quantile_result, QuantileResult):
             rows["quantile_labels"] = result_to_label_rows(
                 result.quantile_result,
-                workflow_version=CURRENT_QUANTILE_WORKFLOW_VERSION,
             )
             rows["quantile_extremes"] = result_to_extreme_rows(
                 result.quantile_result,
-                workflow_version=CURRENT_QUANTILE_WORKFLOW_VERSION,
             )
             rows["quantile_abrupt_transitions"] = result_to_transition_rows(
                 result.quantile_result,
-                workflow_version=CURRENT_QUANTILE_WORKFLOW_VERSION,
             )
             rows["quantile_run_status"] = [
                 make_quantile_run_status_row(
                     hylak_id=result.hylak_id,
                     chunk_start=0,
                     chunk_end=0,
-                    workflow_version=CURRENT_QUANTILE_WORKFLOW_VERSION,
                     status=Q_DONE,
                 )
             ]
@@ -128,7 +119,6 @@ class ComparisonCalculator(Calculator):
                     hylak_id=result.hylak_id,
                     chunk_start=0,
                     chunk_end=0,
-                    workflow_version=CURRENT_QUANTILE_WORKFLOW_VERSION,
                     status=Q_ERROR,
                     error_message=str(result.quantile_result),
                 )
@@ -138,14 +128,12 @@ class ComparisonCalculator(Calculator):
         if isinstance(result.pwm_result, PWMExtremeResult):
             rows["pwm_extreme_thresholds"] = result_to_threshold_rows(
                 result.pwm_result,
-                workflow_version=CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
             )
             rows["pwm_extreme_run_status"] = [
                 make_pwm_run_status_row(
                     hylak_id=result.hylak_id,
                     chunk_start=0,
                     chunk_end=0,
-                    workflow_version=CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
                     status=PWM_DONE,
                 )
             ]
@@ -156,7 +144,6 @@ class ComparisonCalculator(Calculator):
                     hylak_id=result.hylak_id,
                     chunk_start=0,
                     chunk_end=0,
-                    workflow_version=CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
                     status=PWM_ERROR,
                     error_message=str(result.pwm_result),
                 )
@@ -177,7 +164,6 @@ class ComparisonCalculator(Calculator):
                 hylak_id=result.hylak_id,
                 chunk_start=0,
                 chunk_end=0,
-                workflow_version=self._workflow_version,
                 status=overall_status,
                 quantile_status=q_status,
                 pwm_status=pwm_status,
@@ -195,7 +181,6 @@ class ComparisonCalculator(Calculator):
                     hylak_id=hylak_id,
                     chunk_start=chunk_start,
                     chunk_end=chunk_end,
-                    workflow_version=self._workflow_version,
                     status=RUN_STATUS_ERROR,
                     error_message=str(error),
                 )

@@ -20,10 +20,10 @@ class PostgresComparisonWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_comparison_run_status(conn, rows, table_config=self._tc)
 
-    def fetch_comparison_status_ids_in_range(self, chunk_start, chunk_end, *, workflow_version):
+    def fetch_comparison_status_ids_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import comparison_schema as _mod
         with self._conn_factory() as conn:
-            return _mod.fetch_comparison_status_ids_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
+            return _mod.fetch_comparison_status_ids_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
 
 class PostgresInterpolationDetectWriteRepository:

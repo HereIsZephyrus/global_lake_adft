@@ -77,20 +77,18 @@ def build_result() -> QuantileResult:
 def test_store_row_helpers_shape_expected_columns() -> None:
     result = build_result()
 
-    label_rows = result_to_label_rows(result, workflow_version="test-v1")
-    extreme_rows = result_to_extreme_rows(result, workflow_version="test-v1")
-    transition_rows = result_to_transition_rows(result, workflow_version="test-v1")
+    label_rows = result_to_label_rows(result)
+    extreme_rows = result_to_extreme_rows(result)
+    transition_rows = result_to_transition_rows(result)
     status_row = make_run_status_row(
         hylak_id=101,
         chunk_start=0,
         chunk_end=1000,
-        workflow_version="test-v1",
         status="done",
         error_message=None,
     )
 
     assert label_rows[0]["extreme_label"] == "extreme_low"
-    assert label_rows[0]["workflow_version"] == "test-v1"
     assert extreme_rows[0]["event_type"] == "low"
     assert transition_rows[0]["transition_type"] == "low_to_high"
     assert status_row["chunk_end"] == 1000

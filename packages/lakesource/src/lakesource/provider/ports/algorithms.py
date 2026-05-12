@@ -14,10 +14,10 @@ class QuantileWritePort(Protocol):
     ) -> None: ...
     def upsert_quantile_run_status(self, rows: list[dict[str, Any]]) -> None: ...
     def count_quantile_status_in_range(
-        self, chunk_start: int, chunk_end: int, *, workflow_version: str
+        self, chunk_start: int, chunk_end: int
     ) -> int: ...
     def fetch_quantile_status_ids_in_range(
-        self, chunk_start: int, chunk_end: int, *, workflow_version: str
+        self, chunk_start: int, chunk_end: int
     ) -> set[int]: ...
 
 
@@ -30,10 +30,10 @@ class PwmWritePort(Protocol):
     def upsert_pwm_extreme_run_status(self, rows: list[dict[str, Any]]) -> None: ...
     def upsert_pwm_hawkes_run_status(self, rows: list[dict[str, Any]]) -> None: ...
     def count_pwm_extreme_status_in_range(
-        self, chunk_start: int, chunk_end: int, *, workflow_version: str
+        self, chunk_start: int, chunk_end: int
     ) -> int: ...
     def fetch_pwm_extreme_status_ids_in_range(
-        self, chunk_start: int, chunk_end: int, *, workflow_version: str
+        self, chunk_start: int, chunk_end: int
     ) -> set[int]: ...
 
 
@@ -59,7 +59,7 @@ class ComparisonWritePort(Protocol):
         self, rows: list[dict[str, Any]]
     ) -> None: ...
     def fetch_comparison_status_ids_in_range(
-        self, chunk_start: int, chunk_end: int, *, workflow_version: str
+        self, chunk_start: int, chunk_end: int
     ) -> set[int]: ...
 
 

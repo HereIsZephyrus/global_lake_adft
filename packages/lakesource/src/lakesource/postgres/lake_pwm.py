@@ -21,7 +21,6 @@ def _ensure_pwm_extreme_thresholds_table_sql(tc: TableConfig) -> sql.Composed:
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     mean_area           DOUBLE PRECISION,
     epsilon             DOUBLE PRECISION,
     lambda_0            DOUBLE PRECISION,
@@ -39,7 +38,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     converged           BOOLEAN,
     objective_value     DOUBLE PRECISION,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, month)
+    PRIMARY KEY (hylak_id, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")))
 
@@ -50,13 +49,12 @@ CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     water_area          DOUBLE PRECISION,
     threshold_low       DOUBLE PRECISION,
     threshold_high      DOUBLE PRECISION,
     extreme_label       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, year, month)
+    PRIMARY KEY (hylak_id, year, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_labels")))
 
@@ -67,14 +65,13 @@ CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     event_type          TEXT,
     water_area          DOUBLE PRECISION,
     threshold           DOUBLE PRECISION,
     severity            DOUBLE PRECISION,
     extreme_label       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, year, month)
+    PRIMARY KEY (hylak_id, year, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_extremes")))
 
@@ -87,14 +84,13 @@ CREATE TABLE IF NOT EXISTS {table} (
     from_month          INTEGER      NOT NULL,
     to_year             INTEGER      NOT NULL,
     to_month            INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     transition_type     TEXT,
     from_water_area     DOUBLE PRECISION,
     to_water_area       DOUBLE PRECISION,
     from_label          TEXT,
     to_label            TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, from_year, from_month, to_year, to_month)
+    PRIMARY KEY (hylak_id, from_year, from_month, to_year, to_month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_abrupt_transitions")))
 
@@ -103,13 +99,12 @@ def _ensure_pwm_extreme_status_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
-    workflow_version  TEXT         NOT NULL,
     chunk_start       INTEGER,
     chunk_end         INTEGER,
     status            TEXT         NOT NULL,
     error_message     TEXT,
     computed_at       TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version)
+    PRIMARY KEY (hylak_id)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
 
@@ -117,13 +112,13 @@ CREATE TABLE IF NOT EXISTS {table} (
 def _upsert_pwm_extreme_thresholds_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, month, workflow_version,
+    hylak_id, month,
     mean_area, epsilon,
     lambda_0, lambda_1, lambda_2, lambda_3, lambda_4,
     b_0, b_1, b_2, b_3, b_4,
     threshold_high, threshold_low, converged, objective_value, computed_at
 ) VALUES (
-    %(hylak_id)s, %(month)s, %(workflow_version)s,
+    %(hylak_id)s, %(month)s,
     %(mean_area)s, %(epsilon)s,
     %(lambda_0)s, %(lambda_1)s, %(lambda_2)s, %(lambda_3)s, %(lambda_4)s,
     %(b_0)s, %(b_1)s, %(b_2)s, %(b_3)s, %(b_4)s,
@@ -150,7 +145,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version", "month")
+            sql.Identifier(c) for c in ("hylak_id", "month")
         ),
     )
 
@@ -158,9 +153,9 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+    hylak_id, chunk_start, chunk_end, status, error_message, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
@@ -171,7 +166,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_run_status")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+            sql.Identifier(c) for c in ("hylak_id",)
         ),
     )
 
@@ -179,11 +174,11 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_labels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, year, month, workflow_version,
+    hylak_id, year, month,
     water_area,
     threshold_low, threshold_high, extreme_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(year)s, %(month)s, %(workflow_version)s,
+    %(hylak_id)s, %(year)s, %(month)s,
     %(water_area)s,
     %(threshold_low)s, %(threshold_high)s, %(extreme_label)s, now()
 )
@@ -196,7 +191,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_labels")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version", "year", "month")
+            sql.Identifier(c) for c in ("hylak_id", "year", "month")
         ),
     )
 
@@ -204,11 +199,11 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, year, month, workflow_version,
+    hylak_id, year, month,
     event_type, water_area,
     threshold, severity, extreme_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(year)s, %(month)s, %(workflow_version)s,
+    %(hylak_id)s, %(year)s, %(month)s,
     %(event_type)s, %(water_area)s,
     %(threshold)s, %(severity)s, %(extreme_label)s, now()
 )
@@ -222,7 +217,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_extremes")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version", "year", "month")
+            sql.Identifier(c) for c in ("hylak_id", "year", "month")
         ),
     )
 
@@ -231,11 +226,11 @@ def _upsert_pwm_extreme_abrupt_transitions_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, from_year, from_month, to_year, to_month,
-    workflow_version, transition_type,
+    transition_type,
     from_water_area, to_water_area, from_label, to_label, computed_at
 ) VALUES (
     %(hylak_id)s, %(from_year)s, %(from_month)s, %(to_year)s, %(to_month)s,
-    %(workflow_version)s, %(transition_type)s,
+    %(transition_type)s,
     %(from_water_area)s, %(to_water_area)s, %(from_label)s, %(to_label)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
@@ -251,7 +246,6 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
             sql.Identifier(c)
             for c in (
                 "hylak_id",
-                "workflow_version",
                 "from_year",
                 "from_month",
                 "to_year",
@@ -267,7 +261,6 @@ SELECT COUNT(*)
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s::bigint AND hylak_id < %(chunk_end)s::bigint
   AND status = 'done'
-  AND workflow_version = %(workflow_version)s
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
 
 
@@ -277,7 +270,6 @@ SELECT hylak_id
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s::bigint AND hylak_id < %(chunk_end)s::bigint
   AND status = 'done'
-  AND workflow_version = %(workflow_version)s
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_run_status")))
 
 
@@ -387,13 +379,11 @@ def count_pwm_extreme_status_in_range(
     chunk_start: int,
     chunk_end: int,
     *,
-    workflow_version: str,
     table_config: TableConfig = _default_table_config,
 ) -> int:
     params = {
         "chunk_start": chunk_start,
         "chunk_end": chunk_end,
-        "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
         cur.execute(
@@ -408,13 +398,11 @@ def fetch_pwm_extreme_status_ids_in_range(
     chunk_start: int,
     chunk_end: int,
     *,
-    workflow_version: str,
     table_config: TableConfig = _default_table_config,
 ) -> set[int]:
     params = {
         "chunk_start": chunk_start,
         "chunk_end": chunk_end,
-        "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
         cur.execute(
@@ -428,13 +416,12 @@ def _ensure_pwm_hawkes_run_status_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
-    workflow_version  TEXT         NOT NULL,
     chunk_start       INTEGER,
     chunk_end         INTEGER,
     status            TEXT         NOT NULL,
     error_message     TEXT,
     computed_at       TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version)
+    PRIMARY KEY (hylak_id)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_hawkes_run_status")))
 
@@ -442,9 +429,9 @@ CREATE TABLE IF NOT EXISTS {table} (
 def _upsert_pwm_hawkes_run_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+    hylak_id, chunk_start, chunk_end, status, error_message, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
@@ -455,7 +442,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_hawkes_run_status")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+            sql.Identifier(c) for c in ("hylak_id",)
         ),
     )
 

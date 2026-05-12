@@ -1,0 +1,4 @@
+# Layer 5: Hawkes Algorithm
+
+# Shared configuration for all Hawkes variants (eot-hawkes, pwm-hawkes).
+# Specific parameters are set by their respective calculators.

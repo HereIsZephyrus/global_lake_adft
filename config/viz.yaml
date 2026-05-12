@@ -1,0 +1,11 @@
+# Lakeviz Visualization Configuration
+
+font:
+  en: Times New Roman
+  cjk: SimSun
+
+dpi: 300
+
+global_grid:
+  resolution: 0.5
+  output_dir: figures

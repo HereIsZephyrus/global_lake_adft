@@ -1,9 +1,8 @@
 """Comparison experiment: shared schemas and DB adapters."""
 
-from .schema import CURRENT_COMPARISON_WORKFLOW_VERSION, RUN_STATUS_DONE, RUN_STATUS_ERROR
+from .schema import RUN_STATUS_DONE, RUN_STATUS_ERROR
 
 __all__ = [
-    "CURRENT_COMPARISON_WORKFLOW_VERSION",
     "RUN_STATUS_DONE",
     "RUN_STATUS_ERROR",
 ]

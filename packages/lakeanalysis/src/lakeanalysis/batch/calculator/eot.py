@@ -14,8 +14,6 @@ from ..engine import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 
-CURRENT_EOT_WORKFLOW_VERSION = "eot-nhpp-v1"
-
 
 @dataclass(frozen=True)
 class EOTResult:
@@ -29,11 +27,9 @@ class EOTCalculator(Calculator):
         *,
         tails: list[str] | None = None,
         quantiles: list[float] | None = None,
-        workflow_version: str = CURRENT_EOT_WORKFLOW_VERSION,
     ) -> None:
         self._tails = tails or ["high", "low"]
         self._quantiles = quantiles or [0.95, 0.98]
-        self._workflow_version = workflow_version
 
     def run(self, task: LakeTask) -> EOTResult:
         estimator = EOTEstimator()
@@ -160,7 +156,6 @@ class EOTCalculator(Calculator):
             "hylak_id": hylak_id,
             "chunk_start": chunk_start,
             "chunk_end": chunk_end,
-            "workflow_version": self._workflow_version,
             "status": "done" if success else "error",
             "error_message": str(error)[:500] if error else None,
         }

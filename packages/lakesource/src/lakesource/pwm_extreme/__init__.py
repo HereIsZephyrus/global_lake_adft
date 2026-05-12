@@ -5,7 +5,6 @@ from .reader import (
     fetch_pwm_converged_grid_agg,
 )
 from .schema import (
-    CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
     PWMExtremeBatchConfig,
     PWMExtremeConfig,
     PWMExtremeMonthResult,
@@ -23,7 +22,7 @@ from .store import (
 )
 
 __all__ = [
-    "CURRENT_PWM_EXTREME_WORKFLOW_VERSION",
+
     "PWMExtremeBatchConfig",
     "PWMExtremeConfig",
     "PWMExtremeMonthResult",

@@ -1,0 +1,16 @@
+# Layer 5: PWM Extreme Quantile Algorithm
+
+pwm:
+  n_pwm: 4
+  p_low: 0.05
+  p_high: 0.05
+  integration_upper: 0.999999999
+  l2_regularization: 0.000001
+  min_observations_per_month: 10
+
+min_valid_per_month: 10
+min_valid_observations: 120
+
+output:
+  build_summary_cache: true
+  plot_summary: true

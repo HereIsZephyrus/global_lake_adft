@@ -33,7 +33,7 @@ def _eot_extreme_row(
 
 def _eot_status_row(hylak_id=1, status="done", wf=EOT_WF) -> dict:
     return {
-        "hylak_id": hylak_id, "workflow_version": wf,
+        "hylak_id": hylak_id,
         "chunk_start": 0, "chunk_end": 1000,
         "status": status, "error_message": None,
     }

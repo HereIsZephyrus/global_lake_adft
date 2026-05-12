@@ -220,7 +220,6 @@ def test_make_run_status_row_done() -> None:
         hylak_id=42,
         chunk_start=0,
         chunk_end=1000,
-        workflow_version="test-v1",
         status=RUN_STATUS_DONE,
     )
     assert row["status"] == "done"
@@ -232,7 +231,6 @@ def test_make_run_status_row_error() -> None:
         hylak_id=42,
         chunk_start=0,
         chunk_end=1000,
-        workflow_version="test-v1",
         status=RUN_STATUS_ERROR,
         error_message="boom",
     )
