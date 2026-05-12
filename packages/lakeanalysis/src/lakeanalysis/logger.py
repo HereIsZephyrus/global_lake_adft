@@ -1,23 +1,10 @@
 import logging
-import importlib
 import os
 from datetime import datetime
 
 
-def _load_dotenv_if_available() -> None:
-    try:
-        dotenv_module = importlib.import_module("dotenv")
-    except ModuleNotFoundError:
-        return
-
-    load_dotenv = getattr(dotenv_module, "load_dotenv", None)
-    if callable(load_dotenv):
-        load_dotenv()
-
-
 class Logger:
     def __init__(self, name: str, log_dir: str = "logs", level: int = None):
-        _load_dotenv_if_available()
         log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
         level = level if level is not None else getattr(logging, log_level_str, logging.INFO)
         self.name = name

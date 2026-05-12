@@ -74,7 +74,7 @@ class TestQuantileFunctionCurve:
         lambda_opt = np.array([0.0])
         epsilon = 1.0
         result = quantile_function_curve(lambda_opt, epsilon, n_points=50)
-        assert np.all(np.diff(result["prior_y"].values) >= 0)
+        assert np.all(np.diff(result["prior_y"].to_numpy()) >= 0)
 
 
 class TestPwmConstraintResiduals:

@@ -142,7 +142,7 @@ def inspect(
         typer.echo(f"  {flag.detail}")
 
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(df["water_area"].values)
+        ax.plot(df["water_area"].to_numpy())
         ax.set_title(f"Lake {hid}")
         fig.savefig(out / f"shift_lake_{hid}.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
