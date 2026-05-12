@@ -32,10 +32,6 @@ from lakeviz.domain.interpolation import draw_interpolation_timeline
 
 log = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_DATA_DIR = Path("/mnt/repo/lake/global_lake_adft/data")
-
 NROWS = 2
 NCOLS = 3
 N_PER_FIG = NROWS * NCOLS
@@ -104,11 +100,12 @@ def run(
     output_dir: Path | None = None,
 ) -> None:
     if data_dir is None:
-        data_dir = DEFAULT_DATA_DIR
-    parquet_dir = data_dir / "parquet"
+        parquet_dir = SourceConfig().data_dir
+    else:
+        parquet_dir = data_dir
 
     if output_dir is None:
-        output_dir = data_dir / "interpolation" / "figures"
+        output_dir = parquet_dir.parent / "interpolation" / "figures"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     source_config = SourceConfig(backend=Backend.PARQUET, data_dir=parquet_dir)

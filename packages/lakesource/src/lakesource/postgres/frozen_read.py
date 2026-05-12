@@ -33,12 +33,13 @@ def _fetch_frozen_year_months_chunk_sql(tc: TableConfig) -> sql.Composed:
 SELECT hylak_id,
        {ym_key}
 FROM {table}
-WHERE {chunk}
+{chunk}
   AND anomaly_type = 'frozen'
 ORDER BY hylak_id, year_month
 """).format(
         table=sql.Identifier(tc.series_table("anomaly")),
         chunk=sql.SQL(CHUNK_WHERE),
+        ym_key=year_month_key_sql(),
     )
 
 def fetch_frozen_year_months_by_ids(

@@ -73,11 +73,9 @@ class ProviderBatchReader(BatchReader):
         table_name = self._done_table if self._done_table is not None else spec.done_table
         if table_name is None:
             return set()
-        done_ids = self._provider.fetch_done_ids(table_name, chunk_start, chunk_end)
         done_requires_status = self._done_requires_status or spec.done_requires_status
-        if done_requires_status:
-            return _filter_done_status_ids(self._provider, table_name, chunk_start, chunk_end, done_ids)
-        return done_ids
+        status = "done" if done_requires_status else None
+        return self._provider.fetch_done_ids(table_name, chunk_start, chunk_end, status=status)
 
 
 class ProviderBatchWriter(BatchWriter):
@@ -102,45 +100,6 @@ class ProviderBatchWriter(BatchWriter):
         ensure_tables = self._ensure_tables or list(spec.ensure_tables)
         for table_name in ensure_tables:
             self._provider.ensure_table(table_name)
-
-
-def _filter_done_status_ids(
-    provider: LakeProvider,
-    table_name: str,
-    chunk_start: int,
-    chunk_end: int,
-    candidate_ids: set[int],
-) -> set[int]:
-    if not candidate_ids:
-        return set()
-    if provider.backend_name == "parquet":
-        import pyarrow.parquet as pq
-
-        table_path = provider._data_dir / f"{table_name}.parquet"  # type: ignore[attr-defined]
-        if not table_path.exists():
-            return set()
-        pf = pq.ParquetFile(table_path)
-        table = pf.read(
-            columns=["hylak_id"],
-            filters=[
-                ("hylak_id", ">=", chunk_start),
-                ("hylak_id", "<", chunk_end),
-                ("status", "==", "done"),
-            ],
-        )
-        df = table.to_pandas()
-        if df.empty:
-            return set()
-        return set(df["hylak_id"].astype(int).tolist())
-    try:
-        rows = provider.fetch_rows(table_name, chunk_start, chunk_end)  # type: ignore[attr-defined]
-    except AttributeError:
-        return set(candidate_ids)
-    return {
-        int(row["hylak_id"])
-        for row in rows
-        if row.get("status") == "done" and int(row["hylak_id"]) in candidate_ids
-    }
 
 
 def build_batch_reader(config: SourceConfig | None = None) -> BatchReader:

@@ -31,8 +31,6 @@ from lakeviz.domain.interpolation import (
 
 log = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path("/mnt/repo/lake/global_lake_adft/data")
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -93,11 +91,14 @@ def run(
     dpi: int = 200,
 ) -> None:
     if data_dir is None:
-        data_dir = DEFAULT_DATA_DIR
-    parquet_dir = data_dir / "parquet"
+        source_config = SourceConfig()
+        parquet_dir = source_config.data_dir
+    else:
+        parquet_dir = data_dir
+        source_config = SourceConfig(backend=Backend.PARQUET, data_dir=parquet_dir)
 
     if output_dir is None:
-        output_dir = data_dir / "interpolation" / "figures"
+        output_dir = parquet_dir.parent / "interpolation" / "figures"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     source_config = SourceConfig(backend=Backend.PARQUET, data_dir=parquet_dir)

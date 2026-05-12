@@ -1,9 +1,7 @@
 """Shared fixtures for batch smoke tests.
 
-Provides:
-- PostgreSQL backend fixtures (requires DB env vars)
-- Parquet backend fixtures (requires SMOKE_PARQUET_DIR or LAKE_DATA_DIR env var)
-- Per-algorithm cleanup of rows inserted during smoke tests
+Provides backend-parametrized fixtures so each test runs against both
+PostgreSQL and Parquet backends automatically.
 
 All fixtures are scoped to the ``smoke/`` sub-directory so they do not
 interfere with unit tests in the parent ``tests/`` directory.
@@ -13,134 +11,32 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from lakesource.config import Backend, SourceConfig
+from lakesource.env import load_env
+from lakeanalysis.batch import build_batch_reader
+from lakeanalysis.batch.calculator import CalculatorFactory
+from lakeanalysis.batch.engine import LakeTask
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
 
 def _require_db_env():
+    """Skip if PostgreSQL env vars are not configured."""
     dbname = os.environ.get("SERIES_DB")
     user = os.environ.get("DB_USER")
     password = os.environ.get("DB_PASSWORD")
     if not dbname or not user or password is None:
-        pytest.skip("SERIES_DB, DB_USER, DB_PASSWORD env vars required for smoke test")
-    return {
-        "host": os.environ.get("DB_HOST", "localhost"),
-        "port": int(os.environ.get("DB_PORT", "5432")),
-        "dbname": dbname,
-        "user": user,
-        "password": password,
-    }
+        pytest.skip("SERIES_DB, DB_USER, DB_PASSWORD env vars required for postgres smoke test")
 
 
-# ------------------------------------------------------------------
-# PostgreSQL fixtures
-# ------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def series_conn():
-    psycopg = pytest.importorskip("psycopg")
-    from lakesource.env import load_env
-    load_env()
-    params = _require_db_env()
-    conn = psycopg.connect(**params)
-    yield conn
-    conn.close()
-
-
-@pytest.fixture(scope="session")
-def sample_hylak_ids(series_conn):
-    """Pick a small set of real lake IDs that have area_quality data."""
-    with series_conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT DISTINCT hylak_id
-            FROM area_quality
-            WHERE rs_area_mean IS NOT NULL
-            ORDER BY hylak_id
-            LIMIT 5
-            """
-        )
-        ids = [int(row[0]) for row in cur.fetchall()]
-    if not ids:
-        pytest.skip("No area_quality data in database")
-    return ids
-
-
-@pytest.fixture(scope="session")
-def id_range(sample_hylak_ids):
-    """Return (start, end) that covers the sample IDs for --limit-id usage."""
-    return min(sample_hylak_ids), max(sample_hylak_ids) + 1
-
-
-@pytest.fixture(scope="session")
-def provider():
-    """Create a PostgresLakeProvider from env config."""
-    from lakesource.config import SourceConfig
-    from lakesource.provider import create_provider
-    from lakesource.env import load_env
-    load_env()
-    _require_db_env()
-    return create_provider(SourceConfig())
-
-
-_CLEANUP_TABLES = {
-    "quantile": [
-        "quantile_labels",
-        "quantile_extremes",
-        "quantile_abrupt_transitions",
-        "quantile_run_status",
-    ],
-    "pwm_extreme": [
-        "pwm_extreme_thresholds",
-        "pwm_extreme_run_status",
-    ],
-    "eot": [
-        "eot_results",
-        "eot_extremes",
-        "eot_run_status",
-    ],
-}
-
-
-@pytest.fixture()
-def cleanup_algorithm_rows(series_conn, sample_hylak_ids):
-    """Register algorithms for post-test row cleanup.
-
-    Usage::
-
-        def test_foo(cleanup_algorithm_rows):
-            cleanup_algorithm_rows.register("quantile")
-            # ... run engine ...
-    """
-    registered: list[str] = []
-
-    class _Cleanup:
-        def register(self, algorithm: str) -> None:
-            registered.append(algorithm)
-
-    cleanup = _Cleanup()
-
-    yield cleanup
-
-    hid_list = ",".join(str(h) for h in sample_hylak_ids)
-    for algo in registered:
-        for table in _CLEANUP_TABLES.get(algo, []):
-            with series_conn.cursor() as cur:
-                cur.execute(
-                    f"DELETE FROM {table} WHERE hylak_id IN ({hid_list})"
-                )
-            series_conn.commit()
-
-
-# ------------------------------------------------------------------
-# Parquet fixtures (independent of PostgreSQL)
-# ------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def parquet_data_dir():
-    """Return the parquet data directory from SMOKE_PARQUET_DIR or LAKE_DATA_DIR env var."""
-    from lakesource.env import load_env
-    load_env()
+def _parquet_data_dir() -> Path:
+    """Resolve parquet data directory from env vars."""
     data_dir = os.environ.get("SMOKE_PARQUET_DIR") or os.environ.get("LAKE_DATA_DIR")
     if not data_dir:
         pytest.skip("SMOKE_PARQUET_DIR or LAKE_DATA_DIR env var required for parquet smoke test")
@@ -150,55 +46,121 @@ def parquet_data_dir():
     return path
 
 
-@pytest.fixture(scope="session")
-def parquet_provider(parquet_data_dir):
-    """Create a ParquetLakeProvider pointing at the parquet data directory."""
-    from lakesource.config import Backend, SourceConfig
-    from lakesource.provider import create_provider
-    return create_provider(SourceConfig(
-        backend=Backend.PARQUET,
-        data_dir=parquet_data_dir,
-    ))
+_CLEANUP_TABLES: dict[str, list[str]] = {
+    "quantile": [
+        "quantile_labels",
+        "quantile_extremes",
+        "quantile_abrupt_transitions",
+        "quantile_run_status",
+    ],
+    "pwm_extreme": [
+        "pwm_extreme_thresholds",
+        "pwm_extreme_labels",
+        "pwm_extreme_extremes",
+        "pwm_extreme_abrupt_transitions",
+        "pwm_extreme_run_status",
+    ],
+    "eot": [
+        "eot_results",
+        "eot_extremes",
+        "eot_run_status",
+    ],
+}
+
+_PWM_CANDIDATE_STARTS = [2, 6, 14, 35, 63, 68, 483363]
+_PWM_CANDIDATE_WINDOW = 10
+
+
+# ------------------------------------------------------------------
+# Backend parametrization
+# ------------------------------------------------------------------
+
+@pytest.fixture(params=["parquet", "postgres"], scope="session")
+def backend(request):
+    """Parametrize tests across both backends.
+
+    Skips postgres if DB env vars are not available.
+    Skips parquet if data dir is not available.
+    """
+    load_env()
+    if request.param == "postgres":
+        _require_db_env()
+    elif request.param == "parquet":
+        _parquet_data_dir()  # validates availability
+    return request.param
 
 
 @pytest.fixture(scope="session")
-def parquet_id_range(parquet_data_dir):
-    """Discover an id range suitable for quantile and EOT parquet smoke runs."""
-    from lakesource.parquet.client import DuckDBClient
+def parquet_data_dir():
+    """Return the parquet data directory (session-scoped, independent of backend param)."""
+    load_env()
+    return _parquet_data_dir()
 
-    client = DuckDBClient(data_dir=parquet_data_dir)
-    try:
-        df = client.query_df(
-            """
-            SELECT hylak_id
-            FROM area_quality
-            ORDER BY hylak_id
-            LIMIT 10
-            """
-        )
+
+@pytest.fixture(scope="session")
+def source_config(backend, parquet_data_dir):
+    """Return SourceConfig for the current backend."""
+    if backend == "parquet":
+        return SourceConfig(backend=Backend.PARQUET, data_dir=parquet_data_dir)
+    return SourceConfig(backend=Backend.POSTGRES)
+
+
+# ------------------------------------------------------------------
+# ID range discovery
+# ------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def id_range(backend, source_config, parquet_data_dir):
+    """Discover an id range suitable for quantile/eot on the current backend.
+
+    Returns (start, end) covering a small set of lakes with area_quality data.
+    """
+    if backend == "parquet":
+        from lakesource.parquet.client import DuckDBClient
+
+        client = DuckDBClient(data_dir=parquet_data_dir)
+        try:
+            df = client.query_df(
+                "SELECT hylak_id FROM area_quality ORDER BY hylak_id LIMIT 10"
+            )
+        except Exception:
+            pytest.skip("Cannot read area_quality from parquet data dir")
         if df.empty:
-            pytest.skip("No parquet lakes meet defrozen smoke requirements")
+            pytest.skip("No area_quality data in parquet")
         return int(df["hylak_id"].min()), int(df["hylak_id"].max()) + 1
-    except Exception:
-        pytest.skip("Cannot read area_quality from parquet data dir")
+    else:
+        import psycopg
+
+        params = source_config.connection_params(source_config.series_db_name or "lakecentroid")
+        conn = psycopg.connect(**params)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT hylak_id FROM area_quality "
+                    "WHERE rs_area_mean IS NOT NULL "
+                    "ORDER BY hylak_id LIMIT 10"
+                )
+                ids = [int(row[0]) for row in cur.fetchall()]
+        finally:
+            conn.close()
+        if not ids:
+            pytest.skip("No area_quality data in postgres")
+        return min(ids), max(ids) + 1
 
 
 @pytest.fixture(scope="session")
-def parquet_pwm_id_range(parquet_data_dir):
-    """Discover a parquet id range that is known to satisfy current PWM smoke requirements."""
-    from lakesource.config import Backend, SourceConfig
-    from lakeanalysis.batch import build_batch_reader
-    from lakeanalysis.batch.calculator import CalculatorFactory
-    from lakeanalysis.batch.engine import LakeTask
+def pwm_id_range(backend, source_config):
+    """Discover an id range suitable for pwm_extreme on the current backend.
 
-    source_config = SourceConfig(backend=Backend.PARQUET, data_dir=parquet_data_dir)
+    Brute-force trial: iterate candidate start IDs, run PWM on each lake,
+    return first range with at least 1 success.
+    Candidate list shared across backends (data is同源).
+    """
     reader = build_batch_reader(source_config)
     calculator = CalculatorFactory.create("pwm_extreme")
 
-    candidate_starts = [2, 6, 14, 35, 63, 68, 483363]
-    window = 10
-    for start in candidate_starts:
-        end = start + window
+    for start in _PWM_CANDIDATE_STARTS:
+        end = start + _PWM_CANDIDATE_WINDOW
         lake_map = reader.fetch_lake_area_chunk(start, end)
         frozen_map = reader.fetch_frozen_year_months_chunk(start, end)
         success_ids: list[int] = []
@@ -216,4 +178,111 @@ def parquet_pwm_id_range(parquet_data_dir):
                 continue
         if success_ids:
             return min(success_ids), max(success_ids) + 1
-    pytest.skip("No parquet lakes satisfy current PWM smoke requirements")
+    pytest.skip(f"No lakes satisfy PWM smoke requirements on {backend} backend")
+
+
+# ------------------------------------------------------------------
+# Cleanup
+# ------------------------------------------------------------------
+
+@pytest.fixture()
+def cleanup(backend, source_config, id_range, parquet_data_dir):
+    """Post-test cleanup: remove algorithm output rows/files.
+
+    Usage::
+
+        def test_foo(cleanup):
+            cleanup.register("quantile")
+            # ... run engine ...
+    """
+    registered: list[str] = []
+
+    class _Cleanup:
+        def register(self, algorithm: str) -> None:
+            registered.append(algorithm)
+
+    yield _Cleanup()
+
+    id_start, id_end = id_range
+    for algo in registered:
+        tables = _CLEANUP_TABLES.get(algo, [])
+        if backend == "parquet":
+            for table in tables:
+                table_path = parquet_data_dir / f"{table}.parquet"
+                table_path.unlink(missing_ok=True)
+        else:
+            import psycopg
+
+            params = source_config.connection_params(
+                source_config.series_db_name or "lakecentroid"
+            )
+            conn = psycopg.connect(**params)
+            try:
+                for table in tables:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"DELETE FROM {table} "
+                            f"WHERE hylak_id >= %s AND hylak_id < %s",
+                            (id_start, id_end),
+                        )
+                    conn.commit()
+            finally:
+                conn.close()
+
+
+@pytest.fixture()
+def cleanup_pwm(backend, source_config, pwm_id_range, parquet_data_dir):
+    """Post-test cleanup for PWM tests (uses pwm_id_range)."""
+    registered: list[str] = []
+
+    class _Cleanup:
+        def register(self, algorithm: str) -> None:
+            registered.append(algorithm)
+
+    yield _Cleanup()
+
+    id_start, id_end = pwm_id_range
+    for algo in registered:
+        tables = _CLEANUP_TABLES.get(algo, [])
+        if backend == "parquet":
+            for table in tables:
+                table_path = parquet_data_dir / f"{table}.parquet"
+                table_path.unlink(missing_ok=True)
+        else:
+            import psycopg
+
+            params = source_config.connection_params(
+                source_config.series_db_name or "lakecentroid"
+            )
+            conn = psycopg.connect(**params)
+            try:
+                for table in tables:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"DELETE FROM {table} "
+                            f"WHERE hylak_id >= %s AND hylak_id < %s",
+                            (id_start, id_end),
+                        )
+                    conn.commit()
+            finally:
+                conn.close()
+
+
+# ------------------------------------------------------------------
+# PostgreSQL connection (for MPI test verification)
+# ------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def series_conn(backend, source_config):
+    """PostgreSQL connection for MPI test verification.
+
+    Only available when backend=postgres.
+    """
+    if backend != "postgres":
+        pytest.skip("series_conn only available for postgres backend")
+    import psycopg
+
+    params = source_config.connection_params(source_config.series_db_name or "lakecentroid")
+    conn = psycopg.connect(**params)
+    yield conn
+    conn.close()

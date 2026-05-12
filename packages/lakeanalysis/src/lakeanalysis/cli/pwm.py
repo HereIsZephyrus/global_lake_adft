@@ -108,10 +108,11 @@ def diag(
             ),
         )
 
-    from ._common import DATA_DIR
     import pandas as pd
+    from lakesource.config import SourceConfig
 
-    parquet_path = DATA_DIR / "parquet" / "hawkes" / "hawkes_results.parquet"
+    config = SourceConfig()
+    parquet_path = config.data_dir / "hawkes" / "hawkes_results.parquet"
     if not parquet_path.exists():
         typer.echo(f"No results found at {parquet_path}")
         return

@@ -112,7 +112,7 @@ def main() -> None:
         data_dir=Path(args.data_dir) if args.data_dir else None,
     )
     compute_provider = create_provider(compute_config)
-    data_dir = compute_config.data_dir or Path("data/parquet")
+    data_dir = compute_config.data_dir
     output_parquet = Path(args.output_parquet) if args.output_parquet else data_dir / "area_shift_labels.parquet"
 
     if args.reset:

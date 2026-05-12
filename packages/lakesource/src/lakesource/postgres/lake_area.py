@@ -19,7 +19,7 @@ _default_table_config = TableConfig.default()
 def _fetch_lake_area_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id,
-       {ym}
+       {ym},
        water_area
 FROM {table}
 ORDER BY hylak_id, year_month
@@ -32,7 +32,7 @@ ORDER BY hylak_id, year_month
 def _fetch_lake_area_limited_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id,
-       {ym}
+       {ym},
        water_area
 FROM {table}
 WHERE hylak_id < %(limit_id)s
@@ -46,7 +46,7 @@ ORDER BY hylak_id, year_month
 def _fetch_lake_area_chunk_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT la.hylak_id,
-       {ym}
+       {ym},
        la.water_area
 FROM {lake_area} la
 WHERE la.hylak_id >= %(chunk_start)s::bigint AND la.hylak_id < %(chunk_end)s::bigint
@@ -60,7 +60,7 @@ ORDER BY la.hylak_id, la.year_month
 def _fetch_lake_area_by_ids_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT hylak_id,
-       {ym}
+       {ym},
        water_area
 FROM {table}
 WHERE hylak_id = ANY(%(id_list)s)
