@@ -25,6 +25,9 @@ from pathlib import Path
 import pytest
 
 
+import re
+
+
 def _uv_python() -> str:
     """Return the uv-managed Python interpreter path for MPI subprocesses."""
     return str(Path(__file__).resolve().parents[4] / ".venv" / "bin" / "python")
@@ -139,6 +142,48 @@ def _verify_done_count(
             conn.close()
 
 
+def _verify_result_table_count(
+    backend: str,
+    source_config,
+    parquet_data_dir: Path | None,
+    id_start: int,
+    id_end: int,
+    table_name: str,
+) -> int:
+    if backend == "parquet":
+        import pandas as pd
+
+        assert parquet_data_dir is not None
+        table_path = parquet_data_dir / f"{table_name}.parquet"
+        if not table_path.exists():
+            return 0
+        df = pd.read_parquet(table_path)
+        mask = (df["hylak_id"] >= id_start) & (df["hylak_id"] < id_end)
+        return int(df[mask]["hylak_id"].nunique())
+    else:
+        import psycopg
+
+        params = source_config.connection_params(
+            source_config.series_db_name or "lakecentroid"
+        )
+        conn = psycopg.connect(**params)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(DISTINCT hylak_id) FROM {table_name} "
+                    f"WHERE hylak_id >= %s AND hylak_id < %s",
+                    (id_start, id_end),
+                )
+                return int(cur.fetchone()[0])
+        finally:
+            conn.close()
+
+
+def _parse_success_count(stdout: str) -> int:
+    m = re.search(r"success=(\d+)", stdout)
+    return int(m.group(1)) if m else -1
+
+
 # ------------------------------------------------------------------
 # MPI smoke tests
 # ------------------------------------------------------------------
@@ -169,7 +214,19 @@ def test_mpi_quantile_smoke(backend, id_range, source_config, parquet_data_dir, 
     done_count = _verify_done_count(
         backend, source_config, parquet_data_dir, id_start, id_end
     )
-    assert done_count >= 1, f"Expected at least 1 done status row, got {done_count}"
+    n_lakes = id_end - id_start
+    assert done_count >= max(1, n_lakes * 0.5), (
+        f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
+    )
+
+    result_hids = _verify_result_table_count(
+        backend, source_config, parquet_data_dir, id_start, id_end,
+        "quantile_labels",
+    )
+    assert result_hids >= done_count, (
+        f"Result table has fewer lakes ({result_hids}) than done status ({done_count}) "
+        f"— silent data loss likely"
+    )
 
 
 @pytest.mark.usefixtures("mpi_available")
@@ -263,4 +320,16 @@ def test_mpi_no_deadlock_on_write(backend, id_range, source_config, parquet_data
     done_count = _verify_done_count(
         backend, source_config, parquet_data_dir, id_start, id_end
     )
-    assert done_count >= 1, f"Expected at least 1 done status row, got {done_count}"
+    n_lakes = id_end - id_start
+    assert done_count >= max(1, n_lakes * 0.5), (
+        f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
+    )
+
+    result_hids = _verify_result_table_count(
+        backend, source_config, parquet_data_dir, id_start, id_end,
+        "quantile_labels",
+    )
+    assert result_hids >= done_count, (
+        f"Result table has fewer lakes ({result_hids}) than done status ({done_count}) "
+        f"— silent data loss likely"
+    )
