@@ -1,4 +1,9 @@
-"""Database operations for Hawkes process tables."""
+"""Database operations for Hawkes process tables.
+
+Split into PWM-Hawkes and EOT-Hawkes table sets to avoid cross-pipeline
+contamination.  The DDL/DML is identical for each pair; only the logical
+table names differ.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,13 @@ log = logging.getLogger(__name__)
 _default_table_config = TableConfig.default()
 
 
-def _ensure_hawkes_results_table_sql(tc: TableConfig) -> sql.Composed:
+# ------------------------------------------------------------------
+# SQL template builders — parametrised by logical table name
+# ------------------------------------------------------------------
+
+def _ensure_hawkes_results_table_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id              INTEGER      NOT NULL,
@@ -46,10 +57,12 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at           TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile)
 );
-""").format(table=sql.Identifier(tc.series_table("hawkes_results")))
+""").format(table=sql.Identifier(tc.series_table(logical_name)))
 
 
-def _ensure_hawkes_lrt_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_hawkes_lrt_table_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id                   INTEGER      NOT NULL,
@@ -65,10 +78,12 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at                TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile, test_name)
 );
-""").format(table=sql.Identifier(tc.series_table("hawkes_lrt")))
+""").format(table=sql.Identifier(tc.series_table(logical_name)))
 
 
-def _ensure_hawkes_transition_monthly_table_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_hawkes_transition_monthly_table_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id              INTEGER      NOT NULL,
@@ -84,10 +99,30 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at           TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, threshold_quantile, year, month, direction)
 );
-""").format(table=sql.Identifier(tc.series_table("hawkes_transition_monthly")))
+""").format(table=sql.Identifier(tc.series_table(logical_name)))
 
 
-def _upsert_hawkes_results_sql(tc: TableConfig) -> sql.Composed:
+def _ensure_eot_hawkes_run_status_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id              INTEGER      NOT NULL,
+    chunk_start           INTEGER      NOT NULL,
+    chunk_end             INTEGER      NOT NULL,
+    status                TEXT         NOT NULL,
+    error_message         TEXT,
+    computed_at           TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id)
+);
+""").format(table=sql.Identifier(tc.series_table("eot_hawkes_run_status")))
+
+
+# ------------------------------------------------------------------
+# Upsert SQL templates
+# ------------------------------------------------------------------
+
+def _upsert_hawkes_results_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, threshold_quantile,
@@ -139,14 +174,16 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     error_message         = EXCLUDED.error_message,
     computed_at           = now();
 """).format(
-        table=sql.Identifier(tc.series_table("hawkes_results")),
+        table=sql.Identifier(tc.series_table(logical_name)),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c) for c in ("hylak_id", "threshold_quantile")
         ),
     )
 
 
-def _upsert_hawkes_lrt_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_hawkes_lrt_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, threshold_quantile, test_name,
@@ -167,14 +204,16 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     full_log_likelihood       = EXCLUDED.full_log_likelihood,
     computed_at               = now();
 """).format(
-        table=sql.Identifier(tc.series_table("hawkes_lrt")),
+        table=sql.Identifier(tc.series_table(logical_name)),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "test_name")
         ),
     )
 
 
-def _upsert_hawkes_transition_monthly_sql(tc: TableConfig) -> sql.Composed:
+def _upsert_hawkes_transition_monthly_sql(
+    tc: TableConfig, logical_name: str
+) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, threshold_quantile, year, month, direction,
@@ -193,7 +232,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     significant             = EXCLUDED.significant,
     computed_at             = now();
 """).format(
-        table=sql.Identifier(tc.series_table("hawkes_transition_monthly")),
+        table=sql.Identifier(tc.series_table(logical_name)),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c)
             for c in ("hylak_id", "threshold_quantile", "year", "month", "direction")
@@ -201,21 +240,201 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     )
 
 
+def _upsert_eot_hawkes_run_status_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, chunk_start, chunk_end, status, error_message, computed_at
+) VALUES (
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s,
+    %(error_message)s, now()
+)
+ON CONFLICT (hylak_id) DO UPDATE SET
+    chunk_start   = EXCLUDED.chunk_start,
+    chunk_end     = EXCLUDED.chunk_end,
+    status        = EXCLUDED.status,
+    error_message = EXCLUDED.error_message,
+    computed_at   = now();
+""").format(table=sql.Identifier(tc.series_table("eot_hawkes_run_status")))
+
+
+# ------------------------------------------------------------------
+# PWM-Hawkes table ensure
+# ------------------------------------------------------------------
+
+def ensure_pwm_hawkes_tables(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            _ensure_hawkes_results_table_sql(table_config, "pwm_hawkes_results")
+        )
+        cur.execute(
+            _ensure_hawkes_lrt_table_sql(table_config, "pwm_hawkes_lrt")
+        )
+        cur.execute(
+            _ensure_hawkes_transition_monthly_table_sql(
+                table_config, "pwm_hawkes_transition_monthly"
+            )
+        )
+    conn.commit()
+    log.debug("Ensured PWM-Hawkes tables exist")
+
+
+def ensure_eot_hawkes_tables(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            _ensure_hawkes_results_table_sql(table_config, "eot_hawkes_results")
+        )
+        cur.execute(
+            _ensure_hawkes_lrt_table_sql(table_config, "eot_hawkes_lrt")
+        )
+        cur.execute(
+            _ensure_hawkes_transition_monthly_table_sql(
+                table_config, "eot_hawkes_transition_monthly"
+            )
+        )
+        cur.execute(
+            _ensure_eot_hawkes_run_status_table_sql(table_config)
+        )
+    conn.commit()
+    log.debug("Ensured EOT-Hawkes tables exist")
+
+
+# ------------------------------------------------------------------
+# Deprecated: legacy ensure_hawkes_results_table
+# ------------------------------------------------------------------
+
 def ensure_hawkes_results_table(
     conn: psycopg.Connection,
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Create hawkes_results, hawkes_lrt, and monthly transition tables when missing."""
-    with conn.cursor() as cur:
-        cur.execute(_ensure_hawkes_results_table_sql(table_config))
-        cur.execute(_ensure_hawkes_lrt_table_sql(table_config))
-        cur.execute(_ensure_hawkes_transition_monthly_table_sql(table_config))
-    conn.commit()
-    log.debug(
-        "Ensured hawkes_results, hawkes_lrt, and hawkes_transition_monthly tables exist"
-    )
+    """Legacy ensure — delegates to PWM + EOT table creation."""
+    ensure_pwm_hawkes_tables(conn, table_config=table_config)
+    ensure_eot_hawkes_tables(conn, table_config=table_config)
 
+
+# ------------------------------------------------------------------
+# PWM-Hawkes upsert
+# ------------------------------------------------------------------
+
+def upsert_pwm_hawkes_results(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_results_sql(table_config, "pwm_hawkes_results"), rows
+        )
+    conn.commit()
+    log.info("Upserted %d pwm_hawkes_results row(s)", len(rows))
+
+
+def upsert_pwm_hawkes_lrt(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_lrt_sql(table_config, "pwm_hawkes_lrt"), rows
+        )
+    conn.commit()
+    log.info("Upserted %d pwm_hawkes_lrt row(s)", len(rows))
+
+
+def upsert_pwm_hawkes_transition_monthly(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_transition_monthly_sql(
+                table_config, "pwm_hawkes_transition_monthly"
+            ),
+            rows,
+        )
+    conn.commit()
+    log.info("Upserted %d pwm_hawkes_transition_monthly row(s)", len(rows))
+
+
+# ------------------------------------------------------------------
+# EOT-Hawkes upsert
+# ------------------------------------------------------------------
+
+def upsert_eot_hawkes_results(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_results_sql(table_config, "eot_hawkes_results"), rows
+        )
+    conn.commit()
+    log.info("Upserted %d eot_hawkes_results row(s)", len(rows))
+
+
+def upsert_eot_hawkes_lrt(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_lrt_sql(table_config, "eot_hawkes_lrt"), rows
+        )
+    conn.commit()
+    log.info("Upserted %d eot_hawkes_lrt row(s)", len(rows))
+
+
+def upsert_eot_hawkes_transition_monthly(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_hawkes_transition_monthly_sql(
+                table_config, "eot_hawkes_transition_monthly"
+            ),
+            rows,
+        )
+    conn.commit()
+    log.info("Upserted %d eot_hawkes_transition_monthly row(s)", len(rows))
+
+
+def upsert_eot_hawkes_run_status(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            _upsert_eot_hawkes_run_status_sql(table_config), rows
+        )
+    conn.commit()
+    log.info("Upserted %d eot_hawkes_run_status row(s)", len(rows))
+
+
+# ------------------------------------------------------------------
+# Deprecated: legacy upsert functions (delegate to PWM variants)
+# ------------------------------------------------------------------
 
 def upsert_hawkes_results(
     conn: psycopg.Connection,
@@ -223,11 +442,8 @@ def upsert_hawkes_results(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Insert or update Hawkes fit result rows."""
-    with conn.cursor() as cur:
-        cur.executemany(_upsert_hawkes_results_sql(table_config), rows)
-    conn.commit()
-    log.info("Upserted %d hawkes_results row(s)", len(rows))
+    """Legacy upsert — delegates to PWM-Hawkes tables."""
+    upsert_pwm_hawkes_results(conn, rows, table_config=table_config)
 
 
 def upsert_hawkes_lrt(
@@ -236,11 +452,8 @@ def upsert_hawkes_lrt(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Insert or update Hawkes LRT rows."""
-    with conn.cursor() as cur:
-        cur.executemany(_upsert_hawkes_lrt_sql(table_config), rows)
-    conn.commit()
-    log.info("Upserted %d hawkes_lrt row(s)", len(rows))
+    """Legacy upsert — delegates to PWM-Hawkes tables."""
+    upsert_pwm_hawkes_lrt(conn, rows, table_config=table_config)
 
 
 def upsert_hawkes_transition_monthly(
@@ -249,8 +462,5 @@ def upsert_hawkes_transition_monthly(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Insert or update Hawkes monthly transition-significance rows."""
-    with conn.cursor() as cur:
-        cur.executemany(_upsert_hawkes_transition_monthly_sql(table_config), rows)
-    conn.commit()
-    log.info("Upserted %d hawkes_transition_monthly row(s)", len(rows))
+    """Legacy upsert — delegates to PWM-Hawkes tables."""
+    upsert_pwm_hawkes_transition_monthly(conn, rows, table_config=table_config)

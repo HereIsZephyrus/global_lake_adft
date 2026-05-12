@@ -65,6 +65,13 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
             "pwm_hawkes_run_status",
         ),
     ),
+    "eot_hawkes": BatchTaskSpec(
+        done_table="eot_hawkes_run_status",
+        done_requires_status=True,
+        ensure_tables=(
+            "eot_hawkes_run_status",
+        ),
+    ),
     "shift_labels": BatchTaskSpec(
         done_table="area_shift_labels",
         done_requires_status=False,

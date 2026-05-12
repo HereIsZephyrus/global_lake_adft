@@ -57,7 +57,7 @@ def _compute_extremes_in_memory(
 def _read_hawkes_transitions(hylak_id: int) -> pd.DataFrame:
     """Read hawkes_transition_monthly from parquet for a single lake."""
     config = SourceConfig()
-    parquet_path = config.data_dir / "hawkes_transition_monthly.parquet"
+    parquet_path = config.data_dir / "pwm_hawkes_transition_monthly.parquet"
     if not parquet_path.exists():
         return pd.DataFrame(columns=["year", "month", "direction"])
     df = pd.read_parquet(parquet_path)

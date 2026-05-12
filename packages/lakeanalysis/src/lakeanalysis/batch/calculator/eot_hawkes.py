@@ -1,9 +1,8 @@
 """EOTHawkesCalculator: EOT event extraction -> Hawkes fit.
 
 Uses the EOT (Extremes Over Threshold) pathway to extract events, then fits
-a bivariate Hawkes process. Shares the same Hawkes fitting, LRT, and
-decomposition logic as PWMExtremeHawkesCalculator but differs in event
-construction (quantile-based threshold vs PWM monthly thresholds).
+a bivariate Hawkes process. Defaults to RunsDeclustering to decluster
+consecutive exceedances; NoDeclustering available for comparison.
 """
 
 from __future__ import annotations
@@ -30,6 +29,7 @@ from lakeanalysis.hawkes.pipeline import (
     compute_qc_metrics,
     quantile_string,
 )
+from lakeanalysis.eot import NoDeclustering, RunsDeclustering
 
 from ..engine import Calculator, LakeTask
 
@@ -73,6 +73,7 @@ class EOTHawkesCalculator(Calculator):
         min_relative_amplitude: float = 0.05,
         min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
+        decluster_run_length: int | None = 1,
     ) -> None:
         self._threshold_quantile = threshold_quantile
         self._hawkes_window_months = hawkes_window_months
@@ -82,6 +83,7 @@ class EOTHawkesCalculator(Calculator):
         self._min_relative_amplitude = min_relative_amplitude
         self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
+        self._decluster_run_length = decluster_run_length
 
     def run(self, task: LakeTask) -> EOTHawkesFitResult:
         try:
@@ -90,10 +92,17 @@ class EOTHawkesCalculator(Calculator):
             frozen = set(task.frozen_year_months) if task.frozen_year_months else None
 
             # Step 1: Build events from EOT (quantile-based threshold)
+            if self._decluster_run_length is None or self._decluster_run_length <= 0:
+                decluster_strategy = NoDeclustering()
+            else:
+                decluster_strategy = RunsDeclustering(
+                    run_length=self._decluster_run_length
+                )
             event_series = build_events_from_eot(
                 series_df,
                 threshold_quantile=self._threshold_quantile,
                 frozen_year_months=frozen,
+                declustering_strategy=decluster_strategy,
             )
             events_table = event_series.events_table
 
@@ -277,9 +286,9 @@ class EOTHawkesCalculator(Calculator):
 
     def result_to_rows(self, result: EOTHawkesFitResult) -> dict[str, list[dict]]:
         return {
-            "hawkes_results": result.hawkes_result_rows,
-            "hawkes_lrt": result.lrt_rows,
-            "hawkes_transition_monthly": result.transition_monthly_rows,
+            "eot_hawkes_results": result.hawkes_result_rows,
+            "eot_hawkes_lrt": result.lrt_rows,
+            "eot_hawkes_transition_monthly": result.transition_monthly_rows,
             "eot_hawkes_run_status": [
                 make_eot_hawkes_run_status_row(
                     hylak_id=result.hylak_id,
@@ -300,7 +309,7 @@ class EOTHawkesCalculator(Calculator):
                     error_message=str(error)[:500],
                 )
             ],
-            "hawkes_results": [
+            "eot_hawkes_results": [
                 build_hawkes_result_row(self._build_error_summary(hylak_id, str(error)))
             ],
         }

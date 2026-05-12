@@ -42,13 +42,28 @@ _CLIENT_SYMBOLS = {"DBClient", "atlas_db", "series_db"}
 # Hawkes QC symbols (delegated to hawkes_qc module)
 # ------------------------------------------------------------------
 _HAWKES_QC_SYMBOLS = {
+    # Legacy (delegate to PWM)
     "fetch_hawkes_qc_summary_by_quantile",
     "fetch_hawkes_error_message_counts",
     "fetch_hawkes_results",
     "fetch_hawkes_lrt",
     "fetch_hawkes_lrt_summary_by_test",
-    "fetch_eot_hawkes_coverage",
     "fetch_hawkes_transition_monthly",
+    # PWM-Hawkes
+    "fetch_pwm_hawkes_qc_summary_by_quantile",
+    "fetch_pwm_hawkes_error_message_counts",
+    "fetch_pwm_hawkes_results",
+    "fetch_pwm_hawkes_lrt",
+    "fetch_pwm_hawkes_lrt_summary_by_test",
+    "fetch_pwm_hawkes_transition_monthly",
+    # EOT-Hawkes
+    "fetch_eot_hawkes_qc_summary_by_quantile",
+    "fetch_eot_hawkes_error_message_counts",
+    "fetch_eot_hawkes_results",
+    "fetch_eot_hawkes_lrt",
+    "fetch_eot_hawkes_lrt_summary_by_test",
+    "fetch_eot_hawkes_transition_monthly",
+    "fetch_eot_hawkes_coverage",
 }
 
 # ------------------------------------------------------------------
@@ -132,9 +147,18 @@ _SYMBOL_MAP = {
     "upsert_pwm_extreme_thresholds": "lake_pwm",
     # lake_hawkes
     "ensure_hawkes_results_table": "lake_hawkes",
+    "ensure_pwm_hawkes_tables": "lake_hawkes",
+    "ensure_eot_hawkes_tables": "lake_hawkes",
     "upsert_hawkes_lrt": "lake_hawkes",
     "upsert_hawkes_results": "lake_hawkes",
     "upsert_hawkes_transition_monthly": "lake_hawkes",
+    "upsert_pwm_hawkes_results": "lake_hawkes",
+    "upsert_pwm_hawkes_lrt": "lake_hawkes",
+    "upsert_pwm_hawkes_transition_monthly": "lake_hawkes",
+    "upsert_eot_hawkes_results": "lake_hawkes",
+    "upsert_eot_hawkes_lrt": "lake_hawkes",
+    "upsert_eot_hawkes_transition_monthly": "lake_hawkes",
+    "upsert_eot_hawkes_run_status": "lake_hawkes",
     # lake_entropy
     "ensure_area_entropy_cv_table": "lake_entropy",
     "ensure_entropy_table": "lake_entropy",

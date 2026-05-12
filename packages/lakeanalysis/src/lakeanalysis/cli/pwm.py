@@ -60,7 +60,7 @@ def hawkes(
         "pwm_hawkes",
         algorithm="pwm_hawkes",
         done_table="pwm_hawkes_run_status",
-        ensure_tables=("pwm_extreme", "hawkes"),
+        ensure_tables=("pwm_extreme", "pwm_hawkes"),
         chunk_size=chunk_size,
         limit_id=limit_id,
         id_start=id_start,
@@ -98,7 +98,7 @@ def diag(
             "pwm_hawkes_diag",
             algorithm="pwm_hawkes",
             done_table="pwm_hawkes_run_status",
-            ensure_tables=("pwm_extreme", "hawkes"),
+            ensure_tables=("pwm_extreme", "pwm_hawkes"),
             chunk_size=chunk_size,
             limit_id=limit_id,
             io_budget=io_budget,
@@ -114,7 +114,7 @@ def diag(
     from lakesource.config import SourceConfig
 
     config = SourceConfig()
-    parquet_path = config.data_dir / "hawkes" / "hawkes_results.parquet"
+    parquet_path = config.data_dir / "pwm_hawkes_results.parquet"
     if not parquet_path.exists():
         typer.echo(f"No results found at {parquet_path}")
         return

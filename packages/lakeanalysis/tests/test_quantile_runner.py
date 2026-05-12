@@ -23,6 +23,7 @@ def _default_args() -> MODULE.argparse.Namespace:
         min_valid_per_month=None,
         min_valid_observations=None,
         io_budget=4,
+        method="stl",
     )
 
 
@@ -80,6 +81,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
             min_valid_per_month=3,
             min_valid_observations=36,
             io_budget=2,
+            method="stl",
         ),
     )
     monkeypatch.setattr(MODULE, "Logger", _FakeLogger)
@@ -102,6 +104,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     assert captured["calculator_kwargs"] == {
         "min_valid_per_month": 3,
         "min_valid_observations": 36,
+        "method": "stl",
     }
 
     engine_kwargs = captured["engine_kwargs"]

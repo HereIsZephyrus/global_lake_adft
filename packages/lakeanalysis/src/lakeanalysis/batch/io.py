@@ -91,6 +91,7 @@ class ProviderBatchWriter(BatchWriter):
         "quantile": "quantile_run_status",
         "pwm_extreme": "pwm_extreme_run_status",
         "pwm_hawkes": "pwm_hawkes_run_status",
+        "eot_hawkes": "eot_hawkes_run_status",
         "eot": "eot_run_status",
         "comparison": "comparison_run_status",
         "area_quality": "quality_run_status",

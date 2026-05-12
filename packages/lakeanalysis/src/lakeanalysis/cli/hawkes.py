@@ -15,6 +15,7 @@ def run(
     threshold_quantile: float = typer.Option(0.90, help="EOT threshold quantile"),
     hawkes_window_months: float = typer.Option(4.0, help="Kernel window in months"),
     plot: bool = typer.Option(False, "--plot", help="Show diagnostic plots"),
+    no_decluster: bool = typer.Option(False, "--no-decluster", help="Disable Runs declustering (keep all exceedances)"),
 ) -> None:
     """Fit bivariate Hawkes model for a single lake."""
     setup_logging("hawkes")
@@ -24,6 +25,7 @@ def run(
         build_events_from_eot, evaluate_intensity_decomposition,
         fit_full_model, fit_restricted_model, run_model_comparison,
     )
+    from lakeanalysis.eot import NoDeclustering, RunsDeclustering
     import numpy as np
 
     with series_db.connection_context() as conn:
@@ -35,7 +37,13 @@ def run(
         raise typer.Exit(1)
     frozen = set(frozen_map.get(hylak_id, []))
 
-    event_series = build_events_from_eot(df, threshold_quantile=threshold_quantile, frozen_year_months=frozen or None)
+    strategy = NoDeclustering() if no_decluster else RunsDeclustering(run_length=1)
+    event_series = build_events_from_eot(
+        df,
+        threshold_quantile=threshold_quantile,
+        frozen_year_months=frozen or None,
+        declustering_strategy=strategy,
+    )
     typer.echo(f"Events: {len(event_series.times)} dry={int((event_series.event_types==TYPE_DRY).sum())} wet={int((event_series.event_types==TYPE_WET).sum())}")
 
     full_fit = fit_full_model(event_series, window_months=hawkes_window_months)
@@ -84,13 +92,14 @@ def eot_batch(
     min_relative_amplitude: float = typer.Option(0.05, help="Minimum relative amplitude"),
     min_median_severity: float = typer.Option(1.0, help="Minimum median severity"),
     monthly_significance_quantile: float = typer.Option(0.95, help="Monthly significance quantile"),
+    decluster_run_length: int | None = typer.Option(1, help="Declustering run length (None=NoDeclustering)"),
 ) -> None:
     """Run batch EOT-Hawkes computation (EOT events → Hawkes fit)."""
     run_batch_engine(
         "eot_hawkes",
         algorithm="eot_hawkes",
         done_table="eot_hawkes_run_status",
-        ensure_tables=("hawkes",),
+        ensure_tables=("eot_hawkes",),
         chunk_size=chunk_size,
         limit_id=limit_id,
         id_start=id_start,
@@ -105,6 +114,7 @@ def eot_batch(
             min_relative_amplitude=min_relative_amplitude,
             min_median_severity=min_median_severity,
             monthly_significance_quantile=monthly_significance_quantile,
+            decluster_run_length=decluster_run_length,
         ),
     )
 

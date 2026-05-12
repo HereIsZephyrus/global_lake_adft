@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.eot import EOTEstimator, NoDeclustering
+from lakeanalysis.eot import EOTEstimator, NoDeclustering, RunsDeclustering
 
 from .types import HawkesEventSeries, TYPE_DRY, TYPE_LABELS, TYPE_WET
 
@@ -38,9 +38,26 @@ def build_events_from_eot(
     data: pd.DataFrame,
     threshold_quantile: float = 0.90,
     frozen_year_months: set[int] | None = None,
+    declustering_strategy: object | None = None,
 ) -> HawkesEventSeries:
-    """Build a dual-type event series from EOT outputs with NoDeclustering."""
-    estimator = EOTEstimator(declustering_strategy=NoDeclustering())
+    """Build a dual-type event series from EOT outputs.
+
+    Defaults to RunsDeclustering(run_length=1) to decluster consecutive
+    exceedances.  Pass NoDeclustering() for comparison / baseline runs.
+
+    Args:
+        data: Monthly water area DataFrame.
+        threshold_quantile: EOT threshold quantile.
+        frozen_year_months: Optional set of frozen year-month integers.
+        declustering_strategy: DeclusteringStrategy instance (default
+            RunsDeclustering(run_length=1)).
+
+    Returns:
+        HawkesEventSeries ready for fitting.
+    """
+    if declustering_strategy is None:
+        declustering_strategy = RunsDeclustering(run_length=1)
+    estimator = EOTEstimator(declustering_strategy=declustering_strategy)
     prepared_wet = estimator.prepare_extremes(
         data=data,
         tail="high",

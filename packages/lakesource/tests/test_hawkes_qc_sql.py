@@ -29,7 +29,7 @@ def tc() -> TableConfig:
 
 class TestHawkesQCSummaryByQuantile:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_qc_summary_by_quantile_sql(tc)
+        sql = _hawkes_qc_summary_by_quantile_sql(tc, "pwm_hawkes_results")
         query = sql.as_string()
         assert "threshold_quantile" in query
         assert "qc_pass_rate" in query
@@ -39,28 +39,28 @@ class TestHawkesQCSummaryByQuantile:
         assert "ORDER BY threshold_quantile" in query
 
     def test_no_fstring_injection(self, tc: TableConfig) -> None:
-        sql = _hawkes_qc_summary_by_quantile_sql(tc)
+        sql = _hawkes_qc_summary_by_quantile_sql(tc, "pwm_hawkes_results")
         query = sql.as_string()
         assert query  # no error building
 
 
 class TestHawkesErrorCounts:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_error_message_counts_sql(tc)
+        sql = _hawkes_error_message_counts_sql(tc, "pwm_hawkes_results")
         query = sql.as_string()
         assert "LEFT(COALESCE(error_message" in query
         assert "LIMIT %(limit)s" in query
         assert "error_prefix" in query
 
     def test_param_placeholder(self, tc: TableConfig) -> None:
-        sql = _hawkes_error_message_counts_sql(tc)
+        sql = _hawkes_error_message_counts_sql(tc, "pwm_hawkes_results")
         query = sql.as_string()
         assert "%(limit)s" in query
 
 
 class TestHawkesResultsSelect:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_results_select(tc)
+        sql = _hawkes_results_select(tc, "pwm_hawkes_results")
         query = sql.as_string()
         assert "mu_d" in query
         assert "mu_w" in query
@@ -81,7 +81,7 @@ class TestHawkesResultsSelect:
 
 class TestHawkesLRTSelect:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_lrt_select(tc)
+        sql = _hawkes_lrt_select(tc, "pwm_hawkes_lrt")
         query = sql.as_string()
         assert "lr_statistic" in query
         assert "p_value" in query
@@ -93,7 +93,7 @@ class TestHawkesLRTSelect:
 
 class TestHawkesLRTSummary:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_lrt_summary_by_test_sql(tc)
+        sql = _hawkes_lrt_summary_by_test_sql(tc, "pwm_hawkes_lrt")
         query = sql.as_string()
         assert "test_name" in query
         assert "reject_null_rate" in query
@@ -118,7 +118,7 @@ class TestEOTHawkesCoverage:
 
 class TestHawkesTransitionMonthlySelect:
     def test_builds(self, tc: TableConfig) -> None:
-        sql = _hawkes_transition_monthly_select(tc)
+        sql = _hawkes_transition_monthly_select(tc, "pwm_hawkes_transition_monthly")
         query = sql.as_string()
         assert "threshold_quantile" in query
         assert "score_raw" in query
