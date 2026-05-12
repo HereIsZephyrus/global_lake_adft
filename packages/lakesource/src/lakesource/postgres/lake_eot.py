@@ -26,7 +26,9 @@ SELECT hylak_id,
        year,
        month,
        water_area,
-       threshold_at_event
+       threshold_at_event,
+       time,
+       value
 FROM {table}
 WHERE hylak_id = %(hylak_id)s
 ORDER BY year, month, tail, cluster_id
@@ -43,7 +45,9 @@ SELECT hylak_id,
        year,
        month,
        water_area,
-       threshold_at_event
+       threshold_at_event,
+       time,
+       value
 FROM {table}
 WHERE hylak_id = %(hylak_id)s
   AND threshold_quantile = %(threshold_quantile)s
@@ -88,6 +92,8 @@ CREATE TABLE IF NOT EXISTS {table} (
     month              INTEGER,
     water_area         DOUBLE PRECISION,
     threshold_at_event DOUBLE PRECISION,
+    time               DOUBLE PRECISION,
+    value              DOUBLE PRECISION,
     computed_at        TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, tail, threshold_quantile, cluster_id)
 );
@@ -150,10 +156,12 @@ def _upsert_eot_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
     hylak_id, tail, threshold_quantile, cluster_id,
-    cluster_size, year, month, water_area, threshold_at_event, computed_at
+    cluster_size, year, month, water_area, threshold_at_event,
+    time, value, computed_at
 ) VALUES (
     %(hylak_id)s, %(tail)s, %(threshold_quantile)s, %(cluster_id)s,
-    %(cluster_size)s, %(year)s, %(month)s, %(water_area)s, %(threshold_at_event)s, now()
+    %(cluster_size)s, %(year)s, %(month)s, %(water_area)s, %(threshold_at_event)s,
+    %(time)s, %(value)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     cluster_size       = EXCLUDED.cluster_size,
@@ -161,6 +169,8 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     month              = EXCLUDED.month,
     water_area         = EXCLUDED.water_area,
     threshold_at_event = EXCLUDED.threshold_at_event,
+    time               = EXCLUDED.time,
+    value              = EXCLUDED.value,
     computed_at        = now();
 """).format(
         table=sql.Identifier(tc.series_table("eot_extremes")),

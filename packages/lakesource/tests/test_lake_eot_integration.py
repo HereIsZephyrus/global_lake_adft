@@ -28,6 +28,7 @@ def _eot_extreme_row(
         "threshold_quantile": quantile, "cluster_id": cluster_id,
         "cluster_size": 3, "year": 2020, "month": 1,
         "water_area": 160.0, "threshold_at_event": 150.0,
+        "time": 2020.0, "value": 160.0,
     }
 
 

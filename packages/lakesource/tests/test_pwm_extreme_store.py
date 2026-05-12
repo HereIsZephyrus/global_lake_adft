@@ -61,6 +61,7 @@ def _make_labels_df(hylak_id: int = 1) -> pd.DataFrame:
                 "year": 2000,
                 "month": 1,
                 "water_area": 95.0,
+                "index_value": 45.0,
                 "threshold_low": 50.0,
                 "threshold_high": 200.0,
                 "extreme_label": "none",
@@ -70,6 +71,7 @@ def _make_labels_df(hylak_id: int = 1) -> pd.DataFrame:
                 "year": 2000,
                 "month": 2,
                 "water_area": 210.0,
+                "index_value": 95.0,
                 "threshold_low": 50.0,
                 "threshold_high": 200.0,
                 "extreme_label": "high",
@@ -87,6 +89,7 @@ def _make_extremes_df(hylak_id: int = 1) -> pd.DataFrame:
                 "month": 2,
                 "event_type": "high",
                 "water_area": 210.0,
+                "index_value": 95.0,
                 "threshold": 200.0,
                 "severity": 10.0,
                 "extreme_label": "high",
@@ -232,7 +235,7 @@ class TestResultToExtremeRows:
             extremes_df=pd.DataFrame(
                 columns=[
                     "hylak_id", "year", "month", "event_type",
-                    "water_area", "threshold", "severity", "extreme_label",
+                    "water_area", "index_value", "threshold", "severity", "extreme_label",
                 ]
             ),
             transitions_df=pd.DataFrame(),
