@@ -1,10 +1,11 @@
 """Integration test fixtures for PostgreSQL-backed tests.
 
 Requires an already-running PostgreSQL instance accessible at
-localhost:5432 with user=postgres, password=postgres, and a
-database named ``lake_test``.
+localhost:5432 with user=postgres, password=postgres.
 
-Skipped if the database is not reachable.
+A dedicated ``lake_test`` database is created at session start and
+dropped at session end.  All tests are skipped if PostgreSQL is not
+reachable.
 """
 
 from __future__ import annotations
@@ -17,23 +18,41 @@ from lakesource.config import Backend, SourceConfig
 
 log = logging.getLogger(__name__)
 
+ADMIN_DSN = "host=localhost port=5432 dbname=postgres user=postgres password=postgres"
 TEST_DSN = "host=localhost port=5432 dbname=lake_test user=postgres password=postgres"
 
 
-def _pg_reachable() -> bool:
-    try:
-        conn = psycopg.connect(TEST_DSN, connect_timeout=3)
-        conn.close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
 @pytest.fixture(scope="session")
-def _test_db_available() -> bool:
-    if not _pg_reachable():
-        pytest.skip("PostgreSQL not reachable at localhost:5432/lake_test")
-    return True
+def _test_db():
+    """Create ``lake_test`` at session start, drop it at session end.
+
+    Uses the ``postgres`` default database for admin operations
+    because ``CREATE`` / ``DROP DATABASE`` cannot run inside a
+    transaction block (autocommit required).
+    """
+    try:
+        admin_conn = psycopg.connect(ADMIN_DSN, connect_timeout=5)
+    except psycopg.OperationalError:
+        pytest.skip("PostgreSQL not reachable at localhost:5432")
+    admin_conn.autocommit = True
+
+    try:
+        with admin_conn.cursor() as cur:
+            cur.execute("DROP DATABASE IF EXISTS lake_test")
+            cur.execute("CREATE DATABASE lake_test")
+    except psycopg.OperationalError:
+        admin_conn.close()
+        pytest.skip("Cannot create lake_test — PostgreSQL not reachable")
+
+    yield
+
+    with admin_conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = 'lake_test' AND pid <> pg_backend_pid()"
+        )
+        cur.execute("DROP DATABASE IF EXISTS lake_test")
+    admin_conn.close()
 
 
 @pytest.fixture(scope="session")
@@ -49,17 +68,17 @@ def test_db_cfg() -> SourceConfig:
 
 
 @pytest.fixture
-def test_conn(monkeypatch, _test_db_available) -> psycopg.Connection:
+def test_conn(monkeypatch, _test_db) -> psycopg.Connection:
     """Raw psycopg connection to test DB. DDL+DML rolled back on teardown."""
     conn = psycopg.connect(TEST_DSN)
-    conn.autocommit = False  # rollback-enabled transaction
+    conn.autocommit = False
     yield conn
     conn.rollback()
     conn.close()
 
 
 @pytest.fixture
-def provider(test_db_cfg: SourceConfig, monkeypatch, _test_db_available):
+def provider(test_db_cfg: SourceConfig, monkeypatch, _test_db):
     """PostgresLakeProvider wired to test database via env monkeypatching.
 
     Redirects the ``series_db`` module-level singleton so all
