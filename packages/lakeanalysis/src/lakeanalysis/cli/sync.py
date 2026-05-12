@@ -2,13 +2,12 @@
 
 Provides three subcommands:
 - ``status``: compare row counts and timestamps between parquet and postgres
-- ``push``: bulk-load parquet data into postgres (TRUNCATE + COPY)
+- ``push``: bulk-load parquet data into postgres (DuckDB PG Scanner)
 - ``pull``: export postgres tables to parquet (full overwrite)
 """
 
 from __future__ import annotations
 
-import io
 import logging
 import time
 from pathlib import Path
@@ -269,18 +268,13 @@ def push(
     dry_run: DryRunOpt = False,
     data_dir: DataDirOpt = None,
 ) -> None:
-    """Push parquet data to PostgreSQL (TRUNCATE + COPY, full replace)."""
+    """Push parquet data to PostgreSQL (DuckDB PG Scanner, full replace)."""
     setup_logging("sync-push")
-    import pandas as pd
-    import pyarrow.parquet as pq
 
-    from lakesource.config import SourceConfig
     from lakesource.postgres.client import series_db
-    from lakesource.provider.postgres_provider import PostgresLakeProvider
 
     parquet_dir = _resolve_data_dir(data_dir)
     tables = _resolve_tables(table, all_flag)
-    provider = PostgresLakeProvider(SourceConfig())
 
     results: list[tuple[str, str, int]] = []  # (table, status, rows)
 
@@ -313,27 +307,16 @@ def push(
                     results.append((t, "DRY-RUN", pq_rows))
                     continue
 
-                # Ensure table DDL exists
-                ensure_key = TABLE_TO_ENSURE_KEY[t]
-                try:
-                    provider.ensure_table(ensure_key)
-                except Exception as e:
-                    typer.echo(f"  {t}: ERROR ensure_table: {e}")
-                    results.append((t, "ERROR", 0))
-                    continue
-
-                # Push: TRUNCATE + COPY in one transaction
+                # Push: DuckDB PG Scanner — DROP + CREATE + ADD computed_at
                 t0 = time.time()
                 try:
-                    _push_table(conn, cur, t, path, chunk_size)
-                    conn.commit()
+                    _push_table_duckdb(t, path)
                     elapsed = time.time() - t0
                     typer.echo(
                         f"  {t}: OK ({pq_rows:,} rows in {elapsed:.1f}s)"
                     )
                     results.append((t, "OK", pq_rows))
                 except Exception as e:
-                    conn.rollback()
                     typer.echo(f"  {t}: ERROR ({e})")
                     log.exception("Push failed for %s", t)
                     results.append((t, "ERROR", 0))
@@ -345,83 +328,63 @@ def push(
     typer.echo(f"Done: {ok_count}/{len(tables)} tables pushed, {total_rows:,} total rows.")
 
 
-def _push_table(
-    conn: object,
-    cur: object,
-    table: str,
-    path: Path,
-    chunk_size: int,
-) -> None:
-    """Execute TRUNCATE + COPY for a single table within the current transaction."""
-    import pyarrow.parquet as pq
+def _push_table_duckdb(table: str, path: Path) -> None:
+    """DROP CASCADE + CREATE TABLE via DuckDB PostgreSQL Scanner.
 
-    # Get columns from parquet, exclude computed_at (has DEFAULT now())
-    all_columns = _parquet_columns(path)
-    columns = [c for c in all_columns if c != "computed_at"]
+    DuckDB reads the parquet natively and uses the PG binary protocol
+    to create the table directly — no CSV serialisation overhead.
+    A computed_at column (DEFAULT now()) is added after creation.
+    """
+    import duckdb
+    import os
 
+    from lakesource.env import load_env
+
+    load_env()
+    db = os.environ["SERIES_DB"]
+    user = os.environ["DB_USER"]
+    pw = os.environ["DB_PASSWORD"]
+    host = os.environ.get("DB_HOST", "localhost")
+    port = os.environ.get("DB_PORT", "5432")
+
+    # Columns from parquet, excluding computed_at (added after)
+    columns = [c for c in _parquet_columns(path) if c != "computed_at"]
     if not columns:
         raise ValueError(f"No columns found in {path}")
-
-    # Query postgres integer columns for type coercion
-    int_columns = _get_pg_integer_columns(cur, table)
-
-    # TRUNCATE
-    cur.execute(f"TRUNCATE {table}")
-
-    # COPY FROM STDIN
     col_list = ", ".join(columns)
-    copy_sql = f"COPY {table}({col_list}) FROM STDIN WITH (FORMAT csv, NULL '')"
 
-    with cur.copy(copy_sql) as copy:
-        if path.is_dir():
-            for f in sorted(path.glob("*.parquet")):
-                _copy_parquet_file(copy, f, columns, chunk_size, int_columns)
-        else:
-            _copy_parquet_file(copy, path, columns, chunk_size, int_columns)
+    # Build read_parquet path (glob for chunked directory)
+    read_path = str(path / "*.parquet") if path.is_dir() else str(path)
 
+    # Drop via psycopg for CASCADE support (handles dependent views)
+    from lakesource.postgres.client import series_db
 
-def _get_pg_integer_columns(cur: object, table: str) -> set[str]:
-    """Query information_schema to find integer-typed columns for a table."""
-    cur.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = %s AND data_type IN ('integer', 'bigint', 'smallint')",
-        (table,),
-    )
-    return {row[0] for row in cur.fetchall()}
+    with series_db.connect() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
+    # DuckDB CREATE TABLE (native parquet → PG binary protocol)
+    conn_str = f"dbname={db} user={user} password={pw} host={host} port={port}"
+    dcon = duckdb.connect()
+    try:
+        dcon.execute("INSTALL postgres; LOAD postgres;")
+        dcon.execute(f"ATTACH '{conn_str}' AS pg (TYPE postgres)")
+        dcon.execute(
+            f"CREATE TABLE pg.{table} AS "
+            f"SELECT {col_list} FROM read_parquet('{read_path}')"
+        )
+    finally:
+        dcon.close()
 
-def _coerce_int_columns(df: object, int_columns: set[str]) -> None:
-    """Convert float columns that should be integer to nullable Int64 in-place.
-
-    Parquet stores nullable integers as float64 (NaN for NULL). When writing
-    CSV for COPY, postgres rejects '1.0' for an integer column. Converting to
-    pandas nullable Int64 produces clean integer strings with <NA> for nulls.
-    """
-    import pandas as pd
-
-    for col in df.columns:
-        if col in int_columns and df[col].dtype.kind == "f":
-            df[col] = df[col].astype("Int64")
-
-
-def _copy_parquet_file(
-    copy: object,
-    file_path: Path,
-    columns: list[str],
-    chunk_size: int,
-    int_columns: set[str] | None = None,
-) -> None:
-    """Stream a parquet file into a COPY operation in chunks."""
-    import pyarrow.parquet as pq
-
-    pf = pq.ParquetFile(file_path)
-    for batch in pf.iter_batches(batch_size=chunk_size, columns=columns):
-        df = batch.to_pandas()
-        if int_columns:
-            _coerce_int_columns(df, int_columns)
-        buf = io.StringIO()
-        df.to_csv(buf, index=False, header=False, na_rep="")
-        copy.write(buf.getvalue())
+    # Add computed_at column (DEFAULT now())
+    with series_db.connect() as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                "computed_at TIMESTAMPTZ DEFAULT now()"
+            )
 
 
 @app.command()
