@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lakeanalysis.batch.manager import Manager
-from lakeanalysis.batch.protocol import TRIGGER_READ, WorkerState
+from lakeanalysis.batch.protocol import TAG_DATA, TAG_STATUS, TRIGGER_READ, WorkerState
 
 
 class _FakeComm:
@@ -19,6 +19,60 @@ class _CollectingProvider:
     def persist(self, rows_by_table: dict[str, list[dict]]) -> None:
         copied = {table: list(rows) for table, rows in rows_by_table.items()}
         self.persist_calls.append(copied)
+
+
+class _DelayedComm:
+    """Fake MPI comm that simulates late-arriving DATA messages.
+
+    DATA queue can be independently controlled via ``hide_data``/``show_data``
+    to reproduce the race where a worker sends DATA before STATUS(DONE) but
+    the DATA only becomes visible to iprobe after the main polling loop exits.
+    """
+
+    class _Status:
+        def __init__(self) -> None:
+            self.source: int = 0
+
+    def __init__(self) -> None:
+        self._data: list[tuple[object, int]] = []
+        self._status: list[tuple[object, int]] = []
+        self._data_visible = True
+        self.sent: list[tuple[object, int, int]] = []
+
+    def send(self, payload: object, dest: int, tag: int) -> None:
+        self.sent.append((payload, dest, tag))
+
+    def iprobe(self, source: int | None, tag: int) -> bool:
+        if tag == TAG_DATA:
+            return self._data_visible and bool(self._data)
+        if tag == TAG_STATUS:
+            return bool(self._status)
+        return False
+
+    def recv(self, source: int | None, tag: int, status: object | None = None):
+        if tag == TAG_DATA:
+            data, src = self._data.pop(0)
+            if status is not None:
+                status.source = src
+            return data
+        if tag == TAG_STATUS:
+            msg, src = self._status.pop(0)
+            if status is not None:
+                status.source = src
+            return msg
+        raise ValueError(f"Unknown tag: {tag}")
+
+    def enqueue_data(self, data: object, source: int) -> None:
+        self._data.append((data, source))
+
+    def enqueue_status(self, msg: object, source: int) -> None:
+        self._status.append((msg, source))
+
+    def hide_data(self) -> None:
+        self._data_visible = False
+
+    def show_data(self) -> None:
+        self._data_visible = True
 
 
 def test_schedule_respects_io_budget_one() -> None:
@@ -88,3 +142,69 @@ def test_flush_happens_at_shutdown() -> None:
 
     assert provider.persist_calls == [{"mock": [{"hylak_id": 1}]}]
     assert manager._chunks_since_flush == 0
+
+
+def test_drain_catches_late_data_after_all_done() -> None:
+    """DATA sent by a worker before its STATUS(DONE) arrives after the main loop exits.
+
+    This is the exact race that causes silent data loss in multi-node jobs:
+    1. Worker sends DATA + STATUS(DONE) for its last chunk.
+    2. Manager's _poll_and_dispatch finds STATUS(DONE) first (DATA not yet on wire).
+    3. All workers marked DONE → while loop exits.
+    4. DATA arrives → would be lost without _drain_data().
+    """
+    comm = _DelayedComm()
+    provider = _CollectingProvider()
+    manager = Manager(comm, size=3, io_budget=4, writer=provider)
+
+    manager._on_status(1, WorkerState.DONE, {
+        "source": 3, "skipped": 0, "success": 3, "error": 0, "chunks": 1,
+    })
+    manager._on_status(2, WorkerState.DONE, {
+        "source": 3, "skipped": 0, "success": 3, "error": 0, "chunks": 1,
+    })
+
+    comm.enqueue_data({"mock": [{"hylak_id": 42}]}, 2)
+
+    manager._drain_data()
+    manager._flush()
+
+    assert provider.persist_calls == [{"mock": [{"hylak_id": 42}]}]
+
+
+def test_drain_handles_empty_queue() -> None:
+    """_drain_data is a no-op when no late DATA is pending."""
+    comm = _DelayedComm()
+    provider = _CollectingProvider()
+    manager = Manager(comm, size=3, io_budget=4, writer=provider)
+
+    manager._on_status(1, WorkerState.DONE, {
+        "source": 1, "skipped": 0, "success": 1, "error": 0, "chunks": 1,
+    })
+    manager._on_status(2, WorkerState.DONE, {
+        "source": 1, "skipped": 0, "success": 1, "error": 0, "chunks": 1,
+    })
+
+    manager._drain_data()
+    manager._flush()
+
+    assert provider.persist_calls == []
+
+
+def test_drain_does_not_double_consume() -> None:
+    """_drain_data only consumes messages in the MPI queue, not already-merged rows."""
+    comm = _DelayedComm()
+    provider = _CollectingProvider()
+    manager = Manager(comm, size=2, io_budget=4, writer=provider)
+
+    manager._on_status(1, WorkerState.DONE, {
+        "source": 1, "skipped": 0, "success": 1, "error": 0, "chunks": 1,
+    })
+
+    manager._merge_rows({"mock": [{"hylak_id": 1}]})
+    comm.enqueue_data({"mock": [{"hylak_id": 2}]}, 1)
+
+    manager._drain_data()
+    manager._flush()
+
+    assert provider.persist_calls == [{"mock": [{"hylak_id": 1}, {"hylak_id": 2}]}]
