@@ -21,7 +21,6 @@ def _threshold_row(
     return {
         "hylak_id": hylak_id,
         "month": month,
-        "workflow_version": wf,
         "mean_area": mean_area,
         "epsilon": epsilon,
         "lambda_0": 1.0, "lambda_1": 2.0, "lambda_2": 3.0, "lambda_3": 4.0, "lambda_4": 5.0,
@@ -43,7 +42,6 @@ def _label_row(
         "hylak_id": hylak_id,
         "year": year,
         "month": month,
-        "workflow_version": wf,
         "water_area": 95.0,
         "threshold_low": 50.0,
         "threshold_high": 200.0,
@@ -61,7 +59,6 @@ def _extreme_row(
         "hylak_id": hylak_id,
         "year": year,
         "month": month,
-        "workflow_version": wf,
         "event_type": "high",
         "water_area": 210.0,
         "threshold": 200.0,
@@ -85,7 +82,6 @@ def _transition_row(
         "from_month": from_month,
         "to_year": to_year,
         "to_month": to_month,
-        "workflow_version": wf,
         "transition_type": "none->high",
         "from_water_area": 95.0,
         "to_water_area": 210.0,
@@ -104,7 +100,6 @@ def _run_status_row(
 ) -> dict:
     row = {
         "hylak_id": hylak_id,
-        "workflow_version": wf,
         "chunk_start": 0,
         "chunk_end": 1000,
         "status": status,
@@ -121,7 +116,6 @@ def _hawkes_run_status_row(
 ) -> dict:
     return {
         "hylak_id": hylak_id,
-        "workflow_version": wf,
         "chunk_start": 0,
         "chunk_end": 1000,
         "status": status,
@@ -164,8 +158,7 @@ class TestPWMThresholdsUpsert:
                 cur.execute(
                     "SELECT hylak_id, month, lambda_0, lambda_4, b_0, b_4, converged "
                     "FROM pwm_extreme_thresholds "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -185,8 +178,7 @@ class TestPWMThresholdsUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT mean_area FROM pwm_extreme_thresholds "
-                    "WHERE hylak_id = 1 AND workflow_version = %s AND month = 1",
-                    [WF],
+                    "WHERE hylak_id = 1 AND month = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -200,8 +192,7 @@ class TestPWMThresholdsUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM pwm_extreme_thresholds "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 assert cur.fetchone()[0] == 12
 
@@ -218,8 +209,7 @@ class TestPWMLabelsUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT extreme_label FROM pwm_extreme_labels "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -234,8 +224,7 @@ class TestPWMExtremesUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT event_type, severity FROM pwm_extreme_extremes "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -251,8 +240,7 @@ class TestPWMTransitionsUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT transition_type FROM pwm_extreme_abrupt_transitions "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -266,8 +254,7 @@ class TestPWMTransitionsUpsert:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT to_water_area FROM pwm_extreme_abrupt_transitions "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -283,8 +270,7 @@ class TestPWMRunStatus:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM pwm_extreme_run_status "
-                    "WHERE workflow_version = %s AND status = 'done'",
-                    [WF],
+                    "WHERE status = 'done'",
                 )
                 assert cur.fetchone()[0] == 1
 
@@ -297,8 +283,7 @@ class TestPWMRunStatus:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT status, error_message FROM pwm_extreme_run_status "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 row = cur.fetchone()
         assert row is not None
@@ -314,8 +299,7 @@ class TestPWMHawkesRunStatus:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM pwm_hawkes_run_status "
-                    "WHERE hylak_id = 1 AND workflow_version = %s",
-                    [WF],
+                    "WHERE hylak_id = 1",
                 )
                 assert cur.fetchone()[0] == 1
 

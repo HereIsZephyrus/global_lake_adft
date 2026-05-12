@@ -1,0 +1,8 @@
+# Layer 5: Quantile Algorithm (monthly transition)
+
+min_valid_per_month: 20
+min_valid_observations: 240
+
+output:
+  build_summary_cache: true
+  plot_summary: true

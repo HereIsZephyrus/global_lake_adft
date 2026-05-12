@@ -18,7 +18,6 @@ def _ensure_quantile_labels_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
     water_area          DOUBLE PRECISION,
@@ -28,7 +27,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     q_high              DOUBLE PRECISION,
     extreme_label       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, year, month)
+    PRIMARY KEY (hylak_id, year, month)
 );
 """).format(table=sql.Identifier(tc.series_table("quantile_labels")))
 
@@ -37,7 +36,6 @@ def _ensure_quantile_extremes_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
-    workflow_version    TEXT         NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
     event_type          TEXT         NOT NULL,
@@ -46,7 +44,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     anomaly             DOUBLE PRECISION,
     threshold           DOUBLE PRECISION,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version, year, month, event_type)
+    PRIMARY KEY (hylak_id, year, month, event_type)
 );
 """).format(table=sql.Identifier(tc.series_table("quantile_extremes")))
 
@@ -55,7 +53,6 @@ def _ensure_quantile_abrupt_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
-    workflow_version  TEXT         NOT NULL,
     from_year         INTEGER      NOT NULL,
     from_month        INTEGER      NOT NULL,
     to_year           INTEGER      NOT NULL,
@@ -68,7 +65,6 @@ CREATE TABLE IF NOT EXISTS {table} (
     computed_at       TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (
         hylak_id,
-        workflow_version,
         from_year,
         from_month,
         to_year,
@@ -83,35 +79,24 @@ def _ensure_quantile_status_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id          INTEGER      NOT NULL,
-    workflow_version  TEXT         NOT NULL,
     chunk_start       INTEGER,
     chunk_end         INTEGER,
     status            TEXT         NOT NULL,
     error_message     TEXT,
     computed_at       TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version)
+    PRIMARY KEY (hylak_id)
 );
 """).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
-
-
-def _create_quantile_status_version_index_sql(tc: TableConfig) -> sql.Composed:
-    table_name = tc.series_table("quantile_run_status")
-    return sql.SQL(
-        "CREATE INDEX IF NOT EXISTS {index} ON {table} (workflow_version, hylak_id)"
-    ).format(
-        index=sql.Identifier(f"{table_name}_version_hylak_idx"),
-        table=sql.Identifier(table_name),
-    )
 
 
 def _upsert_quantile_labels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, year, month,
+    hylak_id, year, month,
     water_area, monthly_climatology, anomaly,
     q_low, q_high, extreme_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(year)s, %(month)s,
+    %(hylak_id)s, %(year)s, %(month)s,
     %(water_area)s, %(monthly_climatology)s, %(anomaly)s,
     %(q_low)s, %(q_high)s, %(extreme_label)s, now()
 )
@@ -127,7 +112,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
         table=sql.Identifier(tc.series_table("quantile_labels")),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c)
-            for c in ("hylak_id", "workflow_version", "year", "month")
+            for c in ("hylak_id", "year", "month")
         ),
     )
 
@@ -135,10 +120,10 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_quantile_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, year, month, event_type,
+    hylak_id, year, month, event_type,
     water_area, monthly_climatology, anomaly, threshold, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(year)s, %(month)s, %(event_type)s,
+    %(hylak_id)s, %(year)s, %(month)s, %(event_type)s,
     %(water_area)s, %(monthly_climatology)s, %(anomaly)s, %(threshold)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
@@ -151,7 +136,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
         table=sql.Identifier(tc.series_table("quantile_extremes")),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c)
-            for c in ("hylak_id", "workflow_version", "year", "month", "event_type")
+            for c in ("hylak_id", "year", "month", "event_type")
         ),
     )
 
@@ -159,10 +144,10 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_quantile_abrupt_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, from_year, from_month, to_year, to_month, transition_type,
+    hylak_id, from_year, from_month, to_year, to_month, transition_type,
     from_anomaly, to_anomaly, from_label, to_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(from_year)s, %(from_month)s,
+    %(hylak_id)s, %(from_year)s, %(from_month)s,
     %(to_year)s, %(to_month)s, %(transition_type)s, %(from_anomaly)s, %(to_anomaly)s,
     %(from_label)s, %(to_label)s, now()
 )
@@ -178,7 +163,6 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
             sql.Identifier(c)
             for c in (
                 "hylak_id",
-                "workflow_version",
                 "from_year",
                 "from_month",
                 "to_year",
@@ -192,9 +176,9 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_quantile_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, workflow_version, chunk_start, chunk_end, status, error_message, computed_at
+    hylak_id, chunk_start, chunk_end, status, error_message, computed_at
 ) VALUES (
-    %(hylak_id)s, %(workflow_version)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
@@ -205,7 +189,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("quantile_run_status")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+            sql.Identifier(c) for c in ("hylak_id",)
         ),
     )
 
@@ -216,7 +200,6 @@ SELECT COUNT(*)
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s::bigint AND hylak_id < %(chunk_end)s::bigint
   AND status = 'done'
-  AND workflow_version = %(workflow_version)s
 """).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
@@ -226,7 +209,6 @@ SELECT hylak_id
 FROM {table}
 WHERE hylak_id >= %(chunk_start)s::bigint AND hylak_id < %(chunk_end)s::bigint
   AND status = 'done'
-  AND workflow_version = %(workflow_version)s
 """).format(table=sql.Identifier(tc.series_table("quantile_run_status")))
 
 
@@ -241,7 +223,6 @@ def ensure_quantile_tables(
         cur.execute(_ensure_quantile_extremes_table_sql(table_config))
         cur.execute(_ensure_quantile_abrupt_table_sql(table_config))
         cur.execute(_ensure_quantile_status_table_sql(table_config))
-        cur.execute(_create_quantile_status_version_index_sql(table_config))
     conn.commit()
     log.debug("Ensured monthly transition tables exist")
 
@@ -319,14 +300,12 @@ def count_quantile_status_in_range(
     chunk_start: int,
     chunk_end: int,
     *,
-    workflow_version: str,
     table_config: TableConfig = _default_table_config,
 ) -> int:
     """Count monthly transition run-status rows in a hylak_id range."""
     params = {
         "chunk_start": chunk_start,
         "chunk_end": chunk_end,
-        "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
         cur.execute(_count_quantile_status_in_range_sql(table_config), params)
@@ -339,14 +318,12 @@ def fetch_quantile_status_ids_in_range(
     chunk_start: int,
     chunk_end: int,
     *,
-    workflow_version: str,
     table_config: TableConfig = _default_table_config,
 ) -> set[int]:
     """Fetch processed monthly transition hylak_ids in a hylak_id range."""
     params = {
         "chunk_start": chunk_start,
         "chunk_end": chunk_end,
-        "workflow_version": workflow_version,
     }
     with conn.cursor() as cur:
         cur.execute(_fetch_quantile_status_ids_in_range_sql(table_config), params)

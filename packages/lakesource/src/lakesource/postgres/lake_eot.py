@@ -100,11 +100,10 @@ CREATE TABLE IF NOT EXISTS {table} (
     hylak_id         BIGINT        NOT NULL,
     chunk_start      BIGINT        NOT NULL,
     chunk_end        BIGINT        NOT NULL,
-    workflow_version VARCHAR(64)   NOT NULL,
     status           VARCHAR(16)   NOT NULL,
     error_message    TEXT,
     created_at       TIMESTAMPTZ   DEFAULT now(),
-    PRIMARY KEY (hylak_id, workflow_version)
+    PRIMARY KEY (hylak_id)
 );
 """).format(table=sql.Identifier(tc.series_table("eot_run_status")))
 
@@ -175,9 +174,9 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_eot_run_status_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, chunk_start, chunk_end, workflow_version, status, error_message, created_at
+    hylak_id, chunk_start, chunk_end, status, error_message, created_at
 ) VALUES (
-    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(workflow_version)s, %(status)s, %(error_message)s, now()
+    %(hylak_id)s, %(chunk_start)s, %(chunk_end)s, %(status)s, %(error_message)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     chunk_start   = EXCLUDED.chunk_start,
@@ -188,7 +187,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("eot_run_status")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "workflow_version")
+            sql.Identifier(c) for c in ("hylak_id",)
         ),
     )
 

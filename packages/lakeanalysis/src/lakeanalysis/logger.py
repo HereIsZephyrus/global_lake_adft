@@ -2,6 +2,8 @@ import logging
 import os
 from datetime import datetime
 
+from lakesource._version import log_versions
+
 
 class Logger:
     def __init__(self, name: str, log_dir: str = "logs", level: int = None):
@@ -40,6 +42,8 @@ class Logger:
         root.addHandler(console_handler)
 
         self.log_file = log_file
+
+        log_versions(self.logger.info)
 
     def debug(self, msg: str, *args, **kwargs):
         self.logger.debug(msg, *args, **kwargs)

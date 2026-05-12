@@ -35,7 +35,6 @@ from ..engine import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 
-CURRENT_EOT_HAWKES_WORKFLOW_VERSION = "eot-hawkes-v1"
 RUN_STATUS_DONE = "done"
 RUN_STATUS_ERROR = "error"
 
@@ -74,7 +73,6 @@ class EOTHawkesCalculator(Calculator):
         min_relative_amplitude: float = 0.05,
         min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
-        workflow_version: str = CURRENT_EOT_HAWKES_WORKFLOW_VERSION,
     ) -> None:
         self._threshold_quantile = threshold_quantile
         self._hawkes_window_months = hawkes_window_months
@@ -84,7 +82,6 @@ class EOTHawkesCalculator(Calculator):
         self._min_relative_amplitude = min_relative_amplitude
         self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
-        self._workflow_version = workflow_version
 
     def run(self, task: LakeTask) -> EOTHawkesFitResult:
         try:
@@ -286,7 +283,6 @@ class EOTHawkesCalculator(Calculator):
             "eot_hawkes_run_status": [
                 make_eot_hawkes_run_status_row(
                     hylak_id=result.hylak_id,
-                    workflow_version=self._workflow_version,
                     status=RUN_STATUS_DONE if result.success else RUN_STATUS_ERROR,
                     error_message=result.error_message,
                 )
@@ -300,7 +296,6 @@ class EOTHawkesCalculator(Calculator):
             "eot_hawkes_run_status": [
                 make_eot_hawkes_run_status_row(
                     hylak_id=hylak_id,
-                    workflow_version=self._workflow_version,
                     status=RUN_STATUS_ERROR,
                     error_message=str(error)[:500],
                 )
@@ -369,7 +364,6 @@ class EOTHawkesCalculator(Calculator):
 def make_eot_hawkes_run_status_row(
     *,
     hylak_id: int,
-    workflow_version: str,
     status: str,
     error_message: str | None = None,
 ) -> dict:
@@ -380,7 +374,6 @@ def make_eot_hawkes_run_status_row(
         "hylak_id": int(hylak_id),
         "chunk_start": 0,
         "chunk_end": 0,
-        "workflow_version": workflow_version,
         "status": status,
         "error_message": error_message,
     }

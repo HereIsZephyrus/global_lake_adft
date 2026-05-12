@@ -35,15 +35,15 @@ class PostgresQuantileWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_quantile_run_status(conn, rows, table_config=self._tc)
 
-    def count_quantile_status_in_range(self, chunk_start, chunk_end, *, workflow_version):
+    def count_quantile_status_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import lake_quantile as _mod
         with self._conn_factory() as conn:
-            return _mod.count_quantile_status_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
+            return _mod.count_quantile_status_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
-    def fetch_quantile_status_ids_in_range(self, chunk_start, chunk_end, *, workflow_version):
+    def fetch_quantile_status_ids_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import lake_quantile as _mod
         with self._conn_factory() as conn:
-            return _mod.fetch_quantile_status_ids_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
+            return _mod.fetch_quantile_status_ids_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
 
 class PostgresPwmWriteRepository:
@@ -86,15 +86,15 @@ class PostgresPwmWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_pwm_hawkes_run_status(conn, rows, table_config=self._tc)
 
-    def count_pwm_extreme_status_in_range(self, chunk_start, chunk_end, *, workflow_version):
+    def count_pwm_extreme_status_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import lake_pwm as _mod
         with self._conn_factory() as conn:
-            return _mod.count_pwm_extreme_status_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
+            return _mod.count_pwm_extreme_status_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
-    def fetch_pwm_extreme_status_ids_in_range(self, chunk_start, chunk_end, *, workflow_version):
+    def fetch_pwm_extreme_status_ids_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import lake_pwm as _mod
         with self._conn_factory() as conn:
-            return _mod.fetch_pwm_extreme_status_ids_in_range(conn, chunk_start, chunk_end, workflow_version=workflow_version, table_config=self._tc)
+            return _mod.fetch_pwm_extreme_status_ids_in_range(conn, chunk_start, chunk_end, table_config=self._tc)
 
 
 class PostgresEotWriteRepository:

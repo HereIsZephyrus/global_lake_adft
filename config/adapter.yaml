@@ -1,0 +1,14 @@
+# Layer 4: Backend Adapter
+#
+# Default values for backend selection, batch execution, and time filtering.
+# Backend-specific connection values are in .env, not here.
+
+backend: parquet
+
+batch:
+  chunk_size: 10000
+  limit_id: null
+
+filter:
+  year_start: null
+  year_end: null

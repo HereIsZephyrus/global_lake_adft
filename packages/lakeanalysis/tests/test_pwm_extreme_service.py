@@ -62,7 +62,6 @@ class TestMakeRunStatusRow:
             hylak_id=1,
             chunk_start=0,
             chunk_end=1000,
-            workflow_version="pwm-extreme-v1",
             status="done",
         )
         assert row["status"] == "done"
@@ -74,7 +73,6 @@ class TestMakeRunStatusRow:
                 hylak_id=1,
                 chunk_start=0,
                 chunk_end=1000,
-                workflow_version="pwm-extreme-v1",
                 status="unknown",
             )
 
@@ -82,17 +80,16 @@ class TestMakeRunStatusRow:
 class TestResultToThresholdRows:
     def test_row_count(self, series_df):
         result = run_single_lake_service(series_df, hylak_id=1)
-        rows = result_to_threshold_rows(result, workflow_version="pwm-extreme-v1")
+        rows = result_to_threshold_rows(result)
         assert len(rows) == 12
         assert all("lambda_0" in row for row in rows)
         assert all("b_0" in row for row in rows)
-        assert all(row["workflow_version"] == "pwm-extreme-v1" for row in rows)
 
 
 class TestResultToLabelRows:
     def test_has_label_columns(self, series_df):
         result = run_single_lake_service(series_df, hylak_id=1)
-        rows = result_to_label_rows(result, workflow_version="pwm-extreme-v1")
+        rows = result_to_label_rows(result)
         assert len(rows) > 0
         for row in rows:
             assert "hylak_id" in row
@@ -100,26 +97,23 @@ class TestResultToLabelRows:
             assert "month" in row
             assert "water_area" in row
             assert "extreme_label" in row
-            assert row["workflow_version"] == "pwm-extreme-v1"
 
 
 class TestResultToExtremeRows:
     def test_extreme_rows_non_empty(self, series_df):
         result = run_single_lake_service(series_df, hylak_id=1)
-        rows = result_to_extreme_rows(result, workflow_version="pwm-extreme-v1")
+        rows = result_to_extreme_rows(result)
         assert len(rows) > 0
         for row in rows:
             assert "event_type" in row
             assert row["event_type"] in ("high", "low")
             assert "severity" in row
-            assert row["workflow_version"] == "pwm-extreme-v1"
 
 
 class TestResultToTransitionRows:
     def test_transitions_valid(self, series_df):
         result = run_single_lake_service(series_df, hylak_id=1)
-        rows = result_to_transition_rows(result, workflow_version="pwm-extreme-v1")
+        rows = result_to_transition_rows(result)
         for row in rows:
             assert "transition_type" in row
             assert row["transition_type"] in ("low_to_high", "high_to_low")
-            assert row["workflow_version"] == "pwm-extreme-v1"

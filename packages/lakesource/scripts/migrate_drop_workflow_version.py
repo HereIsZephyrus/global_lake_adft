@@ -1,29 +1,26 @@
-"""Migration script: drop workflow_version columns from quantile/pwm_extreme/eot tables.
+"""Migration script: drop workflow_version columns from all algorithm output tables.
 
-This script removes the workflow_version column from all relevant tables.
-It should be run during maintenance windows as it requires table rewrites
-for large tables (quantile_labels has ~1.2M rows).
+Removes the workflow_version column and rebuilds primary keys for all
+quantile, PWM extreme, EOT, Hawkes, and comparison output tables.
 
 Usage:
     python migrate_drop_workflow_version.py [--dry-run]
 
 --dry-run: Print SQL statements without executing.
 
-Tables affected:
+Tables affected (12 total):
     - quantile_labels
     - quantile_extremes
     - quantile_abrupt_transitions
     - quantile_run_status
     - pwm_extreme_thresholds
+    - pwm_extreme_labels
+    - pwm_extreme_extremes
+    - pwm_extreme_abrupt_transitions
     - pwm_extreme_run_status
+    - pwm_hawkes_run_status
+    - comparison_run_status
     - eot_run_status
-
-Estimated time:
-    - run_status tables: seconds
-    - quantile_labels: 5-10 minutes (table rewrite)
-    - quantile_extremes: 2-5 minutes
-    - quantile_abrupt_transitions: 1-2 minutes
-    - pwm_extreme_thresholds: seconds
 """
 
 from __future__ import annotations
@@ -62,8 +59,33 @@ MIGRATIONS = [
         "new_pk_columns": ("hylak_id", "month"),
     },
     {
+        "table": "pwm_extreme_labels",
+        "old_pk": "pwm_extreme_labels_pkey",
+        "new_pk_columns": ("hylak_id", "year", "month"),
+    },
+    {
+        "table": "pwm_extreme_extremes",
+        "old_pk": "pwm_extreme_extremes_pkey",
+        "new_pk_columns": ("hylak_id", "year", "month"),
+    },
+    {
+        "table": "pwm_extreme_abrupt_transitions",
+        "old_pk": "pwm_extreme_abrupt_transitions_pkey",
+        "new_pk_columns": ("hylak_id", "from_year", "from_month", "to_year", "to_month"),
+    },
+    {
         "table": "pwm_extreme_run_status",
         "old_pk": "pwm_extreme_run_status_pkey",
+        "new_pk_columns": ("hylak_id",),
+    },
+    {
+        "table": "pwm_hawkes_run_status",
+        "old_pk": "pwm_hawkes_run_status_pkey",
+        "new_pk_columns": ("hylak_id",),
+    },
+    {
+        "table": "comparison_run_status",
+        "old_pk": "comparison_run_status_pkey",
         "new_pk_columns": ("hylak_id",),
     },
     {

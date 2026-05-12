@@ -71,8 +71,6 @@ def upsert_pwm_extreme_run_status(
 
 def result_to_threshold_rows(
     result: PWMExtremeResult,
-    *,
-    workflow_version: str,
 ) -> list[dict[str, Any]]:
     """Convert a PWMExtremeResult to DB row dicts for the thresholds table."""
     rows: list[dict[str, Any]] = []
@@ -91,7 +89,6 @@ def result_to_threshold_rows(
                 "threshold_low": mr.threshold_low,
                 "converged": mr.converged,
                 "objective_value": mr.objective_value,
-                "workflow_version": workflow_version,
             }
         )
     return rows
@@ -99,8 +96,6 @@ def result_to_threshold_rows(
 
 def result_to_label_rows(
     result: PWMExtremeResult,
-    *,
-    workflow_version: str,
 ) -> list[dict[str, Any]]:
     """Convert PWMExtremeResult.labels_df to DB row dicts for the labels table."""
     columns = [
@@ -112,16 +107,11 @@ def result_to_label_rows(
         "threshold_high",
         "extreme_label",
     ]
-    return _attach_workflow_version(
-        result.labels_df.loc[:, columns].to_dict("records"),
-        workflow_version=workflow_version,
-    )
+    return result.labels_df.loc[:, columns].to_dict("records")
 
 
 def result_to_extreme_rows(
     result: PWMExtremeResult,
-    *,
-    workflow_version: str,
 ) -> list[dict[str, Any]]:
     """Convert PWMExtremeResult.extremes_df to DB row dicts for the extremes table."""
     if result.extremes_df.empty:
@@ -136,16 +126,11 @@ def result_to_extreme_rows(
         "severity",
         "extreme_label",
     ]
-    return _attach_workflow_version(
-        result.extremes_df.loc[:, columns].to_dict("records"),
-        workflow_version=workflow_version,
-    )
+    return result.extremes_df.loc[:, columns].to_dict("records")
 
 
 def result_to_transition_rows(
     result: PWMExtremeResult,
-    *,
-    workflow_version: str,
 ) -> list[dict[str, Any]]:
     """Convert PWMExtremeResult.transitions_df to DB row dicts for the transitions table."""
     if result.transitions_df.empty:
@@ -162,21 +147,7 @@ def result_to_transition_rows(
         "from_label",
         "to_label",
     ]
-    return _attach_workflow_version(
-        result.transitions_df.loc[:, columns].to_dict("records"),
-        workflow_version=workflow_version,
-    )
-
-
-def _attach_workflow_version(
-    rows: list[dict[str, Any]],
-    *,
-    workflow_version: str,
-) -> list[dict[str, Any]]:
-    version = workflow_version.strip()
-    if not version:
-        raise ValueError("workflow_version must not be empty")
-    return [{**row, "workflow_version": version} for row in rows]
+    return result.transitions_df.loc[:, columns].to_dict("records")
 
 
 def make_run_status_row(
@@ -184,7 +155,6 @@ def make_run_status_row(
     hylak_id: int,
     chunk_start: int,
     chunk_end: int,
-    workflow_version: str,
     status: str,
     error_message: str | None = None,
 ) -> dict[str, Any]:
@@ -194,7 +164,6 @@ def make_run_status_row(
         "hylak_id": hylak_id,
         "chunk_start": chunk_start,
         "chunk_end": chunk_end,
-        "workflow_version": workflow_version,
         "status": status,
         "error_message": error_message,
     }

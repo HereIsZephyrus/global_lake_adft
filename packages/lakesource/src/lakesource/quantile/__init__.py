@@ -14,7 +14,6 @@ from .schema import (
     QuantileBatchConfig,
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
-    CURRENT_QUANTILE_WORKFLOW_VERSION,
 )
 from .store import (
     ensure_quantile_tables,
@@ -50,7 +49,7 @@ __all__ = [
     "QuantileBatchConfig",
     "RUN_STATUS_DONE",
     "RUN_STATUS_ERROR",
-    "CURRENT_QUANTILE_WORKFLOW_VERSION",
+
     "ensure_quantile_tables",
     "upsert_quantile_labels",
     "upsert_quantile_extremes",

@@ -328,12 +328,57 @@ def push(
     typer.echo(f"Done: {ok_count}/{len(tables)} tables pushed, {total_rows:,} total rows.")
 
 
+# Primary key columns per table — used to rebuild indexes after sync push.
+_TABLE_PK: dict[str, tuple[str, ...]] = {
+    "quantile_labels": ("hylak_id", "year", "month"),
+    "quantile_extremes": ("hylak_id", "year", "month", "event_type"),
+    "quantile_abrupt_transitions": (
+        "hylak_id", "from_year", "from_month",
+        "to_year", "to_month", "transition_type",
+    ),
+    "quantile_run_status": ("hylak_id",),
+    "pwm_extreme_thresholds": ("hylak_id", "month"),
+    "pwm_extreme_labels": ("hylak_id", "year", "month"),
+    "pwm_extreme_extremes": ("hylak_id", "year", "month"),
+    "pwm_extreme_abrupt_transitions": (
+        "hylak_id", "from_year", "from_month", "to_year", "to_month",
+    ),
+    "eot_results": ("hylak_id", "tail", "threshold_quantile"),
+    "eot_extremes": ("hylak_id", "tail", "threshold_quantile", "cluster_id"),
+    "hawkes_results": ("hylak_id",),
+    "hawkes_lrt": ("hylak_id",),
+    "hawkes_transition_monthly": ("hylak_id", "year", "month"),
+    "area_shift_labels": ("hylak_id",),
+    "area_quality": ("hylak_id",),
+    "area_anomalies": ("hylak_id",),
+}
+
+
+def _rebuild_indexes(cur, table: str) -> None:
+    """Rebuild PRIMARY KEY and hylak_id index for *table* after sync push."""
+    pk_columns = _TABLE_PK.get(table)
+    if not pk_columns:
+        return
+
+    pk_cols = ", ".join(pk_columns)
+    try:
+        cur.execute(f"ALTER TABLE {table} ADD PRIMARY KEY ({pk_cols})")
+    except Exception:
+        pass
+
+    if "hylak_id" not in pk_columns:
+        try:
+            cur.execute(f"CREATE INDEX IF NOT EXISTS {table}_hylak_id_idx ON {table} (hylak_id)")
+        except Exception:
+            pass
+
+
 def _push_table_duckdb(table: str, path: Path) -> None:
     """DROP CASCADE + CREATE TABLE via DuckDB PostgreSQL Scanner.
 
     DuckDB reads the parquet natively and uses the PG binary protocol
     to create the table directly — no CSV serialisation overhead.
-    A computed_at column (DEFAULT now()) is added after creation.
+    PRIMARY KEY and hylak_id index are rebuilt after creation.
     """
     import duckdb
     import os
@@ -377,7 +422,7 @@ def _push_table_duckdb(table: str, path: Path) -> None:
     finally:
         dcon.close()
 
-    # Add computed_at column (DEFAULT now())
+    # Add computed_at column + rebuild indexes
     with series_db.connect() as conn:
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -385,6 +430,7 @@ def _push_table_duckdb(table: str, path: Path) -> None:
                 f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
                 "computed_at TIMESTAMPTZ DEFAULT now()"
             )
+            _rebuild_indexes(cur, table)
 
 
 @app.command()

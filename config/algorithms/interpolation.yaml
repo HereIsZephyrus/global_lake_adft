@@ -1,0 +1,5 @@
+# Layer 5: Interpolation Detection Algorithm
+
+min_collinear_points: 4
+rtol: 0.0
+atol: 0.000001

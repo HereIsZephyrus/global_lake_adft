@@ -16,7 +16,6 @@ from .compute import (
     solve_lagrange_multipliers,
 )
 from .config import (
-    CURRENT_PWM_EXTREME_WORKFLOW_VERSION,
     PWMExtremeBatchConfig,
     PWMExtremeServiceConfig,
 )
@@ -55,7 +54,6 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
-    "CURRENT_PWM_EXTREME_WORKFLOW_VERSION",
     "PWMExtremeBatchConfig",
     "PWMExtremeConfig",
     "PWMExtremeMonthResult",
