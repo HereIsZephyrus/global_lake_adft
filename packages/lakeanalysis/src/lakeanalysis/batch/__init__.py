@@ -1,6 +1,9 @@
 """Unified batch computing framework with MPI scheduling."""
 
 from .engine import Calculator, Engine, IdSetFilter, LakeFilter, LakeTask, RangeFilter
+from .lake_dataset import LakeDataset
+from .lake_dataset_factory import LakeDatasetFactory
+from .lake_dataset_query import LakeDatasetQuery
 from .io import (
     BatchReader,
     BatchWriter,
@@ -28,6 +31,9 @@ __all__ = [
     "BatchWriter",
     "Engine",
     "IdSetFilter",
+    "LakeDataset",
+    "LakeDatasetFactory",
+    "LakeDatasetQuery",
     "LakeFilter",
     "LakeTask",
     "Manager",
