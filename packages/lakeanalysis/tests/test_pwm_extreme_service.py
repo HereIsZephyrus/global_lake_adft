@@ -1,4 +1,4 @@
-"""Tests for lakeanalysis.pwm_extreme.service and store."""
+"""Tests for lakeanalysis.pwm.service and store."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lakeanalysis.pwm_extreme.service import run_single_lake_service
-from lakesource.pwm_extreme.schema import (
+from lakeanalysis.pwm.service import run_single_lake_service
+from lakesource.pwm.schema import (
     PWMExtremeConfig,
     PWMExtremeServiceConfig,
 )
-from lakesource.pwm_extreme.store import (
+from lakesource.pwm.store import (
     make_run_status_row,
     result_to_extreme_rows,
     result_to_label_rows,

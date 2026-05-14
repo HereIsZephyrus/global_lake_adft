@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lakesource.pwm_extreme.store import return_levels_to_rows
+from lakesource.pwm.store import return_levels_to_rows
 
 
 def test_return_levels_to_rows_converts_summary_frame() -> None:
@@ -25,7 +25,7 @@ def test_return_levels_to_rows_converts_summary_frame() -> None:
         }
     )
 
-    rows = return_levels_to_rows(7, summary_df, workflow_version="test")
+    rows = return_levels_to_rows(7, summary_df)
 
     assert len(rows) == 1
     assert rows[0]["hylak_id"] == 7

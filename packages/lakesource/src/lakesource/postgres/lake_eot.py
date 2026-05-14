@@ -114,6 +114,23 @@ CREATE TABLE IF NOT EXISTS {table} (
 """).format(table=sql.Identifier(tc.series_table("eot_run_status")))
 
 
+def _ensure_eot_return_levels_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id             INTEGER      NOT NULL,
+    tail                 TEXT         NOT NULL,
+    threshold_quantile   NUMERIC(5,4) NOT NULL,
+    return_period_years  DOUBLE PRECISION NOT NULL,
+    return_level         DOUBLE PRECISION,
+    standard_error       DOUBLE PRECISION,
+    ci_lower             DOUBLE PRECISION,
+    ci_upper             DOUBLE PRECISION,
+    computed_at          TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, tail, threshold_quantile, return_period_years)
+);
+""").format(table=sql.Identifier(tc.series_table("eot_return_levels")))
+
+
 def _upsert_eot_results_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
@@ -202,6 +219,30 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     )
 
 
+def _upsert_eot_return_levels_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, tail, threshold_quantile, return_period_years,
+    return_level, standard_error, ci_lower, ci_upper, computed_at
+) VALUES (
+    %(hylak_id)s, %(tail)s, %(threshold_quantile)s, %(return_period_years)s,
+    %(return_level)s, %(standard_error)s, %(ci_lower)s, %(ci_upper)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    return_level    = EXCLUDED.return_level,
+    standard_error  = EXCLUDED.standard_error,
+    ci_lower        = EXCLUDED.ci_lower,
+    ci_upper        = EXCLUDED.ci_upper,
+    computed_at     = now();
+""").format(
+        table=sql.Identifier(tc.series_table("eot_return_levels")),
+        conflict_cols=sql.SQL(", ").join(
+            sql.Identifier(c)
+            for c in ("hylak_id", "tail", "threshold_quantile", "return_period_years")
+        ),
+    )
+
+
 def fetch_eot_extremes_by_id(
     conn: psycopg.Connection,
     hylak_id: int,
@@ -260,13 +301,14 @@ def ensure_eot_results_table(
     *,
     table_config: TableConfig = _default_table_config,
 ) -> None:
-    """Create the eot_results, eot_extremes, and eot_run_status tables in SERIES_DB if they do not exist."""
+    """Create the EOT tables in SERIES_DB if they do not exist."""
     with conn.cursor() as cur:
         cur.execute(_ensure_eot_results_table_sql(table_config))
         cur.execute(_ensure_eot_extremes_table_sql(table_config))
         cur.execute(_ensure_eot_run_status_table_sql(table_config))
+        cur.execute(_ensure_eot_return_levels_table_sql(table_config))
     conn.commit()
-    log.debug("Ensured eot_results, eot_extremes, and eot_run_status tables exist")
+    log.debug("Ensured EOT tables exist")
 
 
 def upsert_eot_results(
@@ -318,3 +360,19 @@ def upsert_eot_run_status(
     if commit:
         conn.commit()
     log.info("Upserted %d eot_run_status row(s)", len(rows))
+
+
+def upsert_eot_return_levels(
+    conn: psycopg.Connection,
+    rows: list[dict],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_eot_return_levels_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d eot_return_levels row(s)", len(rows))

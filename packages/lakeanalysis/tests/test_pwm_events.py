@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lakeanalysis.pwm_extreme.events import (
+from lakeanalysis.pwm.events import (
     build_hawkes_event_series_from_pwm_events,
     run_runs_declustering,
 )

@@ -11,12 +11,12 @@ from lakesource.comparison.schema import (
     RUN_STATUS_ERROR,
 )
 from lakesource.comparison.store import make_run_status_row
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     PWMExtremeResult,
     RUN_STATUS_DONE as PWM_DONE,
     RUN_STATUS_ERROR as PWM_ERROR,
 )
-from lakesource.pwm_extreme.store import (
+from lakesource.pwm.store import (
     make_run_status_row as make_pwm_run_status_row,
     result_to_threshold_rows,
 )
@@ -31,7 +31,7 @@ from lakesource.quantile.store import (
     result_to_label_rows,
     result_to_transition_rows,
 )
-from lakeanalysis.pwm_extreme.service import run_single_lake_service as run_pwm_service
+from lakeanalysis.pwm.service import run_single_lake_service as run_pwm_service
 from lakeanalysis.quantile.service import run_single_lake_service as run_quantile_service
 
 from ..batch import Calculator, LakeDataset, LakeTask

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lakeanalysis.pwm_extreme.evt_amplitude import compute_evt_amplitude_strengths
+from lakeanalysis.pwm.evt_amplitude import compute_evt_amplitude_strengths
 
 
 def test_compute_evt_amplitude_strengths_uses_residual_exceedance() -> None:

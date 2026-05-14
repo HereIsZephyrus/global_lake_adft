@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from lakeanalysis.batch.task_spec import BatchTaskSpec, get_batch_task_spec
-from lakeanalysis.pwm_extreme.diagnostics import (
+from lakeanalysis.pwm.diagnostics import (
     pwm_constraint_residuals,
     quantile_function_curve,
 )

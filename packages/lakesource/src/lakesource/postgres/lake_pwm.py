@@ -94,7 +94,6 @@ CREATE TABLE IF NOT EXISTS {table} (
     error_message       TEXT,
     evt_route           TEXT         NOT NULL,
     strength_unit       TEXT,
-    workflow_version    TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, tail, return_period, evt_route)
 );
@@ -139,7 +138,6 @@ CREATE TABLE IF NOT EXISTS {table} (
     n_extreme_events     INTEGER,
     first_extreme_type   TEXT,
     last_extreme_type    TEXT,
-    workflow_version     TEXT,
     computed_at          TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (hylak_id, segment_id)
 );
@@ -282,13 +280,13 @@ INSERT INTO {table} (
     return_level, shape, scale, threshold,
     n_total, n_exceedances,
     converged, error_message,
-    evt_route, strength_unit, workflow_version, computed_at
+    evt_route, strength_unit, computed_at
 ) VALUES (
     %(hylak_id)s, %(tail)s, %(return_period)s,
     %(return_level)s, %(shape)s, %(scale)s, %(threshold)s,
     %(n_total)s, %(n_exceedances)s,
     %(converged)s, %(error_message)s,
-    %(evt_route)s, %(strength_unit)s, %(workflow_version)s, now()
+    %(evt_route)s, %(strength_unit)s, now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     return_level      = EXCLUDED.return_level,
@@ -300,7 +298,6 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     converged         = EXCLUDED.converged,
     error_message     = EXCLUDED.error_message,
     strength_unit     = EXCLUDED.strength_unit,
-    workflow_version  = EXCLUDED.workflow_version,
     computed_at       = now();
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_return_levels")),
@@ -354,7 +351,7 @@ INSERT INTO {table} (
     max_C, mean_C, integral_C,
     n_extreme_events,
     first_extreme_type, last_extreme_type,
-    workflow_version, computed_at
+    computed_at
 ) VALUES (
     %(hylak_id)s, %(segment_id)s,
     %(start_year)s, %(start_month)s, %(end_year)s, %(end_month)s,
@@ -363,7 +360,7 @@ INSERT INTO {table} (
     %(max_C)s, %(mean_C)s, %(integral_C)s,
     %(n_extreme_events)s,
     %(first_extreme_type)s, %(last_extreme_type)s,
-    %(workflow_version)s, now()
+    now()
 )
 ON CONFLICT ({conflict_cols}) DO UPDATE SET
     start_year         = EXCLUDED.start_year,
@@ -380,7 +377,6 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     n_extreme_events   = EXCLUDED.n_extreme_events,
     first_extreme_type = EXCLUDED.first_extreme_type,
     last_extreme_type  = EXCLUDED.last_extreme_type,
-    workflow_version   = EXCLUDED.workflow_version,
     computed_at        = now();
 """).format(
         table=sql.Identifier(tc.series_table("pwm_hawkes_segments")),

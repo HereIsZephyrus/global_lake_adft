@@ -9,10 +9,10 @@ import pandas as pd
 
 from lakesource.config import SourceConfig
 from lakesource.provider.factory import create_provider
-from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+from lakeanalysis.batch.calculator.pwm_hawkes import PWMHawkesCalculator
 from lakeanalysis.batch.core import LakeTask
 from lakeanalysis.logger import Logger
-from lakesource.pwm_extreme.schema import PWMExtremeConfig
+from lakesource.pwm.schema import PWMExtremeConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,8 +33,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _make_calculator(args: argparse.Namespace, route: str) -> PWMExtremeHawkesCalculator:
-    return PWMExtremeHawkesCalculator(
+def _make_calculator(args: argparse.Namespace, route: str) -> PWMHawkesCalculator:
+    return PWMHawkesCalculator(
         pwm_config=PWMExtremeConfig(),
         decay_rate=args.decay_rate,
         min_event_rate=args.min_event_rate,
@@ -47,8 +47,9 @@ def _make_calculator(args: argparse.Namespace, route: str) -> PWMExtremeHawkesCa
 
 
 def _extract_summary(result) -> dict:
-    summary = result.route_summary_rows[0] if result.route_summary_rows else {}
-    pipeline = result.pipeline.summary
+    extra_rows = result.extra_rows_by_table.get("pwm_hawkes_route_summary", [])
+    summary = extra_rows[0] if extra_rows else {}
+    pipeline = result.core.summary
     return {
         "n_extreme_high": summary.get("n_extreme_high"),
         "n_extreme_low": summary.get("n_extreme_low"),
@@ -90,8 +91,8 @@ def main() -> None:
             series_df=lake_map[hylak_id],
             frozen_year_months=frozenset(frozen_map.get(hylak_id, set())),
         )
-        result_a = calc_a._compute_lake(task)
-        result_b = calc_b._compute_lake(task)
+        result_a = calc_a.compute(task)
+        result_b = calc_b.compute(task)
         summary_a = _extract_summary(result_a)
         summary_b = _extract_summary(result_b)
         row = {"hylak_id": hylak_id}

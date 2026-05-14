@@ -127,6 +127,7 @@ _SYMBOL_MAP = {
     "ensure_eot_results_table": "lake_eot",
     "fetch_eot_extremes_by_id": "lake_eot",
     "upsert_eot_extremes": "lake_eot",
+    "upsert_eot_return_levels": "lake_eot",
     "upsert_eot_results": "lake_eot",
     "upsert_eot_run_status": "lake_eot",
     # lake_quantile

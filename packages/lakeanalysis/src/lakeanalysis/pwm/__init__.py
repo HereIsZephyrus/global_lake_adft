@@ -40,7 +40,7 @@ from .store import (
     upsert_pwm_extreme_run_status,
     upsert_pwm_extreme_thresholds,
 )
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     PWMExtremeMonthResult,
     PWMExtremeResult,
 )
@@ -48,7 +48,7 @@ from lakesource.pwm_extreme.schema import (
 
 def __getattr__(name: str):
     if name in ("plot_pwm_extreme_quantile_functions", "plot_pwm_extreme_threshold_summary"):
-        from lakeviz.pwm_extreme import (
+        from lakeviz.pwm import (
             plot_pwm_extreme_quantile_functions,
             plot_pwm_extreme_threshold_summary,
         )

@@ -60,7 +60,7 @@ class _PWMConvergenceQuery:
         self, config: Any, resolution: float,
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_convergence_grid_agg
+        from lakesource.pwm.reader import fetch_pwm_convergence_grid_agg
         return fetch_pwm_convergence_grid_agg(config, resolution, refresh=refresh)
 
 
@@ -91,7 +91,7 @@ class _PWMConvergedQuery:
         self, config: Any, resolution: float,
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_converged_grid_agg
+        from lakesource.pwm.reader import fetch_pwm_converged_grid_agg
         return fetch_pwm_converged_grid_agg(config, resolution, refresh=refresh)
 
 
@@ -125,7 +125,7 @@ class _PWMMonthlyThresholdQuery:
         self, config: Any, resolution: float,
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_threshold_grid_agg
+        from lakesource.pwm.reader import fetch_pwm_monthly_threshold_grid_agg
         return fetch_pwm_monthly_threshold_grid_agg(config, resolution, refresh=refresh)
 
 
@@ -169,7 +169,7 @@ class _PWMExceedanceQuery:
         *, refresh: bool = False, p_high: float = 0.05, p_low: float = 0.05,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_exceedance_grid_agg
+        from lakesource.pwm.reader import fetch_pwm_exceedance_grid_agg
         return fetch_pwm_exceedance_grid_agg(
             config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
         )
@@ -214,7 +214,7 @@ class _PWMMonthlyExceedanceQuery:
         *, refresh: bool = False, p_high: float = 0.05, p_low: float = 0.05,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        from lakesource.pwm_extreme.reader import fetch_pwm_monthly_exceedance_grid_agg
+        from lakesource.pwm.reader import fetch_pwm_monthly_exceedance_grid_agg
         return fetch_pwm_monthly_exceedance_grid_agg(
             config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
         )

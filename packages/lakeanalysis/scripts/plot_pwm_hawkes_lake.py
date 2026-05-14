@@ -19,9 +19,9 @@ from lakesource.provider import create_provider
 from lakeviz.domain.eot import draw_extremes_with_hawkes
 from lakeviz.style.presets import Theme
 from lakeanalysis.logger import Logger
-from lakeanalysis.pwm_extreme.service import run_single_lake_service
-from lakesource.pwm_extreme.schema import PWMExtremeConfig
-from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig
+from lakeanalysis.pwm.service import run_single_lake_service
+from lakesource.pwm.schema import PWMExtremeConfig
+from lakesource.pwm.schema import PWMExtremeServiceConfig
 
 log = logging.getLogger(__name__)
 

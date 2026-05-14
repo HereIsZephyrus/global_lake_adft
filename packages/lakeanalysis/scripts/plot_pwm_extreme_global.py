@@ -20,7 +20,7 @@ from lakesource.config import SourceConfig
 from lakesource.env import load_env
 from lakesource.provider import create_provider
 from lakeviz.config import GlobalGridConfig
-from lakeviz.pwm_extreme import (
+from lakeviz.pwm import (
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
     plot_pwm_high_exceedance_density_map,

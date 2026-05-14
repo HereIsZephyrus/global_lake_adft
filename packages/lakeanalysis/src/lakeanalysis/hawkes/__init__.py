@@ -17,8 +17,8 @@ from .fit import (
 )
 from .model import evaluate_intensity_decomposition
 from .pipeline import (
+    HawkesCoreResult,
     HawkesQCFailError,
-    RunHawkesPipelineResult,
     build_error_summary,
     build_hawkes_result_row,
     build_hawkes_transition_monthly_rows,
@@ -61,7 +61,7 @@ __all__ = [
     "build_events_from_eot",
     "build_events_from_pwm",
     "HawkesQCFailError",
-    "RunHawkesPipelineResult",
+    "HawkesCoreResult",
     "run_hawkes_pipeline",
     "build_error_summary",
     "build_qc_fail_summary",

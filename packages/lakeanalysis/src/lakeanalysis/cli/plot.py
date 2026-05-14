@@ -93,7 +93,7 @@ def pwm_global(
     from lakesource.config import SourceConfig
     from lakesource.provider import create_provider
     from lakeviz.config import GlobalGridConfig
-    from lakeviz.pwm_extreme import (
+    from lakeviz.pwm import (
         plot_pwm_convergence_map, plot_pwm_exceedance_maps,
         plot_pwm_monthly_exceedance_maps, plot_pwm_monthly_threshold_maps,
         plot_pwm_threshold_high_map, plot_pwm_threshold_low_map,

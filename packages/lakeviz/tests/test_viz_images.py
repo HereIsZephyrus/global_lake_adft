@@ -53,7 +53,7 @@ from lakeviz.domain.entropy import (
 from lakeviz.domain.similarity import (
     draw_pearson_distribution, draw_acf_cosine_distribution, draw_pearson_vs_acf,
 )
-from lakeviz.domain.pwm_extreme import (
+from lakeviz.domain.pwm import (
     draw_quantile_function, draw_threshold_summary,
 )
 from lakeviz.layout import create_figure, save

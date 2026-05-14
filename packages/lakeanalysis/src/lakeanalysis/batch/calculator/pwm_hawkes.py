@@ -1,4 +1,4 @@
-"""PWMExtremeHawkesCalculator: PWM event -> exponential decay C_k -> Hawkes fit.
+"""PWMHawkesCalculator: PWM event -> exponential decay C_k -> Hawkes fit.
 
 Uses ``run_single_lake_service`` (STL decomposition + pooled PWM) so that
 the event-detection math is identical to the standalone PWM batch pipeline.
@@ -10,55 +10,37 @@ decay index C_k and transition/unilateral segment extraction.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
 
 from lakeanalysis.hawkes import (
+    HawkesCoreResult,
     HawkesQCFailError,
-    RunHawkesPipelineResult,
     build_error_summary,
-    build_hawkes_result_row,
     build_qc_fail_summary,
     build_events_from_pwm,
-    make_hawkes_run_status_row,
     run_hawkes_pipeline,
 )
-from lakeanalysis.pwm_extreme.events import (
+from lakeanalysis.pwm.events import (
     compute_decay_index,
     extract_hawkes_events_from_segments,
     extract_segments,
 )
-from lakeanalysis.pwm_extreme.evt import compute_pwm_evt_strengths
-from lakeanalysis.pwm_extreme.phi import map_strength_df_to_phi
-from lakeanalysis.pwm_extreme.store import return_levels_to_rows
-from lakeanalysis.pwm_extreme.service import run_single_lake_service
-from lakesource.pwm_extreme.schema import (
+from lakeanalysis.pwm.evt import compute_pwm_evt_strengths
+from lakeanalysis.pwm.phi import map_strength_df_to_phi
+from lakeanalysis.pwm.store import return_levels_to_rows
+from lakeanalysis.pwm.service import run_single_lake_service
+from lakesource.pwm.schema import (
     PWMExtremeConfig,
     PWMExtremeServiceConfig,
 )
 
-from .. import Calculator, LakeTask
+from .. import LakeTask
+from .hawkes_base import HawkesCalculator, HawkesResult
 
 log = logging.getLogger(__name__)
-
-RUN_STATUS_DONE = "done"
-RUN_STATUS_ERROR = "error"
-
-_TABLE_PREFIX = "pwm_hawkes"
-
-
-@dataclass(frozen=True)
-class PWMHawkesPipelineResult:
-    """Thin wrapper adding segments_rows to the shared pipeline result."""
-    pipeline: RunHawkesPipelineResult
-    segments_rows: list[dict]
-    return_level_rows: list[dict]
-    route_summary_rows: list[dict]
-
-
-class PWMExtremeHawkesCalculator(Calculator):
+class PWMHawkesCalculator(HawkesCalculator):
     """Batch calculator: PWM extreme events + decay index → Hawkes fitting."""
 
     def __init__(
@@ -76,22 +58,26 @@ class PWMExtremeHawkesCalculator(Calculator):
         evt_route: Literal["A", "B"] = "A",
         phi_method: str = "identity",
     ) -> None:
+        super().__init__(
+            hawkes_window_months=hawkes_window_months,
+            min_event_rate=min_event_rate,
+            max_event_rate=max_event_rate,
+            min_relative_amplitude=min_relative_amplitude,
+            min_median_severity=min_median_severity,
+            monthly_significance_quantile=monthly_significance_quantile,
+        )
+        self._table_prefix = "pwm_hawkes"
+        self._return_levels_table = "pwm_extreme_return_levels"
         self._pwm_config = pwm_config or PWMExtremeConfig()
         self._service_config = PWMExtremeServiceConfig(
             pwm_config=self._pwm_config,
             method=method,
         )
         self._decay_rate = decay_rate
-        self._hawkes_window_months = hawkes_window_months
-        self._min_event_rate = min_event_rate
-        self._max_event_rate = max_event_rate
-        self._min_relative_amplitude = min_relative_amplitude
-        self._min_median_severity = min_median_severity
-        self._monthly_significance_quantile = monthly_significance_quantile
         self._evt_route = evt_route
         self._phi_method = phi_method
 
-    def compute(self, task: LakeTask) -> PWMHawkesPipelineResult:
+    def compute(self, task: LakeTask) -> HawkesResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
@@ -119,11 +105,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             )
             segments_df = extract_segments(decay_df)
             segments_rows = _build_segments_rows(hylak_id, segments_df)
-            return_level_rows = return_levels_to_rows(
-                hylak_id,
-                summary_df,
-                workflow_version=f"evt_route={self._evt_route};phi_method={self._phi_method}",
-            )
+            return_level_rows = return_levels_to_rows(hylak_id, summary_df)
             route_summary_rows = _build_route_summary_rows(
                 hylak_id=hylak_id,
                 route=self._evt_route,
@@ -141,7 +123,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                 events_df, series_df
             )
 
-            pipeline_result = run_hawkes_pipeline(
+            core = run_hawkes_pipeline(
                 event_series,
                 events_table,
                 series_df,
@@ -154,71 +136,36 @@ class PWMExtremeHawkesCalculator(Calculator):
                 min_median_severity=self._min_median_severity,
                 monthly_significance_quantile=self._monthly_significance_quantile,
             )
-            return PWMHawkesPipelineResult(
-                pipeline=pipeline_result,
-                segments_rows=segments_rows,
+            return self._make_result(
+                core,
                 return_level_rows=return_level_rows,
-                route_summary_rows=route_summary_rows,
+                extra_rows_by_table={
+                    "pwm_hawkes_segments": segments_rows,
+                    "pwm_hawkes_route_summary": route_summary_rows,
+                },
             )
         except HawkesQCFailError as e:
             summary = build_qc_fail_summary(hylak_id, e.qc, str(e))
-            return PWMHawkesPipelineResult(
-                pipeline=RunHawkesPipelineResult(
+            return self._make_result(
+                HawkesCoreResult(
                     summary=summary, lrt_rows=[], transition_monthly_rows=[]
                 ),
-                segments_rows=[],
-                return_level_rows=[],
-                route_summary_rows=[],
+                extra_rows_by_table=self._empty_extra_rows(),
             )
         except Exception as exc:
             log.debug("PWM-Hawkes failed for hylak_id=%d: %s", task.hylak_id, exc)
             error_summary = build_error_summary(hylak_id, str(exc))
-            return PWMHawkesPipelineResult(
-                pipeline=RunHawkesPipelineResult(
+            return self._make_result(
+                HawkesCoreResult(
                     summary=error_summary, lrt_rows=[], transition_monthly_rows=[]
                 ),
-                segments_rows=[],
-                return_level_rows=[],
-                route_summary_rows=[],
+                extra_rows_by_table=self._empty_extra_rows(),
             )
 
-
-    def result_to_rows(
-        self, result: PWMHawkesPipelineResult
-    ) -> dict[str, list[dict]]:
-        pr = result.pipeline
-        error_msg = pr.summary.get("error_message")
-        success = error_msg is None
+    def _empty_extra_rows(self) -> dict[str, list[dict]]:
         return {
-            f"{_TABLE_PREFIX}_results": [build_hawkes_result_row(pr.summary)],
-            f"{_TABLE_PREFIX}_lrt": pr.lrt_rows,
-            f"{_TABLE_PREFIX}_transition_monthly": pr.transition_monthly_rows,
-            f"{_TABLE_PREFIX}_segments": result.segments_rows,
-            "pwm_extreme_return_levels": result.return_level_rows,
-            f"{_TABLE_PREFIX}_run_status": [
-                make_hawkes_run_status_row(
-                    hylak_id=pr.summary["hylak_id"],
-                    status=RUN_STATUS_DONE if success else RUN_STATUS_ERROR,
-                    error_message=error_msg,
-                )
-            ],
-        }
-
-    def error_to_rows(
-        self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
-    ) -> dict[str, list[dict]]:
-        error_summary = build_error_summary(hylak_id, str(error))
-        return {
-            f"{_TABLE_PREFIX}_run_status": [
-                make_hawkes_run_status_row(
-                    hylak_id=hylak_id,
-                    status=RUN_STATUS_ERROR,
-                    error_message=str(error)[:500],
-                )
-            ],
-            f"{_TABLE_PREFIX}_results": [
-                build_hawkes_result_row(error_summary)
-            ],
+            "pwm_hawkes_segments": [],
+            "pwm_hawkes_route_summary": [],
         }
 
 
@@ -253,7 +200,6 @@ def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]
                     if seg.get("last_extreme_type") is not None
                     else None
                 ),
-                "workflow_version": None,
             }
         )
     return rows
@@ -284,6 +230,5 @@ def _build_route_summary_rows(
             "n_transition_segments": int(len(transition_df)),
             "mean_segment_duration": float(segments_df["duration_months"].mean()) if not segments_df.empty else None,
             "n_return_level_fits": int(summary_df["converged"].fillna(False).sum()) if not summary_df.empty else 0,
-            "workflow_version": f"evt_route={route};phi_method={phi_method}",
         }
     ]

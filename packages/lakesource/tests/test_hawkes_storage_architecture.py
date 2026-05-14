@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 
 from lakeanalysis.extreme.models import ExtremeResult, PWMDiagnostics
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     PWMExtremeMonthResult,
     PWMExtremeResult,
 )
-from lakesource.pwm_extreme.store import (
+from lakesource.pwm.store import (
     result_to_extreme_rows,
     result_to_label_rows,
 )

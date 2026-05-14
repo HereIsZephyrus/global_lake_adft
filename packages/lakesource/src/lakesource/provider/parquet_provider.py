@@ -21,7 +21,7 @@ def _ensure_queries_registered() -> None:
     from lakesource.provider.grid_query import list_grid_queries
     if not list_grid_queries():
         import lakesource.quantile.grid_queries  # noqa: F401
-        import lakesource.pwm_extreme.grid_queries  # noqa: F401
+        import lakesource.pwm.grid_queries  # noqa: F401
         import lakesource.eot.grid_queries  # noqa: F401
         import lakesource.comparison.grid_queries  # noqa: F401
 

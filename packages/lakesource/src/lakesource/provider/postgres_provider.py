@@ -32,7 +32,7 @@ def _ensure_queries_registered() -> None:
     from lakesource.provider.grid_query import list_grid_queries
     if not list_grid_queries():
         import lakesource.quantile.grid_queries  # noqa: F401
-        import lakesource.pwm_extreme.grid_queries  # noqa: F401
+        import lakesource.pwm.grid_queries  # noqa: F401
         import lakesource.eot.grid_queries  # noqa: F401
         import lakesource.comparison.grid_queries  # noqa: F401
 
@@ -78,6 +78,7 @@ _ENSURE_DISPATCH = {
     "eot_hawkes_run_status": ("hawkes", "ensure_eot_hawkes_tables"),
     "eot_results": ("eot", "ensure_eot_results_table"),
     "eot_extremes": ("eot", "ensure_eot_results_table"),
+    "eot_return_levels": ("eot", "ensure_eot_results_table"),
     "eot_run_status": ("eot", "ensure_eot_results_table"),
     "comparison_run_status": ("comparison", "ensure_comparison_tables"),
 }
@@ -109,6 +110,7 @@ _UPSERT_DISPATCH = {
     "eot_hawkes_run_status": ("hawkes", "upsert_eot_hawkes_run_status"),
     "eot_results": ("eot", "upsert_eot_results"),
     "eot_extremes": ("eot", "upsert_eot_extremes"),
+    "eot_return_levels": ("eot", "upsert_eot_return_levels"),
     "eot_run_status": ("eot", "upsert_eot_run_status"),
     "comparison_run_status": ("comparison", "upsert_comparison_run_status"),
 }

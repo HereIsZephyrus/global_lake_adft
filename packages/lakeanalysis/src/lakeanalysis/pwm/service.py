@@ -5,7 +5,7 @@ import pandas as pd
 from lakeanalysis.extreme.service import run_single_lake_service as _run_extreme_service
 
 from .compute import compute_pooled_pwm_thresholds
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     PWMExtremeConfig,
     PWMExtremeResult,
     PWMExtremeServiceConfig,

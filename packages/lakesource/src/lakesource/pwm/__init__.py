@@ -1,9 +1,5 @@
 """PWM extreme quantile data layer."""
 
-from .reader import (
-    fetch_pwm_convergence_grid_agg,
-    fetch_pwm_converged_grid_agg,
-)
 from .schema import (
     PWMExtremeBatchConfig,
     PWMExtremeConfig,
@@ -42,3 +38,17 @@ __all__ = [
     "upsert_pwm_extreme_return_levels",
     "upsert_pwm_extreme_thresholds",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"fetch_pwm_convergence_grid_agg", "fetch_pwm_converged_grid_agg"}:
+        from .reader import (
+            fetch_pwm_convergence_grid_agg,
+            fetch_pwm_converged_grid_agg,
+        )
+
+        return {
+            "fetch_pwm_convergence_grid_agg": fetch_pwm_convergence_grid_agg,
+            "fetch_pwm_converged_grid_agg": fetch_pwm_converged_grid_agg,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

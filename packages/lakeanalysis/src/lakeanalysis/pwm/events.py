@@ -37,7 +37,7 @@ def run_runs_declustering(
     """
     warnings.warn(
         "run_runs_declustering is a legacy compatibility helper. "
-        "Prefer the C_k + segment pipeline in lakeanalysis.pwm_extreme.events.",
+        "Prefer the C_k + segment pipeline in lakeanalysis.pwm.events.",
         DeprecationWarning,
         stacklevel=2,
     )

@@ -127,6 +127,11 @@ class PostgresEotWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_eot_extremes(conn, rows, table_config=self._tc)
 
+    def upsert_eot_return_levels(self, rows):
+        from lakesource.postgres import lake_eot as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_eot_return_levels(conn, rows, table_config=self._tc)
+
     def upsert_eot_run_status(self, rows):
         from lakesource.postgres import lake_eot as _mod
         with self._conn_factory() as conn:

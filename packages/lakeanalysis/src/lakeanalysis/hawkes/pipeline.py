@@ -30,7 +30,7 @@ class HawkesQCFailError(Exception):
 
 
 @dataclass(frozen=True)
-class RunHawkesPipelineResult:
+class HawkesCoreResult:
     """Complete output of one lake through the Hawkes pipeline."""
     summary: dict
     lrt_rows: list[dict]
@@ -316,7 +316,7 @@ def run_hawkes_pipeline(
     min_relative_amplitude: float = 0.05,
     min_median_severity: float = 1.0,
     monthly_significance_quantile: float = 0.95,
-) -> RunHawkesPipelineResult:
+) -> HawkesCoreResult:
     """Orchestrate the full Hawkes pipeline for one lake.
 
     Pipeline steps:
@@ -463,7 +463,7 @@ def run_hawkes_pipeline(
         significance_quantile=monthly_significance_quantile,
     )
 
-    return RunHawkesPipelineResult(
+    return HawkesCoreResult(
         summary=summary,
         lrt_rows=lrt_frame.to_dict(orient="records"),
         transition_monthly_rows=monthly_rows,
