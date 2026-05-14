@@ -13,9 +13,30 @@
 
 ## 2. 输入
 
-### 2.1 PWM 极端事件
+### 2.1 index_value — 共享基础层
 
-对每个湖泊，通过 `compute_monthly_thresholds()` 得到：
+`index_value` 是 quantile 和 PWM 共享的标准输入，由 decomposition 层产出：
+
+```
+DecompositionResult (STL / monthly_climatology)
+       │
+       ├── quantile/compute.py   → index_value 用于分位数判定
+       └── pwm_extreme/compute.py → index_value 用于 PWM 交叉熵阈值
+```
+
+`index_value` 的定义因 decomposition 方法而异，当前 STL 方案将其定为
+月度百分位排名（∈ [0, 100]）。
+
+### 2.2 PWM 极端事件
+
+对每个湖泊，通过 **index_value 路径** 得到极端事件：
+
+- 阈值拟合：`compute_pooled_pwm_thresholds(result, ...)`
+  （`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/compute.py:292`）
+- 标签分配：`assign_pwm_extreme_labels(index_df, thresholds)`
+  （`:251`，要求 `index_value` 列）
+- 事件提取：`_extract_events_index(labeled_df)`
+  （`:554`，输出含 `index_value`、`threshold`、`severity`）
 
 ```text
 E = {(t_1, m_1, s_1), (t_2, m_2, s_2), ..., (t_n, m_n, s_n)}
@@ -23,11 +44,13 @@ E = {(t_1, m_1, s_1), (t_2, m_2, s_2), ..., (t_n, m_n, s_n)}
 
 - `t_i = year + (month - 1) / 12`：月份对应的连续时间
 - `m_i ∈ {high, low}`：极端类型
-- `s_i = |water_area - threshold|`：原始 severity（偏离阈值的绝对距离）
+- `s_i = |index_value - threshold|`：事件 severity（基于 index_value，百分位单位）
 
-来源：`extract_pwm_extreme_events()`（`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/compute.py`）
+> **注意**：不应使用 deprecated 的 raw `water_area` 路径
+> （`compute_monthly_thresholds` / `_extract_events_raw`）。
+> decay 算法建立在 index_value 上，与 quantile/PWM 的标准化输入一致。
 
-### 2.2 完整时间轴
+### 2.3 完整时间轴
 
 对每个湖，有一条完整的月时间轴 `T = {t_1, t_2, ..., t_N}`，覆盖所有年月（包括 normal 月）。
 
@@ -37,7 +60,9 @@ E = {(t_1, m_1, s_1), (t_2, m_2, s_2), ..., (t_n, m_n, s_n)}
 
 ### 3.1 z-score 标准化
 
-对每个湖、每种极端类型（high / low）分别标准化：
+对每个湖、每种极端类型（high / low）分别标准化。
+
+输入 `s_i` 已经基于 `index_value`（见 §2.2），是百分位单位的 severity：
 
 ```text
 z_i = (s_i - μ_type) / σ_type
@@ -70,29 +95,46 @@ f_i = ln(|z_i - 0.5| + 1)
 对整个月时间轴（包括 normal 月），逐月计算：
 
 ```text
-C_k = Σ_{i ≤ k} f_i × e^{-(month_k - month_i)}
+C_k = Σ_{i ≤ k} f_i × e^{-λ × (month_k - month_i)}
 ```
 
 其中 `i` 遍历所有已发生的极端月（high 或 low），不分类型求和。
+**λ 是可调衰减率**（decay rate），控制历史极端事件的记忆强度。
 
-**对 normal 月**：`f_i = 0`，但不重置衰减——旧事件的历史贡献仍通过 `e^{-gap}` 传导到 `C_k`。
+**λ 的物理含义：**
+
+| λ | 半衰期 | 含义 |
+|---|--------|------|
+| 0.3 | ~2.3 个月 | 缓慢衰减，允许较长的记忆窗口 |
+| 0.5 | ~1.4 个月 | 慢衰减 |
+| 0.7 | ~1.0 个月 | 中等衰减 |
+| 1.0 | ~0.7 个月 | 标准衰减（默认值） |
+| 1.5 | ~0.5 个月 | 快速衰减 |
+| 2.0 | ~0.35 个月 | 更快衰减，仅最近几星期的事件有实质贡献 |
+
+**建议默认值**：λ = 1.0。实际最优值应通过调参确定（以急转段数量、QC 通过率、LRT 显著率为指标）。
+
+**λ 的选择逻辑**：
+- λ 越大 → 记忆越短 → 连续极端月越容易断开 → 急转段更短、更多
+- λ 越小 → 记忆越长 → 远距离事件仍耦合在同一 C_k 段内 → 急转段更长、更少
+
+**对 normal 月**：`f_i = 0`，但不重置衰减——旧事件的历史贡献仍通过 `e^{-λ × gap}` 传导到 `C_k`。
 
 **关键性质：**
 
 | 情景 | C_k 行为 |
 |------|----------|
 | 孤立极端月 | `C_k = f_1`（仅自己贡献） |
-| 连续 3 个极端月，无间隔 | `C_3 = f_3 + f_2×e^{-1} + f_1×e^{-2}` |
-| 一个 4σ 极端 + 中间 3 个 normal 月 + 一个 3σ | 第一个的贡献从 `f_1` 衰减到 `f_1×e^{-3} ≈ 0.05×f_1` |
+| 连续 3 个极端月，无间隔 | `C_3 = f_3 + f_2 × e^{-λ} + f_1 × e^{-2λ}` |
+| 一个 4σ 极端 + 中间 3 个 normal 月 + 一个 3σ（λ=1） | 第一个的贡献从 `f_1` 衰减到 `f_1 × e^{-3} ≈ 0.05 × f_1` |
 | 全部 normal 月（无极端） | `C_k = 0` |
 
 **全序列计算方式**（非仅极端月）：
 
 1. 扫描整个时间轴（所有月）
 2. 遇到 high 或 low 月时度量 `f_i`，带入衰减求和
-3. new 月过后衰减历史值 `× e^{-1}`
-
-结果是一个长度与全序列相同的 `C_k` 数组。
+3. 每月过后衰减历史值 `× e^{-λ}`
+4. C_k = 衰减后的残余 + 当月贡献
 
 ### 3.4 急转段提取
 
@@ -190,12 +232,13 @@ computed_at      TIMESTAMPTZ
 
 | 文件 | 动作 | 新增/修改 |
 |------|------|----------|
-| `pwm_extreme/events.py` | 新增 `compute_decay_index()` | ~80 行 |
+| `pwm_extreme/events.py` | 新增 `compute_decay_index(decay_rate=...)` | ~80 行 |
 | `pwm_extreme/events.py` | 新增 `extract_segments()` | ~60 行 |
-| `batch/calculator/pwm_hawkes.py` | 替换 decluster 为 C_k 计算 | ~20 行改 |
+| `batch/calculator/pwm_hawkes.py` | 切换到 `compute_pooled_pwm_thresholds` + `_extract_events_index`（index_value 路径），替换 decluster 为 C_k 计算 | ~30 行改 |
 | `postgres/lake_pwm.py` | 新增 `pwm_hawkes_segments` 表 DDL + upsert | ~60 行 |
 | `pwm_extreme/store.py` | 新增 segments 行 shaper | ~30 行 |
 | `batch/calculator/pwm_hawkes.py` | 新增 segments 输出到 `result_to_rows` | ~10 行改 |
+| `scripts/run_pwm_hawkes.py` | 新增 `--decay-rate` CLI 参数 | ~5 行改 |
 | `scripts/plot_pwm_hawkes_lake.py` | 覆盖 C_k 曲线 + seg 标注 | ~40 行改 |
 | 测试 | `test_decay_index.py` | ~100 行 |
 
@@ -206,29 +249,31 @@ computed_at      TIMESTAMPTZ
 ## 7. C_k 计算伪代码
 
 ```
-function compute_decay_index(labels_df, series_df, thresholds):
+function compute_decay_index(labels_df, decay_rate=1.0):
 
-  # Step 1: z-score
+  # labels_df must contain index_value column (from DecompositionResult)
+
+  # Step 1: z-score (per-lake, per-type)
   for each event_type in {high, low}:
-    severities = labels_df[type].severity
+    type_events = labels_df[labels_df.extreme_label == type]
+    severities = abs(type_events.index_value - type_events.threshold)
     μ = mean(severities)
     σ = std(severities)  or 1 if σ=0
     for i in type_events:
-      z_i = (s_i - μ) / σ
+      z_i = (severities[i] - μ) / σ
 
-  # Step 2: f_i
-  f_i = ln(|z_i - 0.5| + 1)
+  # Step 2: f_i = ln(|z_i - 0.5| + 1)
 
   # Step 3: rolling decay over full timeline
-  C = 0
+  C = 0.0
   result = []
-  for each month in timeline:
-    # event at this month?
-    if month has extreme event:
-      C = C + f_i   # e^{-0} = 1 for the current month
-
+  for each month in full_timeline:
     # decay existing accumulations by 1 month
-    C = C * e^{-1}
+    C = C * exp(-decay_rate)
+
+    # event at this month?
+    if month has extreme event (high or low):
+      C = C + f_i    # undecayed contribution of current month
 
     result.append(C)
 
@@ -237,8 +282,12 @@ function compute_decay_index(labels_df, series_df, thresholds):
 
 **注意点：**
 
-- 上面的 "C = C + f_i" 和 "C = C * e^{-1}" 的顺序取决于"当前月的贡献是否应计入自己"。若当前月 `f_i` 应全额贡献给 `C_k`，则先 +f_i 后 ×e^{-1}（对当前月来说是 `C_k = C + f_i`）。若当前月贡献不应衰减，则先 ×e^{-1} 后 +f_i。
-- 建议采用"先衰减再累加"：`C = C * e^{-1}; C = C + f_i`，表示"先衰减旧事件，再累加当前事件"。这样 C_k 的物理含义是：**"从当前月回头看，所有已知事件在当前的衰减总和"**。
+- 采用"先衰减再累加"：`C = C * e^{-λ}; C = C + f_i`。
+  物理含义：**"从当前月回头看，所有已知事件在当前的衰减总和"**。
+- `decay_rate` 即 λ，默认 1.0，通过 CLI 参数 `--decay-rate` 调参。
+- 若月没有任何极端事件，步骤仅为 `C = C * e^{-λ}`（纯衰减）。
+- `index_value` 来自 `DecompositionResult`（STL 百分位排名 ∈ [0, 100]），
+  不应使用 raw `water_area`。
 
 ---
 
@@ -248,7 +297,9 @@ function compute_decay_index(labels_df, series_df, thresholds):
 2. **C_k 不分类型求和**：一个极涝事件和一个极旱事件都会增加 C_k，不会对消
 3. **Hawkes 事件数增加可能导致自激核拟合膨胀**：需通过 spectral_radius 和 LRT 监控
 4. **`f_i` 对 high 和 low 事件一视同仁**：两者的 severity 量级差异完全由 z-score 标准化解决
-5. **long gap (>10 months) → C_k 归零**：因为 `e^{-10} ≈ 4.5×10^{-5}`，对 float 精度基本无影响
+5. **λ 需要调参**：不同 λ 值会显著改变急转段的数量和长度。建议以急转段数量、QC 通过率、LRT 显著率为指标做网格搜索
+6. **必须使用 index_value 路径**：不应使用 deprecated 的 `compute_monthly_thresholds`（raw water_area）。`index_value` 来自 `DecompositionResult`，是 quantile/PWM 共享的标准化输入
+7. **long gap + fast decay → C_k 快速归零**：`e^{-λ × gap}` 在 λ=2, gap=5 时衰减至 ~4.5×10^{-5}，浮点下近似 0
 
 ---
 
