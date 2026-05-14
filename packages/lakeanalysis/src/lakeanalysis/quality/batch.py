@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from lakeanalysis.batch.domain import Calculator, LakeTask
-from lakeanalysis.batch.lake_dataset import LakeDataset
+from lakeanalysis.batch import Calculator, LakeDataset, LakeTask
 from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakesource.provider.base import LakeProvider
 from lakesource.postgres.quality_run_status_schema import (
@@ -161,35 +160,6 @@ class QualityCalculator(Calculator):
             "is_anomalous": bool(decision["is_anomalous"]),
         }
 
-    def run_dataset(
-        self,
-        dataset: LakeDataset,
-        *,
-        error_chunk: tuple[int, int] = (0, 0),
-    ) -> tuple[dict[str, list[dict]], int, int]:
-        from collections import defaultdict
-        all_rows: dict[str, list[dict]] = defaultdict(list)
-        success_lakes = 0
-        error_lakes = 0
-        chunk_start, chunk_end = error_chunk
-
-        for idx in range(len(dataset)):
-            task = dataset.to_task(idx)
-            try:
-                result = self._compute_lake(task)
-                for table, rows in self.result_to_rows(result).items():
-                    all_rows[table].extend(rows)
-                success_lakes += 1
-            except Exception as exc:
-                for table, rows in self.error_to_rows(
-                    task.hylak_id,
-                    exc,
-                    chunk_start,
-                    chunk_end,
-                ).items():
-                    all_rows[table].extend(rows)
-                error_lakes += 1
-        return dict(all_rows), success_lakes, error_lakes
 
     def result_to_rows(self, result: dict[str, Any]) -> dict[str, list[dict]]:
         table_name = "area_anomalies" if result["is_anomalous"] else "area_quality"

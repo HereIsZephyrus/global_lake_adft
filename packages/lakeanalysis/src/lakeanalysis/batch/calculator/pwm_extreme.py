@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from collections import defaultdict
 
 from lakesource.pwm_extreme.schema import (
     RUN_STATUS_DONE,
@@ -20,8 +19,7 @@ from lakesource.pwm_extreme.store import (
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig, PWMExtremeConfig
 
-from ..domain import Calculator, LakeTask
-from ..lake_dataset import LakeDataset
+from .. import Calculator, LakeTask
 
 
 class PWMExtremeCalculator(Calculator):
@@ -79,32 +77,3 @@ class PWMExtremeCalculator(Calculator):
                 )
             ],
         }
-
-    def run_dataset(
-        self,
-        dataset: LakeDataset,
-        *,
-        error_chunk: tuple[int, int] = (0, 0),
-    ) -> tuple[dict[str, list[dict]], int, int]:
-        all_rows: dict[str, list[dict]] = defaultdict(list)
-        success_lakes = 0
-        error_lakes = 0
-        chunk_start, chunk_end = error_chunk
-
-        for idx in range(len(dataset)):
-            task = dataset.to_task(idx)
-            try:
-                result = self._compute_lake(task)
-                for table, rows in self.result_to_rows(result).items():
-                    all_rows[table].extend(rows)
-                success_lakes += 1
-            except Exception as exc:
-                for table, rows in self.error_to_rows(
-                    task.hylak_id,
-                    exc,
-                    chunk_start,
-                    chunk_end,
-                ).items():
-                    all_rows[table].extend(rows)
-                error_lakes += 1
-        return dict(all_rows), success_lakes, error_lakes

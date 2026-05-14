@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .domain import LakeTask
+from .core import LakeTask
 
 
 @dataclass(frozen=True)

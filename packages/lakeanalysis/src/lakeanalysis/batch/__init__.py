@@ -1,6 +1,7 @@
 """Unified batch computing framework with MPI scheduling."""
 
-from .domain import Calculator, LakeFilter, LakeTask
+from .domain import Calculator, LakeFilter
+from .core import LakeTask
 from .engine import Engine
 from .filter import IdSetFilter, RangeFilter
 from .lake_dataset import LakeDataset
