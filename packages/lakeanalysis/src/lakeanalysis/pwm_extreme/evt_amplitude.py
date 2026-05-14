@@ -44,6 +44,23 @@ def _tail_threshold(values: np.ndarray, tail: str) -> float:
     return float(np.max(values))
 
 
+def _percentile_to_amplitude_threshold(
+    month_df: pd.DataFrame,
+    *,
+    tail: str,
+    amplitude_column: str,
+) -> float:
+    """Map a PWM percentile threshold back to the month's amplitude space."""
+    amplitudes = np.sort(month_df[amplitude_column].to_numpy(dtype=float))
+    if len(amplitudes) == 0:
+        raise ValueError("month_df must contain at least one observation")
+    percentile_threshold = float(
+        month_df["threshold_high"].iloc[0] if tail == "high" else month_df["threshold_low"].iloc[0]
+    )
+    quantile = float(np.clip(percentile_threshold / 100.0, 0.0, 1.0))
+    return float(np.quantile(amplitudes, quantile, method="linear"))
+
+
 def _build_tail_rows(
     tail_df: pd.DataFrame,
     *,
@@ -128,12 +145,8 @@ def compute_evt_amplitude_strengths(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compute Route B strengths using a continuous amplitude coordinate.
 
-    The current minimal implementation derives an amplitude-space threshold from
-    the PWM-labeled extreme months themselves:
-
-    - high tail threshold: minimum amplitude among ``extreme_high`` months
-    - low tail threshold: maximum amplitude among ``extreme_low`` months
-
+    The amplitude threshold is derived by mapping the pooled PWM percentile
+    threshold back to each calendar month's historical amplitude distribution.
     Strength remains the raw amplitude exceedance, while GPD fit and return
     levels are emitted as diagnostics / persisted outputs.
     """
@@ -141,6 +154,8 @@ def compute_evt_amplitude_strengths(
         "year",
         "month",
         "extreme_label",
+        "threshold_low",
+        "threshold_high",
         amplitude_column,
     }
     missing = required_cols - set(labeled_df.columns)
@@ -148,8 +163,6 @@ def compute_evt_amplitude_strengths(
         raise ValueError(f"labeled_df missing required columns: {sorted(missing)}")
 
     df = labeled_df.copy()
-    high_df = df[df["extreme_label"] == "extreme_high"].copy()
-    low_df = df[df["extreme_label"] == "extreme_low"].copy()
     empty_strengths = pd.DataFrame(
         columns=[
             "year",
@@ -175,23 +188,48 @@ def compute_evt_amplitude_strengths(
         "evt_route",
         "strength_unit",
     ]
-    if high_df.empty and low_df.empty:
+    extreme_df = df[df["extreme_label"] != "normal"].copy()
+    if extreme_df.empty:
         return empty_strengths, pd.DataFrame(columns=summary_cols)
 
-    if not high_df.empty:
-        high_threshold = _tail_threshold(high_df[amplitude_column].to_numpy(dtype=float), "high")
-        high_df["tail"] = "high"
-        high_df["amplitude_threshold"] = high_threshold
-        high_df["threshold"] = high_threshold
-        high_df["exceedance"] = high_df[amplitude_column].to_numpy(dtype=float) - high_threshold
-    if not low_df.empty:
-        low_threshold = _tail_threshold(low_df[amplitude_column].to_numpy(dtype=float), "low")
-        low_df["tail"] = "low"
-        low_df["amplitude_threshold"] = low_threshold
-        low_df["threshold"] = low_threshold
-        low_df["exceedance"] = low_threshold - low_df[amplitude_column].to_numpy(dtype=float)
+    threshold_rows: list[dict] = []
+    for month, month_df in df.groupby("month", sort=True):
+        threshold_rows.append(
+            {
+                "month": int(month),
+                "amplitude_threshold_high": _percentile_to_amplitude_threshold(
+                    month_df,
+                    tail="high",
+                    amplitude_column=amplitude_column,
+                ),
+                "amplitude_threshold_low": _percentile_to_amplitude_threshold(
+                    month_df,
+                    tail="low",
+                    amplitude_column=amplitude_column,
+                ),
+            }
+        )
 
-    strengths_df = pd.concat([high_df, low_df], ignore_index=True)
+    threshold_df = pd.DataFrame(threshold_rows)
+    strengths_df = extreme_df.merge(threshold_df, on="month", how="left")
+    high_mask = strengths_df["extreme_label"] == "extreme_high"
+    low_mask = strengths_df["extreme_label"] == "extreme_low"
+    strengths_df["tail"] = np.where(high_mask, "high", "low")
+    strengths_df["amplitude_threshold"] = np.where(
+        high_mask,
+        strengths_df["amplitude_threshold_high"],
+        strengths_df["amplitude_threshold_low"],
+    )
+    strengths_df["threshold"] = strengths_df["amplitude_threshold"]
+    strengths_df["exceedance"] = 0.0
+    strengths_df.loc[high_mask, "exceedance"] = (
+        strengths_df.loc[high_mask, amplitude_column].to_numpy(dtype=float)
+        - strengths_df.loc[high_mask, "amplitude_threshold"].to_numpy(dtype=float)
+    )
+    strengths_df.loc[low_mask, "exceedance"] = (
+        strengths_df.loc[low_mask, "amplitude_threshold"].to_numpy(dtype=float)
+        - strengths_df.loc[low_mask, amplitude_column].to_numpy(dtype=float)
+    )
     strengths_df = strengths_df.sort_values(["year", "month"]).reset_index(drop=True)
     strengths_df["exceedance"] = strengths_df["exceedance"].clip(lower=0.0)
     strengths_df["event_strength"] = strengths_df["exceedance"].to_numpy(dtype=float)
