@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
+from lakeanalysis.batch import LakeDataset, LakeDatasetQuery
 from lakeanalysis.batch.protocol import TAG_DATA, TAG_STATUS, WorkerState
 from lakeanalysis.batch.worker import Worker
 
@@ -133,3 +135,57 @@ def test_worker_run_id_batch_masks_done_ids() -> None:
         WorkerState.DONE,
         {"source": 2, "skipped": 1, "success": 1, "error": 0, "chunks": 1},
     )
+
+
+class _FakeDatasetFactory:
+    def build(self, query: LakeDatasetQuery):
+        lo = query.id_range[0] if query.id_range else 0
+        hi = query.id_range[1] if query.id_range else 10
+        n = hi - lo
+        return LakeDataset(
+            hylak_ids=np.asarray(list(range(lo, hi)), dtype=np.int64),
+            year_months=np.asarray([200001, 200002], dtype=np.int64),
+            values=np.ones((n, 2), dtype=float),
+        )
+
+
+class _FakeDatasetCalculator:
+    def run_dataset(self, dataset, *, error_chunk=(0, 0)):
+        del error_chunk
+        rows = {"mock": [{"hylak_id": int(hid)} for hid in dataset.hylak_ids.tolist()]}
+        return rows, len(dataset), 0
+
+
+def test_worker_run_dataset_id_batch_emits_correct_status_sequence() -> None:
+    comm = _FakeComm(trigger_count=2)
+    worker = Worker(
+        rank=1,
+        reader=_FakeProvider(),
+        algorithm="pwm_extreme",
+        calculator=_FakeDatasetCalculator(),
+        chunk_size=10,
+    )
+    factory = _FakeDatasetFactory()
+
+    queries = [
+        LakeDatasetQuery(id_range=(0, 3), algorithm="pwm_extreme"),
+        LakeDatasetQuery(id_range=(5, 8), algorithm="pwm_extreme"),
+    ]
+
+    worker.run_dataset_id_batch(comm, factory, queries)
+
+    status_messages = [payload for tag, payload in comm.messages if tag == TAG_STATUS]
+    assert [state for state, _ in status_messages] == [
+        WorkerState.PENDING,
+        WorkerState.READING,
+        WorkerState.CALCULATING,
+        WorkerState.PENDING,
+        WorkerState.READING,
+        WorkerState.CALCULATING,
+        WorkerState.DONE,
+    ]
+
+    data_messages = [payload for tag, payload in comm.messages if tag == TAG_DATA]
+    assert len(data_messages) == 2
+    assert len(data_messages[0]["mock"]) == 3
+    assert len(data_messages[1]["mock"]) == 3
