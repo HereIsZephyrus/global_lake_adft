@@ -97,6 +97,32 @@ CREATE TABLE IF NOT EXISTS {table} (
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_abrupt_transitions")))
 
 
+def _ensure_pwm_hawkes_segments_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id             INTEGER      NOT NULL,
+    segment_id           INTEGER      NOT NULL,
+    start_year           INTEGER      NOT NULL,
+    start_month          INTEGER      NOT NULL,
+    end_year             INTEGER      NOT NULL,
+    end_month            INTEGER      NOT NULL,
+    duration_months      INTEGER,
+    segment_type         TEXT,
+    has_high             BOOLEAN,
+    has_low              BOOLEAN,
+    max_C                DOUBLE PRECISION,
+    mean_C               DOUBLE PRECISION,
+    integral_C           DOUBLE PRECISION,
+    n_extreme_events     INTEGER,
+    first_extreme_type   TEXT,
+    last_extreme_type    TEXT,
+    workflow_version     TEXT,
+    computed_at          TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, segment_id)
+);
+""").format(table=sql.Identifier(tc.series_table("pwm_hawkes_segments")))
+
+
 def _ensure_pwm_extreme_status_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
@@ -259,6 +285,52 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     )
 
 
+def _upsert_pwm_hawkes_segments_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, segment_id,
+    start_year, start_month, end_year, end_month,
+    duration_months, segment_type,
+    has_high, has_low,
+    max_C, mean_C, integral_C,
+    n_extreme_events,
+    first_extreme_type, last_extreme_type,
+    workflow_version, computed_at
+) VALUES (
+    %(hylak_id)s, %(segment_id)s,
+    %(start_year)s, %(start_month)s, %(end_year)s, %(end_month)s,
+    %(duration_months)s, %(segment_type)s,
+    %(has_high)s, %(has_low)s,
+    %(max_C)s, %(mean_C)s, %(integral_C)s,
+    %(n_extreme_events)s,
+    %(first_extreme_type)s, %(last_extreme_type)s,
+    %(workflow_version)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    start_year         = EXCLUDED.start_year,
+    start_month        = EXCLUDED.start_month,
+    end_year           = EXCLUDED.end_year,
+    end_month          = EXCLUDED.end_month,
+    duration_months    = EXCLUDED.duration_months,
+    segment_type       = EXCLUDED.segment_type,
+    has_high           = EXCLUDED.has_high,
+    has_low            = EXCLUDED.has_low,
+    max_C              = EXCLUDED.max_C,
+    mean_C             = EXCLUDED.mean_C,
+    integral_C         = EXCLUDED.integral_C,
+    n_extreme_events   = EXCLUDED.n_extreme_events,
+    first_extreme_type = EXCLUDED.first_extreme_type,
+    last_extreme_type  = EXCLUDED.last_extreme_type,
+    workflow_version   = EXCLUDED.workflow_version,
+    computed_at        = now();
+""").format(
+        table=sql.Identifier(tc.series_table("pwm_hawkes_segments")),
+        conflict_cols=sql.SQL(", ").join(
+            sql.Identifier(c) for c in ("hylak_id", "segment_id")
+        ),
+    )
+
+
 def _count_pwm_extreme_status_in_range_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 SELECT COUNT(*)
@@ -290,6 +362,7 @@ def ensure_pwm_extreme_tables(
         cur.execute(_ensure_pwm_extreme_extremes_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_abrupt_transitions_table_sql(table_config))
         cur.execute(_ensure_pwm_hawkes_run_status_table_sql(table_config))
+        cur.execute(_ensure_pwm_hawkes_segments_table_sql(table_config))
     conn.commit()
 
 
@@ -567,3 +640,31 @@ def fetch_pwm_extreme_labels_by_id(
     if "extreme_label" in df.columns:
         df["extreme_label"] = df["extreme_label"].astype(str)
     return df
+
+
+def ensure_pwm_hawkes_segments_table(
+    conn: psycopg.Connection,
+    *,
+    table_config: TableConfig = _default_table_config,
+) -> None:
+    """Create the pwm_hawkes_segments table if it does not exist."""
+    with conn.cursor() as cur:
+        cur.execute(_ensure_pwm_hawkes_segments_table_sql(table_config))
+    conn.commit()
+
+
+def upsert_pwm_hawkes_segments(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    """Upsert PWM-Hawkes segments rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_pwm_hawkes_segments_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d pwm_hawkes_segments row(s)", len(rows))

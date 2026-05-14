@@ -3,7 +3,7 @@
 Usage:
     uv run python scripts/run_pwm_hawkes.py
     uv run python scripts/run_pwm_hawkes.py --chunk-size 5000 --limit-id 10000
-    uv run python scripts/run_pwm_hawkes.py --decluster-run-length 2
+    uv run python scripts/run_pwm_hawkes.py --decay-rate 0.7
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-id", type=int, default=None)
     parser.add_argument("--id-start", type=int, default=0)
     parser.add_argument("--id-end", type=int, default=None)
-    parser.add_argument("--decluster-run-length", type=int, default=1)
+    parser.add_argument("--decay-rate", type=float, default=1.0)
     parser.add_argument("--hawkes-window-months", type=float, default=4.0)
     parser.add_argument("--min-events", type=int, default=10)
     parser.add_argument("--min-event-rate", type=float, default=0.01)
@@ -61,11 +61,11 @@ def main() -> None:
         done_requires_status=True,
     )
     writer = build_provider_batch_writer(
-        source_config, ensure_tables=["pwm_extreme", "hawkes"],
+        source_config, ensure_tables=["pwm_extreme", "hawkes", "pwm_hawkes_segments"],
     )
     calculator = CalculatorFactory.create(
         "pwm_hawkes",
-        decluster_run_length=args.decluster_run_length,
+        decay_rate=args.decay_rate,
         hawkes_window_months=args.hawkes_window_months,
         min_events=args.min_events,
         min_event_rate=args.min_event_rate,

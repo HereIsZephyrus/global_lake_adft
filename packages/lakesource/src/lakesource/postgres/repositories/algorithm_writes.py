@@ -86,6 +86,11 @@ class PostgresPwmWriteRepository:
         with self._conn_factory() as conn:
             _mod.upsert_pwm_hawkes_run_status(conn, rows, table_config=self._tc)
 
+    def upsert_pwm_hawkes_segments(self, rows):
+        from lakesource.postgres import lake_pwm as _mod
+        with self._conn_factory() as conn:
+            _mod.upsert_pwm_hawkes_segments(conn, rows, table_config=self._tc)
+
     def count_pwm_extreme_status_in_range(self, chunk_start, chunk_end):
         from lakesource.postgres import lake_pwm as _mod
         with self._conn_factory() as conn:

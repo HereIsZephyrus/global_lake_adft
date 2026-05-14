@@ -1,7 +1,10 @@
-"""PWMExtremeHawkesCalculator: PWM event -> decluster -> Hawkes fit.
+"""PWMExtremeHawkesCalculator: PWM event -> exponential decay C_k -> Hawkes fit.
 
 Uses ``run_single_lake_service`` (STL decomposition + pooled PWM) so that
 the event-detection math is identical to the standalone PWM batch pipeline.
+
+Replaces the old hard-threshold runs declustering with an exponential
+decay index C_k and transition/unilateral segment extraction.
 """
 
 from __future__ import annotations
@@ -29,7 +32,8 @@ from lakeanalysis.hawkes.pipeline import (
 )
 from lakeanalysis.pwm_extreme.events import (
     build_hawkes_event_series_from_pwm_events,
-    run_runs_declustering,
+    compute_decay_index,
+    extract_segments,
 )
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import (
@@ -53,6 +57,7 @@ class PWMHawkesFitResult:
     lrt_rows: list[dict]
     hawkes_result_rows: list[dict]
     transition_monthly_rows: list[dict]
+    segments_rows: list[dict]
     error_message: str | None
 
 
@@ -61,13 +66,13 @@ class PWMExtremeHawkesCalculator(Calculator):
         self,
         *,
         pwm_config: PWMExtremeConfig | None = None,
-        decluster_run_length: int = 1,
+        decay_rate: float = 1.0,
         hawkes_window_months: float = 4.0,
         min_events: int = 10,
         min_event_rate: float = 0.01,
         max_event_rate: float = 0.30,
         min_relative_amplitude: float = 0.05,
-        min_median_severity: float = 5.0,
+        min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
         method: str = "stl",
     ) -> None:
@@ -76,7 +81,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             pwm_config=self._pwm_config,
             method=method,
         )
-        self._decluster_run_length = decluster_run_length
+        self._decay_rate = decay_rate
         self._hawkes_window_months = hawkes_window_months
         self._min_events = min_events
         self._min_event_rate = min_event_rate
@@ -98,23 +103,29 @@ class PWMExtremeHawkesCalculator(Calculator):
                 frozen_year_months=frozen or None,
             )
             raw_events = pwm_result.extremes_df
+
             if len(raw_events) < self._min_events:
                 return self._fail_qc(
-                    hylak_id, f"only {len(raw_events)} raw extreme months < min {self._min_events}"
+                    hylak_id,
+                    f"only {len(raw_events)} raw extreme months < min {self._min_events}",
                 )
 
-            declustered = run_runs_declustering(
-                raw_events, run_length=self._decluster_run_length
+            raw_events = raw_events.copy()
+            raw_events["time"] = (
+                raw_events["year"] + (raw_events["month"] - 1) / 12.0
             )
-            if len(declustered) < self._min_events:
-                return self._fail_qc(
-                    hylak_id,
-                    f"only {len(declustered)} declustered events < min {self._min_events}",
-                )
 
             event_series, events_table = build_hawkes_event_series_from_pwm_events(
-                declustered, series_df
+                raw_events, series_df
             )
+
+            decay_df = compute_decay_index(
+                pwm_result.labels_df,
+                decay_rate=self._decay_rate,
+            )
+            segments_df = extract_segments(decay_df)
+            segments_rows = _build_segments_rows(hylak_id, segments_df)
+
             qc, qc_pass = compute_qc_metrics(
                 series_df=series_df,
                 event_series=event_series,
@@ -139,6 +150,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                     lrt_rows=[],
                     hawkes_result_rows=[build_hawkes_result_row(summary)],
                     transition_monthly_rows=[],
+                    segments_rows=segments_rows,
                     error_message=msg,
                 )
 
@@ -262,6 +274,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                 lrt_rows=lrt_frame.to_dict(orient="records"),
                 hawkes_result_rows=[build_hawkes_result_row(summary)],
                 transition_monthly_rows=monthly_rows,
+                segments_rows=segments_rows,
                 error_message=None,
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -274,6 +287,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                 lrt_rows=[],
                 hawkes_result_rows=[build_hawkes_result_row(error_summary)],
                 transition_monthly_rows=[],
+                segments_rows=[],
                 error_message=str(exc)[:500],
             )
 
@@ -282,6 +296,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             "pwm_hawkes_results": result.hawkes_result_rows,
             "pwm_hawkes_lrt": result.lrt_rows,
             "pwm_hawkes_transition_monthly": result.transition_monthly_rows,
+            "pwm_hawkes_segments": result.segments_rows,
             "pwm_hawkes_run_status": [
                 make_pwm_hawkes_run_status_row(
                     hylak_id=result.hylak_id,
@@ -344,6 +359,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             lrt_rows=[],
             hawkes_result_rows=[build_hawkes_result_row(summary)],
             transition_monthly_rows=[],
+            segments_rows=[],
             error_message=message,
         )
 
@@ -411,6 +427,43 @@ class PWMExtremeHawkesCalculator(Calculator):
             "qc_median_severity": None,
             "error_message": message,
         }
+
+
+def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]:
+    rows: list[dict] = []
+    if segments_df.empty:
+        return rows
+    for _, seg in segments_df.iterrows():
+        rows.append(
+            {
+                "hylak_id": hylak_id,
+                "segment_id": int(seg["segment_id"]),
+                "start_year": int(seg["start_year"]),
+                "start_month": int(seg["start_month"]),
+                "end_year": int(seg["end_year"]),
+                "end_month": int(seg["end_month"]),
+                "duration_months": int(seg["duration_months"]),
+                "segment_type": str(seg["segment_type"]),
+                "has_high": bool(seg["has_high"]),
+                "has_low": bool(seg["has_low"]),
+                "max_C": float(seg["max_C"]),
+                "mean_C": float(seg["mean_C"]),
+                "integral_C": float(seg["integral_C"]),
+                "n_extreme_events": int(seg["n_extreme_events"]),
+                "first_extreme_type": (
+                    str(seg["first_extreme_type"])
+                    if seg.get("first_extreme_type") is not None
+                    else None
+                ),
+                "last_extreme_type": (
+                    str(seg["last_extreme_type"])
+                    if seg.get("last_extreme_type") is not None
+                    else None
+                ),
+                "workflow_version": None,
+            }
+        )
+    return rows
 
 
 def make_pwm_hawkes_run_status_row(
