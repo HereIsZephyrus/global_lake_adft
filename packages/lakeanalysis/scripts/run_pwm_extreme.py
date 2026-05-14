@@ -16,7 +16,6 @@ from lakeanalysis.batch import (
     build_provider_batch_reader,
     build_provider_batch_writer,
 )
-from lakeanalysis.batch.dataset import Dataset
 from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.logger import Logger
 
@@ -54,8 +53,6 @@ def main() -> None:
     if id_start > 0 or id_end is not None:
         range_filter = RangeFilter(start=id_start, end=id_end)
 
-    dataset = Dataset(source_config, lake_filter=range_filter)
-
     reader = build_provider_batch_reader(
         source_config,
         done_table="pwm_extreme_run_status",
@@ -74,7 +71,7 @@ def main() -> None:
         writer=writer,
         calculator=calculator,
         algorithm="pwm_extreme",
-        lake_filter=dataset.as_filter(),
+        lake_filter=range_filter,
         chunk_size=args.chunk_size,
         io_budget=args.io_budget,
         dataset_factory=LakeDatasetFactory.from_config(source_config),

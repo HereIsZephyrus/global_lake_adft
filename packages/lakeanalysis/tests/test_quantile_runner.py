@@ -104,7 +104,6 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     )
     monkeypatch.setattr(MODULE, "Logger", _FakeLogger)
     monkeypatch.setattr(MODULE, "SourceConfig", _FakeSourceConfig)
-    monkeypatch.setattr(MODULE, "Dataset", _FakeDataset)
     monkeypatch.setattr(MODULE, "Engine", _FakeEngine)
     monkeypatch.setattr(MODULE, "build_provider_batch_reader", fake_build_reader)
     monkeypatch.setattr(MODULE, "build_provider_batch_writer", fake_build_writer)
@@ -136,7 +135,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     assert engine_kwargs["io_budget"] == 2
     assert engine_kwargs["dataset_factory"] == "fake_factory"
     lake_filter = engine_kwargs["lake_filter"]
-    assert isinstance(lake_filter, _FakeIdSetFilter)
+    assert isinstance(lake_filter, MODULE.RangeFilter)
     assert captured["engine_run_called"] is True
 
 
@@ -154,7 +153,6 @@ def test_main_skips_range_filter_when_full_scan(monkeypatch) -> None:
     monkeypatch.setattr(MODULE, "parse_args", _default_args)
     monkeypatch.setattr(MODULE, "Logger", _noop)
     monkeypatch.setattr(MODULE, "SourceConfig", _make_object)
-    monkeypatch.setattr(MODULE, "Dataset", _FakeDataset)
     monkeypatch.setattr(MODULE, "Engine", _FakeEngine)
     monkeypatch.setattr(MODULE, "build_provider_batch_reader", _make_object)
     monkeypatch.setattr(MODULE, "build_provider_batch_writer", _make_object)
@@ -163,4 +161,4 @@ def test_main_skips_range_filter_when_full_scan(monkeypatch) -> None:
 
     MODULE.main()
 
-    assert isinstance(captured["lake_filter"], _FakeIdSetFilter)
+    assert captured["lake_filter"] is None
