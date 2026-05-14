@@ -76,3 +76,12 @@ parquet:
   comparison_extremes: comparison_extremes
   comparison_agreement: comparison_agreement
   comparison_run_status: comparison_run_status
+
+# Tables exempt from PARQUET_TABLE_SUFFIX — these are source data, never
+# test-specific.  Output tables (pwm_extreme_*, quantile_*, etc.) still
+# receive the suffix when the env var is set.
+parquet_suffix_exempt:
+  - lake_area
+  - lake_info
+  - area_quality
+  - area_anomalies

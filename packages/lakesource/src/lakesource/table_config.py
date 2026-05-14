@@ -31,6 +31,7 @@ class TableConfig:
     series_db: dict[str, str] = field(default_factory=dict)
     atlas_db: dict[str, str] = field(default_factory=dict)
     parquet: dict[str, str] = field(default_factory=dict)
+    suffix_exempt: frozenset[str] = frozenset()
     lake_geometry_id_column: str = "hylak_id"
     lake_geometry_geom_column: str = "geom"
     lake_geometry_simplify_meters: float = 0.0
@@ -58,6 +59,7 @@ class TableConfig:
             series_db=dict(data.get("series_db", {})),
             atlas_db=atlas,
             parquet=dict(data.get("parquet", {})),
+            suffix_exempt=frozenset(data.get("parquet_suffix_exempt", [])),
             lake_geometry_id_column=geometry.get("id_column", "hylak_id"),
             lake_geometry_geom_column=geometry.get("geom_column", "geom"),
             lake_geometry_simplify_meters=float(

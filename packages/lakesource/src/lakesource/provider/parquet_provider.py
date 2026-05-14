@@ -420,7 +420,9 @@ class ParquetLakeProvider(LakeProvider):
         return result
 
     def _table_path(self, table_name: str) -> Path:
-        suffix = os.environ.get("PARQUET_TABLE_SUFFIX", "")
+        suffix = ""
+        if table_name not in self._tc.suffix_exempt:
+            suffix = os.environ.get("PARQUET_TABLE_SUFFIX", "")
         return self._data_dir / f"{table_name}{suffix}.parquet"
 
     def _read_table_df(self, table_name: str) -> pd.DataFrame:
