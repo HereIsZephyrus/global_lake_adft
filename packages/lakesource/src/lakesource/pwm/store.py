@@ -165,8 +165,6 @@ def result_to_transition_rows(
 def return_levels_to_rows(
     hylak_id: int,
     summary_df,
-    *,
-    workflow_version: str | None = None,
 ) -> list[dict[str, Any]]:
     """Convert EVT summary rows to DB rows for pwm_extreme_return_levels."""
     if summary_df is None or summary_df.empty:
@@ -188,7 +186,6 @@ def return_levels_to_rows(
                 "error_message": None if row["error_message"] is None else str(row["error_message"]),
                 "evt_route": str(row["evt_route"]),
                 "strength_unit": str(row["strength_unit"]),
-                "workflow_version": workflow_version,
             }
         )
     return rows

@@ -1,11 +1,11 @@
 """DB adapter wrappers for PWM extreme outputs.
 
-Re-exported from lakesource.pwm_extreme.store to avoid duplication.
+Re-exported from lakesource.pwm.store to avoid duplication.
 """
 
 from __future__ import annotations
 
-from lakesource.pwm_extreme.store import (  # noqa: F401
+from lakesource.pwm.store import (  # noqa: F401
     ensure_pwm_extreme_tables,
     make_run_status_row,
     return_levels_to_rows,

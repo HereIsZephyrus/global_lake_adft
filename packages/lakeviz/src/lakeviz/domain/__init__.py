@@ -50,7 +50,7 @@ from .similarity import (
     draw_acf_cosine_distribution,
     draw_pearson_vs_acf,
 )
-from .pwm_extreme import (
+from .pwm import (
     draw_quantile_function,
     draw_threshold_summary,
 )

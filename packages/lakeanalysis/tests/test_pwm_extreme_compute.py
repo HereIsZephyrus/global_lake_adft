@@ -1,4 +1,4 @@
-"""Tests for lakeanalysis.pwm_extreme.compute."""
+"""Tests for lakeanalysis.pwm.compute."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lakeanalysis.pwm_extreme.compute import (
+from lakeanalysis.pwm.compute import (
     compute_monthly_thresholds,
     compute_one_month_thresholds,
     compute_pwm_beta,
@@ -16,7 +16,7 @@ from lakeanalysis.pwm_extreme.compute import (
     shifted_exponential_prior,
     solve_lagrange_multipliers,
 )
-from lakesource.pwm_extreme.schema import PWMExtremeConfig
+from lakesource.pwm.schema import PWMExtremeConfig
 
 
 PAPER_EXAMPLE = np.array([

@@ -1,7 +1,7 @@
 """Plot helpers for PWM extreme quantile results.
 
 Adapter layer: converts lakeanalysis domain types to generic DataFrames,
-then delegates to lakeviz.pwm_extreme for rendering.
+then delegates to lakeviz.pwm for rendering.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from lakeviz.pwm_extreme import (
+from lakeviz.pwm import (
     plot_pwm_extreme_quantile_functions as _plot_quantile_functions,
     plot_pwm_extreme_threshold_summary as _plot_threshold_summary,
 )

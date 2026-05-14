@@ -26,6 +26,7 @@ app = typer.Typer(help="Parquet ↔ PostgreSQL data sync", no_args_is_help=True)
 SYNC_TABLES: list[str] = [
     "eot_results",
     "eot_extremes",
+    "eot_return_levels",
     "quantile_labels",
     "quantile_extremes",
     "quantile_abrupt_transitions",
@@ -49,6 +50,7 @@ SYNC_TABLES: list[str] = [
 TABLE_TO_ENSURE_KEY: dict[str, str] = {
     "eot_results": "eot",
     "eot_extremes": "eot",
+    "eot_return_levels": "eot",
     "quantile_labels": "quantile",
     "quantile_extremes": "quantile",
     "quantile_abrupt_transitions": "quantile",

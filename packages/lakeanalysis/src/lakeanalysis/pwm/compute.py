@@ -25,7 +25,7 @@ from lakeanalysis.extreme.compute import (
 )
 from lakeanalysis.extreme.models import ExtremeResult, PWMDiagnostics
 from lakeanalysis.quality.frozen import filter_frozen_rows
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     PWMExtremeConfig,
     PWMExtremeMonthResult,
     PWMExtremeResult,

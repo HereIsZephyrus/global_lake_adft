@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.pwm_extreme.events import compute_decay_index, extract_segments
+from lakeanalysis.pwm.events import compute_decay_index, extract_segments
 
 
 def _labels_df() -> pd.DataFrame:

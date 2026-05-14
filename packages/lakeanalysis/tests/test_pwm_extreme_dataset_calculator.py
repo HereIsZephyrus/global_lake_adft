@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from lakeanalysis.batch import LakeDataset
-from lakeanalysis.batch.calculator.pwm_extreme import PWMExtremeCalculator
+from lakeanalysis.batch.calculator.pwm import PWMCalculator
 
 
 def test_pwm_extreme_calculator_runs_lake_dataset_batch() -> None:
@@ -25,7 +25,7 @@ def test_pwm_extreme_calculator_runs_lake_dataset_batch() -> None:
         ),
     )
 
-    calculator = PWMExtremeCalculator(method="legacy")
+    calculator = PWMCalculator(method="legacy")
 
     rows_by_table, success_lakes, error_lakes = calculator.run_dataset(dataset, error_chunk=(10, 11))
 

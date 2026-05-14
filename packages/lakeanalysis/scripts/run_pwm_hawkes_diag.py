@@ -58,7 +58,7 @@ def _run_batch(
     min_events: int, min_rate: float, max_rate: float,
 ) -> None:
     """Execute pwm_hawkes batch for lakes 0..limit_id."""
-    from lakesource.pwm_extreme.schema import PWMExtremeConfig
+    from lakesource.pwm.schema import PWMExtremeConfig
 
     source_config = SourceConfig()
     reader = build_provider_batch_reader(

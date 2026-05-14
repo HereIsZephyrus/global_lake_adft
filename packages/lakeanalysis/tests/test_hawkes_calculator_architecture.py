@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from lakeanalysis.batch.lake_dataset import LakeDataset
-from lakesource.pwm_extreme.schema import PWMExtremeConfig
+from lakesource.pwm.schema import PWMExtremeConfig
 
 
 def _make_synthetic_series(
@@ -75,12 +75,12 @@ class TestPWMHawkesUsesSTLPath:
         The key test: severity is computed as |index_value - threshold|,
         both in percentile [0, 100] space, NOT raw km².
         """
-        from lakeanalysis.pwm_extreme.service import run_single_lake_service
-        from lakesource.pwm_extreme.schema import (
+        from lakeanalysis.pwm.service import run_single_lake_service
+        from lakesource.pwm.schema import (
             PWMExtremeServiceConfig,
             PWMExtremeConfig,
         )
-        from lakeanalysis.pwm_extreme.events import run_runs_declustering
+        from lakeanalysis.pwm.events import run_runs_declustering
 
         series_df = _make_synthetic_series(seed=42)
         service_config = PWMExtremeServiceConfig(
@@ -114,18 +114,18 @@ class TestPWMHawkesUsesSTLPath:
                 f"severity={row['severity']} should equal |index_value - threshold|={expected}"
 
     def test_pwm_hawkes_calculator_invokes_service(self) -> None:
-        """PWMExtremeHawkesCalculator.run_dataset() uses decay index + segment filtering.
+        """PWMHawkesCalculator.run_dataset() uses decay index + segment filtering.
 
         Synthetic 6-year sinusoidal data typically does not produce transition
         segments (both high and low within one decay window), so the calculator
         should return a result (pass or fail).  We verify the table keys work.
         """
-        from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+        from lakeanalysis.batch.calculator.pwm_hawkes import PWMHawkesCalculator
 
         series_df = _make_synthetic_series(seed=43)
         ds = _make_single_dataset(series_df, hylak_id=1)
 
-        calculator = PWMExtremeHawkesCalculator(
+        calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
             min_event_rate=0.005,
             max_event_rate=0.50,
@@ -142,12 +142,12 @@ class TestPWMHawkesUsesSTLPath:
         assert "pwm_hawkes_segments" in rows_by_table
 
     def test_pwm_hawkes_accepts_phi_method_configuration(self) -> None:
-        from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+        from lakeanalysis.batch.calculator.pwm_hawkes import PWMHawkesCalculator
 
         series_df = _make_synthetic_series(seed=44)
         ds = _make_single_dataset(series_df, hylak_id=1)
 
-        calculator = PWMExtremeHawkesCalculator(
+        calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
             min_event_rate=0.005,
             max_event_rate=0.50,
@@ -160,12 +160,12 @@ class TestPWMHawkesUsesSTLPath:
         assert "pwm_hawkes_results" in rows_by_table
 
     def test_pwm_hawkes_route_b_runs_with_amplitude_evt(self) -> None:
-        from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+        from lakeanalysis.batch.calculator.pwm_hawkes import PWMHawkesCalculator
 
         series_df = _make_synthetic_series(seed=45)
         ds = _make_single_dataset(series_df, hylak_id=1)
 
-        calculator = PWMExtremeHawkesCalculator(
+        calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
             min_event_rate=0.005,
             max_event_rate=0.50,
@@ -201,7 +201,7 @@ class TestEOTHawkesDefaults:
             EOTHawkesCalculator,
         )
         from lakeanalysis.hawkes.pipeline import (
-            RunHawkesPipelineResult,
+            HawkesCoreResult,
             build_error_summary,
             build_hawkes_result_row,
         )
@@ -220,13 +220,30 @@ class TestEOTHawkesDefaults:
                       "significance_level": 0.05, "reject_null": False,
                       "restricted_log_likelihood": -110.0, "full_log_likelihood": -100.0}]
 
-        success_result = RunHawkesPipelineResult(
-            summary=summary,
-            lrt_rows=lrt_rows,
-            transition_monthly_rows=[],
+        success_result = calc._make_result(
+            HawkesCoreResult(
+                summary=summary,
+                lrt_rows=lrt_rows,
+                transition_monthly_rows=[],
+            )
         )
         rows_by_table = calc.result_to_rows(success_result)
         assert "eot_hawkes_results" in rows_by_table
         assert "eot_hawkes_lrt" in rows_by_table
         assert "eot_hawkes_transition_monthly" in rows_by_table
         assert "eot_hawkes_run_status" in rows_by_table
+
+    def test_eot_hawkes_emits_return_level_rows(self) -> None:
+        from lakeanalysis.batch.calculator.eot_hawkes import EOTHawkesCalculator
+
+        series_df = _make_synthetic_series(seed=46)
+        ds = _make_single_dataset(series_df, hylak_id=1)
+        calc = EOTHawkesCalculator(
+            threshold_quantile=0.90,
+            min_event_rate=0.005,
+            max_event_rate=0.50,
+            min_median_severity=0.1,
+        )
+
+        rows_by_table, _, _ = calc.run_dataset(ds)
+        assert "eot_return_levels" in rows_by_table

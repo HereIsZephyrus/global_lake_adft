@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lakeanalysis.pwm_extreme.evt_index import compute_evt_index_strengths
+from lakeanalysis.pwm.evt_index import compute_evt_index_strengths
 
 
 def test_compute_evt_index_strengths_uses_exceedance_as_strength() -> None:

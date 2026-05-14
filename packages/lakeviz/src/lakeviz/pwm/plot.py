@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from lakeviz.config import DEFAULT_VIZ_CONFIG
-from lakeviz.domain.pwm_extreme import (
+from lakeviz.domain.pwm import (
     plot_pwm_extreme_quantile_function,
     plot_pwm_extreme_threshold_summary as _plot_pwm_extreme_threshold_summary,
 )

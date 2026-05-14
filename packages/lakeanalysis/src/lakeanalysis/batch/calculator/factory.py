@@ -26,11 +26,13 @@ def _lazy_register(algorithm: str) -> None:
         from .quantile import QuantileCalculator
         CalculatorFactory._registry["quantile"] = QuantileCalculator
     elif algorithm == "pwm_extreme":
-        from .pwm_extreme import PWMExtremeCalculator
-        CalculatorFactory._registry["pwm_extreme"] = PWMExtremeCalculator
+        from .pwm import PWMCalculator
+
+        CalculatorFactory._registry["pwm_extreme"] = PWMCalculator
     elif algorithm == "pwm_hawkes":
-        from .pwm_hawkes import PWMExtremeHawkesCalculator
-        CalculatorFactory._registry["pwm_hawkes"] = PWMExtremeHawkesCalculator
+        from .pwm_hawkes import PWMHawkesCalculator
+
+        CalculatorFactory._registry["pwm_hawkes"] = PWMHawkesCalculator
     elif algorithm == "eot":
         from .eot import EOTCalculator
         CalculatorFactory._registry["eot"] = EOTCalculator

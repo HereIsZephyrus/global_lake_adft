@@ -18,6 +18,7 @@ series_db:
   entropy: entropy
   eot_results: eot_results
   eot_extremes: eot_extremes
+  eot_return_levels: eot_return_levels
   eot_run_status: eot_run_status
   pwm_hawkes_results: pwm_hawkes_results
   pwm_hawkes_lrt: pwm_hawkes_lrt
@@ -63,6 +64,7 @@ parquet:
   area_shift_labels: area_shift_labels
   af_nearest: af_nearest
   eot_extremes: eot_extremes
+  eot_return_levels: eot_return_levels
   pwm_hawkes_results: pwm_hawkes_results
   eot_hawkes_results: eot_hawkes_results
   interpolation_detect: interpolation_detect

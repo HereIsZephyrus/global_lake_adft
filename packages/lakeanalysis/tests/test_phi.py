@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lakeanalysis.pwm_extreme.phi import map_strength_df_to_phi, map_strength_to_phi
+from lakeanalysis.pwm.phi import map_strength_df_to_phi, map_strength_to_phi
 
 
 def test_map_strength_to_phi_identity() -> None:

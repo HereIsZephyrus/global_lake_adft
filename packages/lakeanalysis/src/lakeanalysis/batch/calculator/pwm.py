@@ -1,28 +1,28 @@
-"""PWMExtremeCalculator: batch wrapper for PWM extreme quantile."""
+"""PWMCalculator: batch wrapper for PWM extreme quantile."""
 
 from __future__ import annotations
 
 from typing import Any
 
 
-from lakesource.pwm_extreme.schema import (
+from lakesource.pwm.schema import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
 )
-from lakesource.pwm_extreme.store import (
+from lakesource.pwm.store import (
     make_run_status_row,
     result_to_extreme_rows,
     result_to_label_rows,
     result_to_threshold_rows,
     result_to_transition_rows,
 )
-from lakeanalysis.pwm_extreme.service import run_single_lake_service
-from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig, PWMExtremeConfig
+from lakeanalysis.pwm.service import run_single_lake_service
+from lakesource.pwm.schema import PWMExtremeServiceConfig, PWMExtremeConfig
 
 from .. import Calculator, LakeTask
 
 
-class PWMExtremeCalculator(Calculator):
+class PWMCalculator(Calculator):
     def __init__(
         self,
         *,

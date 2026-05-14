@@ -41,6 +41,7 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         ensure_tables=(
             "eot_results",
             "eot_extremes",
+            "eot_return_levels",
             "eot_run_status",
         ),
     ),
@@ -71,6 +72,7 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_table="eot_hawkes_run_status",
         done_requires_status=True,
         ensure_tables=(
+            "eot_return_levels",
             "eot_hawkes_run_status",
         ),
     ),
