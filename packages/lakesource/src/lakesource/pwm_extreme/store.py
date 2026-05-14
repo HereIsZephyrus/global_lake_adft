@@ -10,6 +10,7 @@ from lakesource.postgres.lake_pwm import (
     ensure_pwm_extreme_tables as ensure_pwm_extreme_tables_in_db,
     upsert_pwm_extreme_labels as upsert_pwm_extreme_labels_in_db,
     upsert_pwm_extreme_extremes as upsert_pwm_extreme_extremes_in_db,
+    upsert_pwm_extreme_return_levels as upsert_pwm_extreme_return_levels_in_db,
     upsert_pwm_extreme_abrupt_transitions as upsert_pwm_extreme_abrupt_transitions_in_db,
     upsert_pwm_extreme_run_status as upsert_pwm_extreme_run_status_in_db,
     upsert_pwm_extreme_thresholds as upsert_pwm_extreme_thresholds_in_db,
@@ -49,6 +50,15 @@ def upsert_pwm_extreme_extremes(
     commit: bool = True,
 ) -> None:
     upsert_pwm_extreme_extremes_in_db(conn, rows, commit=commit)
+
+
+def upsert_pwm_extreme_return_levels(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> None:
+    upsert_pwm_extreme_return_levels_in_db(conn, rows, commit=commit)
 
 
 def upsert_pwm_extreme_abrupt_transitions(
@@ -150,6 +160,50 @@ def result_to_transition_rows(
         "to_label",
     ]
     return result.transitions_df.loc[:, columns].to_dict("records")
+
+
+def return_levels_to_rows(
+    hylak_id: int,
+    summary_df,
+    *,
+    workflow_version: str | None = None,
+) -> list[dict[str, Any]]:
+    """Convert EVT summary rows to DB rows for pwm_extreme_return_levels."""
+    if summary_df is None or summary_df.empty:
+        return []
+    rows: list[dict[str, Any]] = []
+    for _, row in summary_df.iterrows():
+        rows.append(
+            {
+                "hylak_id": int(hylak_id),
+                "tail": str(row["tail"]),
+                "return_period": int(row["return_period"]),
+                "return_level": _maybe_float(row["return_level"]),
+                "shape": _maybe_float(row["shape"]),
+                "scale": _maybe_float(row["scale"]),
+                "threshold": _maybe_float(row["threshold"]),
+                "n_total": int(row["n_total"]),
+                "n_exceedances": int(row["n_exceedances"]),
+                "converged": bool(row["converged"]),
+                "error_message": None if row["error_message"] is None else str(row["error_message"]),
+                "evt_route": str(row["evt_route"]),
+                "strength_unit": str(row["strength_unit"]),
+                "workflow_version": workflow_version,
+            }
+        )
+    return rows
+
+
+def _maybe_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if value != value:
+        return None
+    return value
 
 
 def make_run_status_row(

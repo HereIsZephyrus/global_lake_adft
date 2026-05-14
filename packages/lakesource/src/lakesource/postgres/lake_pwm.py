@@ -78,6 +78,29 @@ CREATE TABLE IF NOT EXISTS {table} (
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_extremes")))
 
 
+def _ensure_pwm_extreme_return_levels_table_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+CREATE TABLE IF NOT EXISTS {table} (
+    hylak_id            INTEGER      NOT NULL,
+    tail                TEXT         NOT NULL,
+    return_period       INTEGER      NOT NULL,
+    return_level        DOUBLE PRECISION,
+    shape               DOUBLE PRECISION,
+    scale               DOUBLE PRECISION,
+    threshold           DOUBLE PRECISION,
+    n_total             INTEGER,
+    n_exceedances       INTEGER,
+    converged           BOOLEAN,
+    error_message       TEXT,
+    evt_route           TEXT         NOT NULL,
+    strength_unit       TEXT,
+    workflow_version    TEXT,
+    computed_at         TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (hylak_id, tail, return_period, evt_route)
+);
+""").format(table=sql.Identifier(tc.series_table("pwm_extreme_return_levels")))
+
+
 def _ensure_pwm_extreme_abrupt_transitions_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
@@ -252,6 +275,42 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
     )
 
 
+def _upsert_pwm_extreme_return_levels_sql(tc: TableConfig) -> sql.Composed:
+    return sql.SQL("""
+INSERT INTO {table} (
+    hylak_id, tail, return_period,
+    return_level, shape, scale, threshold,
+    n_total, n_exceedances,
+    converged, error_message,
+    evt_route, strength_unit, workflow_version, computed_at
+) VALUES (
+    %(hylak_id)s, %(tail)s, %(return_period)s,
+    %(return_level)s, %(shape)s, %(scale)s, %(threshold)s,
+    %(n_total)s, %(n_exceedances)s,
+    %(converged)s, %(error_message)s,
+    %(evt_route)s, %(strength_unit)s, %(workflow_version)s, now()
+)
+ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    return_level      = EXCLUDED.return_level,
+    shape             = EXCLUDED.shape,
+    scale             = EXCLUDED.scale,
+    threshold         = EXCLUDED.threshold,
+    n_total           = EXCLUDED.n_total,
+    n_exceedances     = EXCLUDED.n_exceedances,
+    converged         = EXCLUDED.converged,
+    error_message     = EXCLUDED.error_message,
+    strength_unit     = EXCLUDED.strength_unit,
+    workflow_version  = EXCLUDED.workflow_version,
+    computed_at       = now();
+""").format(
+        table=sql.Identifier(tc.series_table("pwm_extreme_return_levels")),
+        conflict_cols=sql.SQL(", ").join(
+            sql.Identifier(c)
+            for c in ("hylak_id", "tail", "return_period", "evt_route")
+        ),
+    )
+
+
 def _upsert_pwm_extreme_abrupt_transitions_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
@@ -360,6 +419,7 @@ def ensure_pwm_extreme_tables(
         cur.execute(_ensure_pwm_extreme_status_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_labels_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_extremes_table_sql(table_config))
+        cur.execute(_ensure_pwm_extreme_return_levels_table_sql(table_config))
         cur.execute(_ensure_pwm_extreme_abrupt_transitions_table_sql(table_config))
         cur.execute(_ensure_pwm_hawkes_run_status_table_sql(table_config))
         cur.execute(_ensure_pwm_hawkes_segments_table_sql(table_config))
@@ -432,6 +492,23 @@ def upsert_pwm_extreme_extremes(
     if commit:
         conn.commit()
     log.info("Upserted %d pwm_extreme_extremes row(s)", len(rows))
+
+
+def upsert_pwm_extreme_return_levels(
+    conn: psycopg.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    table_config: TableConfig = _default_table_config,
+    commit: bool = True,
+) -> None:
+    """Upsert PWM extreme return-level rows."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(_upsert_pwm_extreme_return_levels_sql(table_config), rows)
+    if commit:
+        conn.commit()
+    log.info("Upserted %d pwm_extreme_return_levels row(s)", len(rows))
 
 
 def upsert_pwm_extreme_abrupt_transitions(

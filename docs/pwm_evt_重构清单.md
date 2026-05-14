@@ -1,6 +1,21 @@
 # PWM-EVT-Hawkes 算法重构清单
 
-**依据：`docs/algorithm.md` v2.0  |  状态：待实施**
+**依据：`docs/algorithm.md` v2.0  |  状态：部分完成（2026-05-14）**
+
+## 当前进度
+
+已完成：
+- Phase 1：`compute_decay_index()` 已改为 `phi` 驱动的指数记忆累积，旧 z-score 递推已移除
+- Phase 2：Route A (`evt_index.py`) 与 Route B (`evt_amplitude.py`) 均已实现
+- Phase 2：`phi.py` 已实现，支持 `identity / log1p / normalize`
+- Phase 3：`pwm_evt_compare.py` 已实现，可输出 Route A/B 对比 CSV
+- Phase 4：`pwm_hawkes.py`、`run_pwm_hawkes.py` 已接入 `evt_route / phi_method`
+- Phase 5：`pwm_extreme_return_levels` 表、row shaper、provider dispatch、sync 支持已打通
+
+未完成：
+- Phase 3：单湖实验脚本 `pwm_evt_single_lake.py`
+- Phase 5：return level 诊断图与可视化
+- Phase 6：legacy 路径清理与归档
 
 ---
 

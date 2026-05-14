@@ -143,6 +143,7 @@ _SYMBOL_MAP = {
     "fetch_pwm_extreme_extremes_by_id": "lake_pwm",
     "fetch_pwm_extreme_labels_by_id": "lake_pwm",
     "fetch_pwm_extreme_status_ids_in_range": "lake_pwm",
+    "upsert_pwm_extreme_return_levels": "lake_pwm",
     "upsert_pwm_extreme_run_status": "lake_pwm",
     "upsert_pwm_extreme_thresholds": "lake_pwm",
     # lake_hawkes

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 import pandas as pd
 
@@ -29,6 +30,10 @@ from lakeanalysis.pwm_extreme.events import (
     extract_hawkes_events_from_segments,
     extract_segments,
 )
+from lakeanalysis.pwm_extreme.evt_amplitude import compute_evt_amplitude_strengths
+from lakeanalysis.pwm_extreme.evt_index import compute_evt_index_strengths
+from lakeanalysis.pwm_extreme.phi import map_strength_df_to_phi
+from lakeanalysis.pwm_extreme.store import return_levels_to_rows
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
@@ -50,6 +55,8 @@ class PWMHawkesPipelineResult:
     """Thin wrapper adding segments_rows to the shared pipeline result."""
     pipeline: RunHawkesPipelineResult
     segments_rows: list[dict]
+    return_level_rows: list[dict]
+    route_summary_rows: list[dict]
 
 
 class PWMExtremeHawkesCalculator(Calculator):
@@ -67,6 +74,8 @@ class PWMExtremeHawkesCalculator(Calculator):
         min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
         method: str = "stl",
+        evt_route: Literal["A", "B"] = "A",
+        phi_method: str = "identity",
     ) -> None:
         self._pwm_config = pwm_config or PWMExtremeConfig()
         self._service_config = PWMExtremeServiceConfig(
@@ -80,11 +89,25 @@ class PWMExtremeHawkesCalculator(Calculator):
         self._min_relative_amplitude = min_relative_amplitude
         self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
+        self._evt_route = evt_route
+        self._phi_method = phi_method
+
+    def _compute_strengths(self, labeled_df: pd.DataFrame) -> pd.DataFrame:
+        if self._evt_route == "A":
+            strengths_df, summary_df = compute_evt_index_strengths(labeled_df)
+            self._last_summary_df = summary_df
+            return strengths_df
+        if self._evt_route == "B":
+            strengths_df, summary_df = compute_evt_amplitude_strengths(labeled_df)
+            self._last_summary_df = summary_df
+            return strengths_df
+        raise ValueError(f"Unknown evt_route: {self._evt_route!r}")
 
     def _compute_lake(self, task: LakeTask) -> PWMHawkesPipelineResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
+        self._last_summary_df = pd.DataFrame()
 
         try:
             pwm_result = run_single_lake_service(
@@ -93,13 +116,32 @@ class PWMExtremeHawkesCalculator(Calculator):
                 config=self._service_config,
                 frozen_year_months=frozen or None,
             )
+            strengths_df = self._compute_strengths(pwm_result.labels_df)
+            phi_df = map_strength_df_to_phi(
+                strengths_df,
+                method=self._phi_method,
+            )
 
             decay_df = compute_decay_index(
                 pwm_result.labels_df,
                 decay_rate=self._decay_rate,
+                phi_df=phi_df,
             )
             segments_df = extract_segments(decay_df)
             segments_rows = _build_segments_rows(hylak_id, segments_df)
+            return_level_rows = return_levels_to_rows(
+                hylak_id,
+                self._last_summary_df,
+                workflow_version=f"evt_route={self._evt_route};phi_method={self._phi_method}",
+            )
+            route_summary_rows = _build_route_summary_rows(
+                hylak_id=hylak_id,
+                route=self._evt_route,
+                phi_method=self._phi_method,
+                strengths_df=strengths_df,
+                segments_df=segments_df,
+                summary_df=self._last_summary_df,
+            )
 
             events_df = extract_hawkes_events_from_segments(
                 pwm_result.labels_df, decay_df, segments_df
@@ -123,7 +165,10 @@ class PWMExtremeHawkesCalculator(Calculator):
                 monthly_significance_quantile=self._monthly_significance_quantile,
             )
             return PWMHawkesPipelineResult(
-                pipeline=pipeline_result, segments_rows=segments_rows
+                pipeline=pipeline_result,
+                segments_rows=segments_rows,
+                return_level_rows=return_level_rows,
+                route_summary_rows=route_summary_rows,
             )
         except HawkesQCFailError as e:
             summary = build_qc_fail_summary(hylak_id, e.qc, str(e))
@@ -132,6 +177,8 @@ class PWMExtremeHawkesCalculator(Calculator):
                     summary=summary, lrt_rows=[], transition_monthly_rows=[]
                 ),
                 segments_rows=[],
+                return_level_rows=[],
+                route_summary_rows=[],
             )
         except Exception as exc:
             log.debug("PWM-Hawkes failed for hylak_id=%d: %s", task.hylak_id, exc)
@@ -141,6 +188,8 @@ class PWMExtremeHawkesCalculator(Calculator):
                     summary=error_summary, lrt_rows=[], transition_monthly_rows=[]
                 ),
                 segments_rows=[],
+                return_level_rows=[],
+                route_summary_rows=[],
             )
 
 
@@ -155,6 +204,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             f"{_TABLE_PREFIX}_lrt": pr.lrt_rows,
             f"{_TABLE_PREFIX}_transition_monthly": pr.transition_monthly_rows,
             f"{_TABLE_PREFIX}_segments": result.segments_rows,
+            "pwm_extreme_return_levels": result.return_level_rows,
             f"{_TABLE_PREFIX}_run_status": [
                 make_hawkes_run_status_row(
                     hylak_id=pr.summary["hylak_id"],
@@ -217,3 +267,33 @@ def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]
             }
         )
     return rows
+
+
+def _build_route_summary_rows(
+    *,
+    hylak_id: int,
+    route: str,
+    phi_method: str,
+    strengths_df: pd.DataFrame,
+    segments_df: pd.DataFrame,
+    summary_df: pd.DataFrame,
+) -> list[dict]:
+    high_df = strengths_df[strengths_df["tail"] == "high"] if not strengths_df.empty else pd.DataFrame()
+    low_df = strengths_df[strengths_df["tail"] == "low"] if not strengths_df.empty else pd.DataFrame()
+    transition_df = segments_df[segments_df["segment_type"] == "transition"] if not segments_df.empty else pd.DataFrame()
+    return [
+        {
+            "hylak_id": hylak_id,
+            "evt_route": route,
+            "phi_method": phi_method,
+            "n_extreme_high": int(len(high_df)),
+            "n_extreme_low": int(len(low_df)),
+            "mean_strength_high": float(high_df["event_strength"].mean()) if not high_df.empty else None,
+            "mean_strength_low": float(low_df["event_strength"].mean()) if not low_df.empty else None,
+            "n_segments": int(len(segments_df)),
+            "n_transition_segments": int(len(transition_df)),
+            "mean_segment_duration": float(segments_df["duration_months"].mean()) if not segments_df.empty else None,
+            "n_return_level_fits": int(summary_df["converged"].fillna(False).sum()) if not summary_df.empty else 0,
+            "workflow_version": f"evt_route={route};phi_method={phi_method}",
+        }
+    ]
