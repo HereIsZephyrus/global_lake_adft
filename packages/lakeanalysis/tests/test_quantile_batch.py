@@ -42,6 +42,7 @@ class FakeProvider(LakeProvider):
     def __init__(self, lake_map=None, done_ids=None):
         self._lake_map = lake_map or {}
         self._done_ids = done_ids or set()
+        self._quality_ids = set(range(9))
 
     def fetch_lake_area_chunk(self, cs, ce):
         return {i: _make_series_df() for i in range(cs, min(ce, 10)) if i not in self._done_ids}
@@ -59,6 +60,9 @@ class FakeProvider(LakeProvider):
         return 9
 
     def fetch_rows(self, table_name, start, end):
+        if table_name == "area_quality":
+            ids = sorted(i for i in self._quality_ids if max(start, 0) <= i < min(end, 9))
+            return [{"hylak_id": i} for i in ids]
         return [{"hylak_id": i} for i in range(max(start, 0), min(end, 9))]
 
     def fetch_done_ids(self, table_name, start, end, status=None):
@@ -123,7 +127,11 @@ class FakeReader(BatchReader):
         return self._provider.fetch_max_hylak_id()
 
     def fetch_done_ids(self, algorithm, cs, ce):
-        return {0, 1}
+        del algorithm
+        return self._provider.fetch_done_ids("done", cs, ce)
+
+    def fetch_quality_ids(self):
+        return set(self._provider._quality_ids)
 
 
 class FakeWriter(BatchWriter):
@@ -228,6 +236,46 @@ def test_engine_skips_all_done_lakes() -> None:
     report = engine.run()
 
     assert report.success_lakes == 0
+
+
+def test_engine_build_queries_uses_quality_domain_and_id_subsets() -> None:
+    provider = FakeProvider(done_ids={11})
+    provider._quality_ids = {2, 11, 100, 300}
+    engine = Engine(
+        reader=FakeReader(provider),
+        writer=FakeWriter(),
+        calculator=_FakeCalculator(),
+        algorithm="quantile",
+        chunk_size=2,
+        dataset_factory=None,
+    )
+
+    queries = list(engine._build_queries())
+
+    assert [query.id_subset for query in queries] == [
+        frozenset({2, 100}),
+        frozenset({300}),
+    ]
+    assert all(query.id_range is None for query in queries)
+    assert all(query.exclude_done is False for query in queries)
+
+
+def test_engine_build_queries_applies_range_filter_within_quality_domain() -> None:
+    provider = FakeProvider()
+    provider._quality_ids = {2, 11, 100, 300}
+    engine = Engine(
+        reader=FakeReader(provider),
+        writer=FakeWriter(),
+        calculator=_FakeCalculator(),
+        algorithm="quantile",
+        lake_filter=RangeFilter(start=10, end=200),
+        chunk_size=10,
+        dataset_factory=None,
+    )
+
+    queries = list(engine._build_queries())
+
+    assert [query.id_subset for query in queries] == [frozenset({11, 100})]
 
 
 def test_make_run_status_row_done() -> None:

@@ -208,3 +208,20 @@ def test_drain_does_not_double_consume() -> None:
     manager._flush()
 
     assert provider.persist_calls == [{"mock": [{"hylak_id": 1}, {"hylak_id": 2}]}]
+
+
+def test_assign_dataset_queries_preserves_sparse_id_subsets() -> None:
+    comm = _FakeComm()
+    manager = Manager(comm, size=3, io_budget=1, writer=_CollectingProvider())
+
+    assignments = manager._assign_dataset_queries(
+        sorted_ids=[2, 100, 300],
+        batch_size=2,
+        algorithm="quantile",
+    )
+
+    assert assignments[1][0].id_subset == frozenset({2, 100})
+    assert assignments[1][0].id_range is None
+    assert assignments[1][0].exclude_done is False
+    assert assignments[2][0].id_subset == frozenset({300})
+    assert assignments[2][0].id_range is None

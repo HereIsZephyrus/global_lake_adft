@@ -30,6 +30,9 @@ class BatchReader(ABC):
     @abstractmethod
     def fetch_done_ids(self, algorithm: str, chunk_start: int, chunk_end: int) -> set[int]: ...
 
+    @abstractmethod
+    def fetch_quality_ids(self) -> set[int]: ...
+
 
 class BatchWriter(ABC):
     @abstractmethod
@@ -84,6 +87,14 @@ class ProviderBatchReader(BatchReader):
         done_requires_status = self._done_requires_status or spec.done_requires_status
         status = "done" if done_requires_status else None
         return self._provider.fetch_done_ids(table_name, chunk_start, chunk_end, status=status)
+
+    def fetch_quality_ids(self) -> set[int]:
+        rows = self._provider.fetch_rows("area_quality", 0, 2 ** 31)
+        return {
+            int(row["hylak_id"])
+            for row in rows
+            if row.get("hylak_id") is not None
+        }
 
 
 class ProviderBatchWriter(BatchWriter):

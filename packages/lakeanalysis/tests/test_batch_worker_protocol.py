@@ -77,10 +77,14 @@ class _FakeDatasetFactory:
 
     def build(self, query):
         self._build_count += 1
-        lo, hi = query.id_range or (0, 3)
-        n = hi - lo
+        if query.id_subset is not None:
+            hylak_ids = np.asarray(sorted(query.id_subset), dtype=np.int64)
+        else:
+            lo, hi = query.id_range or (0, 3)
+            hylak_ids = np.arange(lo, hi, dtype=np.int64)
+        n = len(hylak_ids)
         return LakeDataset(
-            hylak_ids=np.arange(lo, hi, dtype=np.int64),
+            hylak_ids=hylak_ids,
             year_months=np.asarray([200001, 200002], dtype=np.int64),
             values=np.ones((n, 2), dtype=float),
         )

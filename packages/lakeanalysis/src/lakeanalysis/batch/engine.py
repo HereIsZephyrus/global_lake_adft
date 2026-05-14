@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from .domain import Calculator, LakeFilter
-from .filter import IdSetFilter, RangeFilter
 from .io import BatchReader, BatchWriter
 from .lake_dataset_factory import LakeDatasetFactory
 from .lake_dataset_query import LakeDatasetQuery
-from .protocol import RunReport
+from .protocol import RunReport, _iter_id_batches
 
 
 class Engine:
@@ -35,6 +34,19 @@ class Engine:
     def _maybe_truncate(self) -> None:
         if self._lake_filter is None:
             self._writer.truncate_run_status(self._algorithm)
+
+    def _resolve_candidate_ids(self) -> list[int]:
+        candidate_ids = self._reader.fetch_quality_ids()
+        if self._lake_filter is not None:
+            candidate_ids = self._lake_filter(candidate_ids)
+        if candidate_ids:
+            done_ids = self._reader.fetch_done_ids(
+                self._algorithm,
+                min(candidate_ids),
+                max(candidate_ids) + 1,
+            )
+            candidate_ids -= done_ids
+        return sorted(candidate_ids)
 
     def run(self) -> RunReport | None:
         try:
@@ -89,42 +101,9 @@ class Engine:
     def _run_mpi(self, comm, size: int, rank: int) -> RunReport | None:
         from .manager import Manager
         from .worker import Worker
-
-        if self._lake_filter is not None and isinstance(self._lake_filter, IdSetFilter):
-            sorted_ids = sorted(self._lake_filter.ids)
-
-            if rank == 0:
-                self._writer.ensure_schema(self._algorithm)
-                manager = Manager(
-                    comm, size, self._io_budget,
-                    self._lake_filter, self._writer,
-                )
-                result = manager.run_dataset_id_batch(
-                    sorted_ids, self._chunk_size, self._algorithm,
-                )
-                self._maybe_truncate()
-                return result
-
-            queries = comm.bcast(None, root=0)
-            worker = Worker(
-                rank, self._reader, self._algorithm,
-                self._calculator, self._chunk_size,
-            )
-            worker.run_dataset_id_batch(comm, self._dataset_factory, queries)
-            comm.bcast(None, root=0)
-            return None
-
-        # Range-filter or full-sweep MPI:
         if rank == 0:
             self._writer.ensure_schema(self._algorithm)
-            if isinstance(self._lake_filter, RangeFilter):
-                start = self._lake_filter.start
-                end = self._lake_filter.end or (self._reader.fetch_max_hylak_id() + 1)
-                sorted_ids = list(range(start, end))
-            else:
-                max_id = self._reader.fetch_max_hylak_id()
-                sorted_ids = list(range(0, max_id + 1))
-
+            sorted_ids = self._resolve_candidate_ids()
             manager = Manager(
                 comm, size, self._io_budget, self._lake_filter, self._writer,
             )
@@ -147,34 +126,11 @@ class Engine:
 
     def _build_queries(self):
         """Yield ``LakeDatasetQuery`` objects for the configured filter."""
-        if self._lake_filter is not None and isinstance(self._lake_filter, IdSetFilter):
-            sorted_ids = sorted(self._lake_filter.ids)
-            if sorted_ids:
-                yield LakeDatasetQuery(
-                    algorithm=self._algorithm,
-                    id_range=(min(sorted_ids), max(sorted_ids) + 1),
-                    require_quality=False,
-                    exclude_done=True,
-                )
-            return
-
-        if self._lake_filter is not None and isinstance(self._lake_filter, RangeFilter):
-            start = self._lake_filter.start
-            end = self._lake_filter.end or self._reader.fetch_max_hylak_id()
-            for cs in range(start, end, self._chunk_size):
-                yield LakeDatasetQuery(
-                    algorithm=self._algorithm,
-                    id_range=(cs, min(cs + self._chunk_size, end)),
-                    require_quality=False,
-                    exclude_done=True,
-                )
-            return
-
-        max_id = self._reader.fetch_max_hylak_id()
-        for cs in range(0, max_id, self._chunk_size):
+        sorted_ids = self._resolve_candidate_ids()
+        for id_batch in _iter_id_batches(sorted_ids, self._chunk_size):
             yield LakeDatasetQuery(
                 algorithm=self._algorithm,
-                id_range=(cs, min(cs + self._chunk_size, max_id)),
+                id_subset=frozenset(id_batch),
                 require_quality=False,
-                exclude_done=True,
+                exclude_done=False,
             )

@@ -98,6 +98,9 @@ class _FakeReader(BatchReader):
     def fetch_done_ids(self, algorithm, cs, ce):
         return {hid for hid in self._provider._done_ids if cs <= hid < ce}
 
+    def fetch_quality_ids(self):
+        return set(range(10))
+
 
 class _FakeWriter(BatchWriter):
     def __init__(self, provider: _FakeProvider) -> None:

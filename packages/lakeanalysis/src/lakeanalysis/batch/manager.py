@@ -15,7 +15,6 @@ import time
 from collections import deque
 
 from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_id_batches
-from .filter import IdSetFilter
 from .lake_dataset_query import LakeDatasetQuery
 
 log = logging.getLogger(__name__)
@@ -175,9 +174,9 @@ class Manager:
             assignments[r] = [
                 LakeDatasetQuery(
                     algorithm=algorithm,
-                    id_range=(min(b), max(b) + 1),
+                    id_subset=frozenset(b),
                     require_quality=False,
-                    exclude_done=True,
+                    exclude_done=False,
                 )
                 for b in batches_for_worker
             ]
