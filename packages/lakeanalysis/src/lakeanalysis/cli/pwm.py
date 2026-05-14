@@ -46,7 +46,7 @@ def hawkes(
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
     io_budget: IoBudgetOpt = 4,
-    decay_rate: float = typer.Option(1.0, help="Exponential decay rate λ for C_k index"),
+    decay_rate: float = typer.Option(1.0, help="Exponential decay rate λ for S_k strength"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.30, help="Maximum event rate"),

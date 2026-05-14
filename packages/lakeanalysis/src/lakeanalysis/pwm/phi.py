@@ -1,4 +1,4 @@
-"""Utilities for mapping EVT strength to positive C_k weights."""
+"""Utilities for mapping EVT strength to positive S_k weights."""
 
 from __future__ import annotations
 

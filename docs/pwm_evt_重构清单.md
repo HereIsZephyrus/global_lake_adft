@@ -19,35 +19,35 @@
 
 ---
 
-## Phase 1：C_k 计算修正（events.py）
+## Phase 1：S_k 计算修正（events.py）
 
 ### 1.1 重写 `compute_decay_index()`
 
-**文件**：`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/events.py`
+**文件**：`packages/lakeanalysis/src/lakeanalysis/pwm/events.py`
 
 当前错误公式：
 ```text
 f_i = ln(|z_i - 0.5| + 1)
-C_k = C_{k-1} * e^{-λ} + f_i        // 递推式
+S_k = S_{k-1} * e^{-λ} + phi_i      // 线性递推式
 ```
 
 目标公式（见 `algorithm.md §5.2`）：
 ```text
-C_k = ln( Σ_{i≤k, extreme} phi_i · exp(-a · (month_k - month_i)) )
+S_k = Σ_{i≤k, extreme} phi_i · exp(-a · (month_k - month_i))
 ```
 
 改动：
 - 移除 `f_i` 和 `z_i` 的当前计算
-- 改用 log-sum-exp：对每个 `k`，遍历所有 `phi_i` 计算加权和再取 log
+- 改用线性 `S_k` 递推；normal 月不新增 `phi_i`，仅衰减既有记忆
 - `phi_i` 暂用 `exceedance_i`（`|index_value - threshold|`）作为 fallback，后续 Phase 2 切换到 EVT strength
 - 保留 high/low mask 用于 `has_high`/`has_low` 列
 
 ### 1.2 复查 `extract_segments()` 阈值
 
-当前用 `C_k > 0`（等价于 `sum(phi * exp(-a*gap)) > 1`）。
+当前用 `S_k > 1` 作为单个 bridge normal 月的活跃基线。
 
 - 在小样本湖泊上观察 active segment 数量/长度分布
-- 如果过长或过多，可引入 `θ` 参数化为 `C_k > ln(θ)`
+- 如果过长或过多，可引入 `θ` 参数化为 `S_k > θ`
 - 记录对比：`θ = 1` vs `θ = 0.5` vs `θ = 2.0`
 
 ### 1.3 `std = 0` 处理
@@ -61,7 +61,7 @@ C_k = ln( Σ_{i≤k, extreme} phi_i · exp(-a · (month_k - month_i)) )
 
 ### 2.1 Route A：`index_value` 空间 EVT
 
-**新文件**：`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/evt_index.py`
+**文件**：`packages/lakeanalysis/src/lakeanalysis/pwm/evt_index.py`
 
 ```
 输入：labeled_df (含 index_value, threshold_low/high, extreme_label)
@@ -82,7 +82,7 @@ C_k = ln( Σ_{i≤k, extreme} phi_i · exp(-a · (month_k - month_i)) )
 
 ### 2.2 Route B：连续幅值空间 EVT
 
-**新文件**：`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/evt_amplitude.py`
+**文件**：`packages/lakeanalysis/src/lakeanalysis/pwm/evt_amplitude.py`
 
 ```
 输入：series_df (含 water_area), labels_df (PWM 判定), stl_result
@@ -98,7 +98,7 @@ C_k = ln( Σ_{i≤k, extreme} phi_i · exp(-a · (month_k - month_i)) )
 
 ### 2.3 共享 `phi` 映射
 
-**新文件**：`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/phi.py`
+**文件**：`packages/lakeanalysis/src/lakeanalysis/pwm/phi.py`
 
 ```python
 def map_strength_to_phi(strength: np.ndarray, method: str = "identity") -> np.ndarray:
@@ -121,7 +121,7 @@ def map_strength_to_phi(strength: np.ndarray, method: str = "identity") -> np.nd
 ```
 功能：对单个 hylak_id 跑完整 PWM-EVT 流程
 参数：--hylak-id, --csv, --route A|B, --decay-rate
-输出：单个 CSV + 诊断图（C_k timeline, exceedance hist, return level plot）
+输出：单个 CSV + 诊断图（S_k timeline, exceedance hist, return level plot）
 ```
 
 ### 3.2 小批量对比脚本
@@ -209,13 +209,12 @@ events_df = extract_hawkes_events_from_segments(...)
 | scale | FLOAT | GPD σ |
 | threshold | FLOAT | 阈值 |
 | n_exceedances | INT | 超阈值事件数 |
-| workflow_version | TEXT | 版本标记 |
 
 ### 5.2 可视化
 
 可选新增诊断图：
 - Return level plot (log-return-period vs return-level)
-- C_k timeline with segment overlay
+- S_k timeline with segment overlay
 - GPD QQ plot per lake per tail
 
 ---
@@ -251,13 +250,13 @@ events_df = extract_hawkes_events_from_segments(...)
 
 1. GPD fit 在小样本下可能不收敛 → 需要 fallback 到原始 exceedance
 2. Route B 的 threshold 映射可能引入误差 → 需要仔细选择映射方法
-3. C_k log-sum-exp 在长序列上可能数值溢出 → 用 `logsumexp` trick
+3. 若保留线性 S_k，需要关注极长序列上的累计尺度漂移
 
 ### 测试策略
 
 | 文件 | 测试内容 |
 |------|---------|
-| `test_decay_index.py` | 修正后的 C_k 计算 |
+| `test_decay_index.py` | 修正后的 S_k 计算 |
 | `test_evt_index.py` | Route A GPD fit + return level |
 | `test_evt_amplitude.py` | Route B GPD fit + return level |
 | `test_phi.py` | phi 映射函数 |
