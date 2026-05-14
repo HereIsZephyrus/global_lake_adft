@@ -12,6 +12,8 @@ import logging
 from .domain import Calculator, LakeFilter, LakeTask
 from .filter import IdSetFilter, RangeFilter
 from .io import BatchReader, BatchWriter
+from .lake_dataset_factory import LakeDatasetFactory
+from .lake_dataset_query import LakeDatasetQuery
 from .protocol import RunReport, _iter_chunk_ranges, _iter_id_batches
 
 log = logging.getLogger(__name__)
@@ -233,3 +235,41 @@ class SingleProcessIdBatchRunner:
                     all_rows[table].extend(rows)
                 report.error_lakes += 1
         return all_rows
+
+
+class SingleProcessLakeDatasetRunner:
+    def __init__(
+        self,
+        dataset_factory: LakeDatasetFactory,
+        dataset_query: LakeDatasetQuery,
+        writer: BatchWriter,
+        calculator: Calculator,
+        *,
+        algorithm: str,
+    ) -> None:
+        self._dataset_factory = dataset_factory
+        self._dataset_query = dataset_query
+        self._writer = writer
+        self._calculator = calculator
+        self._algorithm = algorithm
+
+    def run(self) -> RunReport:
+        self._writer.ensure_schema(self._algorithm)
+        dataset = self._dataset_factory.build(self._dataset_query)
+        report = RunReport(total_chunks=1)
+        report.source_lakes = len(dataset)
+
+        if len(dataset) == 0:
+            report.skipped_chunks = 1
+            return report
+
+        rows_by_table, success_lakes, error_lakes = self._calculator.run_dataset(
+            dataset,
+            error_chunk=(0, 1),
+        )
+        if any(rows_by_table.values()):
+            self._writer.persist(dict(rows_by_table))
+        report.processed_chunks = 1
+        report.success_lakes = success_lakes
+        report.error_lakes = error_lakes
+        return report

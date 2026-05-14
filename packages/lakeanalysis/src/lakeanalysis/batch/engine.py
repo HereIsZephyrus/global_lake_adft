@@ -5,6 +5,7 @@ from __future__ import annotations
 from .domain import Calculator, LakeFilter, LakeTask
 from .filter import IdSetFilter, RangeFilter
 from .io import BatchReader, BatchWriter
+from .lake_dataset_query import LakeDatasetQuery
 from .protocol import RunReport
 
 
@@ -19,6 +20,7 @@ class Engine:
         lake_filter: LakeFilter | None = None,
         chunk_size: int = 10_000,
         io_budget: int = 4,
+        dataset_factory = None,
     ) -> None:
         self._reader = reader
         self._writer = writer
@@ -27,6 +29,7 @@ class Engine:
         self._lake_filter = lake_filter
         self._chunk_size = chunk_size
         self._io_budget = io_budget
+        self._dataset_factory = dataset_factory
 
     def _is_id_batch_mode(self) -> bool:
         return isinstance(self._lake_filter, IdSetFilter)
@@ -55,6 +58,30 @@ class Engine:
 
         if self._is_id_batch_mode():
             if size <= 1:
+                if self._dataset_factory is not None:
+                    from .single_process import SingleProcessLakeDatasetRunner
+                    sorted_ids = sorted(self._lake_filter.ids)
+
+                    query = None
+                    if sorted_ids:
+                        lo, hi = min(sorted_ids), max(sorted_ids) + 1
+                        query = LakeDatasetQuery(
+                            algorithm=self._algorithm,
+                            id_range=(lo, hi),
+                            require_quality=False,
+                            exclude_done=True,
+                        )
+
+                    result = SingleProcessLakeDatasetRunner(
+                        self._dataset_factory,
+                        query,
+                        self._writer,
+                        self._calculator,
+                        algorithm=self._algorithm,
+                    ).run()
+                    self._maybe_truncate()
+                    return result
+
                 from .single_process import SingleProcessIdBatchRunner
 
                 result = SingleProcessIdBatchRunner(
@@ -69,6 +96,26 @@ class Engine:
                 return result
             from .manager import Manager
             from .worker import Worker
+
+            if self._dataset_factory is not None:
+                if rank == 0:
+                    self._writer.ensure_schema(self._algorithm)
+                    sorted_ids = sorted(self._lake_filter.ids)
+                    manager = Manager(comm, size, self._io_budget, self._lake_filter, self._writer)
+                    result = manager.run_dataset_id_batch(
+                        sorted_ids, self._chunk_size, self._algorithm
+                    )
+                    self._maybe_truncate()
+                    return result
+
+                queries = comm.bcast(None, root=0)
+                worker = Worker(
+                    rank, self._reader, self._algorithm,
+                    self._calculator, self._chunk_size,
+                )
+                worker.run_dataset_id_batch(comm, self._dataset_factory, queries)
+                comm.bcast(None, root=0)
+                return None
 
             if rank == 0:
                 self._writer.ensure_schema(self._algorithm)

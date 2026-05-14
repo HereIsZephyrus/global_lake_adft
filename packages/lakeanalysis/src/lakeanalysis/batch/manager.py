@@ -16,6 +16,7 @@ from collections import deque
 
 from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges, _iter_id_batches
 from .filter import IdSetFilter, RangeFilter
+from .lake_dataset_query import LakeDatasetQuery
 
 log = logging.getLogger(__name__)
 
@@ -226,6 +227,66 @@ class Manager:
             self._n_workers,
             n_batches,
             batch_size,
+            {r: len(b) for r, b in assignments.items()},
+        )
+        return assignments
+
+    def run_dataset_id_batch(
+        self,
+        sorted_ids: list[int],
+        batch_size: int,
+        algorithm: str,
+    ) -> RunReport:
+        assignments = self._assign_dataset_queries(sorted_ids, batch_size, algorithm)
+        self._comm.bcast(assignments, root=0)
+
+        self._report.total_chunks = sum(len(qs) for qs in assignments.values())
+
+        while len(self._done_workers) < self._n_workers:
+            self._poll_and_dispatch()
+
+        self._drain_data()
+        self._flush()
+        self._comm.bcast(None, root=0)
+        log.info(
+            "Dataset ID-batch all workers done: success=%d error=%d skipped=%d",
+            self._report.success_lakes,
+            self._report.error_lakes,
+            self._report.skipped_lakes,
+        )
+        return self._report
+
+    def _assign_dataset_queries(
+        self,
+        sorted_ids: list[int],
+        batch_size: int,
+        algorithm: str,
+    ) -> dict[int, list[LakeDatasetQuery]]:
+        id_batches = _iter_id_batches(sorted_ids, batch_size)
+        n_batches = len(id_batches)
+        base = n_batches // self._n_workers
+        remainder = n_batches % self._n_workers
+
+        assignments: dict[int, list[LakeDatasetQuery]] = {}
+        idx = 0
+        for r in range(1, self._size):
+            count = base + (1 if r <= remainder else 0)
+            batches_for_worker = id_batches[idx : idx + count]
+            assignments[r] = [
+                LakeDatasetQuery(
+                    algorithm=algorithm,
+                    id_range=(min(b), max(b) + 1),
+                    require_quality=False,
+                    exclude_done=True,
+                )
+                for b in batches_for_worker
+            ]
+            idx += count
+
+        log.info(
+            "Dataset ID-batch assigned %d workers, %d batches: %s",
+            self._n_workers,
+            n_batches,
             {r: len(b) for r, b in assignments.items()},
         )
         return assignments

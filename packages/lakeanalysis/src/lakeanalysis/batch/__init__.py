@@ -3,6 +3,9 @@
 from .domain import Calculator, LakeFilter, LakeTask
 from .engine import Engine
 from .filter import IdSetFilter, RangeFilter
+from .lake_dataset import LakeDataset
+from .lake_dataset_factory import LakeDatasetFactory
+from .lake_dataset_query import LakeDatasetQuery
 from .io import (
     BatchReader,
     BatchWriter,
@@ -22,7 +25,11 @@ from .protocol import (
     _iter_id_batches,
 )
 from .worker import Worker
-from .single_process import SingleProcessIdBatchRunner, SingleProcessRunner
+from .single_process import (
+    SingleProcessIdBatchRunner,
+    SingleProcessLakeDatasetRunner,
+    SingleProcessRunner,
+)
 
 __all__ = [
     "Calculator",
@@ -30,12 +37,16 @@ __all__ = [
     "BatchWriter",
     "Engine",
     "IdSetFilter",
+    "LakeDataset",
+    "LakeDatasetFactory",
+    "LakeDatasetQuery",
     "LakeFilter",
     "LakeTask",
     "Manager",
     "RangeFilter",
     "RunReport",
     "SingleProcessIdBatchRunner",
+    "SingleProcessLakeDatasetRunner",
     "SingleProcessRunner",
     "TAG_STATUS",
     "TAG_TRIGGER",
