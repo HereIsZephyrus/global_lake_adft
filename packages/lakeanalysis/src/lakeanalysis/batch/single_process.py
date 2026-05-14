@@ -262,13 +262,7 @@ class SingleProcessLakeDatasetRunner:
             report.skipped_chunks = 1
             return report
 
-        run_dataset = getattr(self._calculator, "run_dataset", None)
-        if run_dataset is None:
-            raise TypeError(
-                f"{self._calculator.__class__.__name__} does not support LakeDataset input"
-            )
-
-        rows_by_table, success_lakes, error_lakes = run_dataset(
+        rows_by_table, success_lakes, error_lakes = self._calculator.run_dataset(
             dataset,
             error_chunk=(0, 1),
         )

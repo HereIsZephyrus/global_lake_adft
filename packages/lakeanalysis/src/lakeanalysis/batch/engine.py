@@ -62,6 +62,16 @@ class Calculator(ABC):
         self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
     ) -> dict[str, list[dict]]: ...
 
+    def run_dataset(
+        self,
+        dataset,
+        *,
+        error_chunk: tuple[int, int] = (0, 0),
+    ) -> tuple[dict[str, list[dict]], int, int]:
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support LakeDataset input"
+        )
+
 
 class Engine:
     def __init__(
