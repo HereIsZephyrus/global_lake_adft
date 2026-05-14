@@ -45,7 +45,7 @@ def create_decomposition_method(method: str | None) -> DecompositionMethod:
     raise ValueError(f"Unknown decomposition method: {method!r}")
 
 
-def run_single_lake_service(
+def run_single_lake_service(  # pylint: disable=too-many-arguments,too-many-locals
     series_df: pd.DataFrame,
     *,
     hylak_id: int | None = None,

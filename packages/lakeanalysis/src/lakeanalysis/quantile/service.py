@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
+from lakesource.quantile.schema import QuantileResult, QuantileServiceConfig
+
 from lakeanalysis.extreme.service import run_single_lake_service as _run_extreme_service
 
 from .compute import run_monthly_anomaly_transition
-from lakesource.quantile.schema import QuantileResult, QuantileServiceConfig
 
 
 def run_single_lake_service(

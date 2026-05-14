@@ -16,7 +16,7 @@
                     │  Layer 2: EVT 强度估计   │
                     │  PWM阈值 + exceedance    │
                     │  -> GPD/NHPP return level│
-                    │  -> phi mapping -> C_k   │
+                    │  -> phi mapping -> S_k   │
                     ├─────────────────────────┤
                     │  Layer 1: Baseline       │
                     │  Quantile 经验分位数     │
@@ -246,7 +246,7 @@ phi_i = transform(strength_i)
 
 ---
 
-## 5. C_k 指数衰减累积指数
+## 5. S_k 指数衰减累积强度
 
 ### 5.1 定位
 
@@ -255,7 +255,7 @@ phi_i = transform(strength_i)
 ### 5.2 数学定义（修正版）
 
 ```text
-C_k = ln( Σ_{i ≤ k, i ∈ extreme} phi_i · exp(-a · gap(i, k)) )
+S_k = Σ_{i ≤ k, i ∈ extreme} phi_i · exp(-a · gap(i, k))
 ```
 
 其中：
@@ -266,19 +266,28 @@ C_k = ln( Σ_{i ≤ k, i ∈ extreme} phi_i · exp(-a · gap(i, k)) )
 
 ### 5.3 物理含义
 
-- `C_k > 0`：当前累积衰减强度超过 1，视为处于"事件记忆活跃期"
-- `C_k = 0`：累积强度正好为 1
-- `C_k < 0`：累积强度不足 1，记忆接近消退
+- `S_k > 1`：当前累积衰减强度超过基准 1，视为处于"事件记忆活跃期"
+- `S_k = 1`：累积强度正好处于基准线
+- `S_k < 1`：累积强度不足 1，记忆接近消退
 
 ### 5.4 Segment 提取
 
-在 `C_k` 序列上找连续活跃段：
+Segment 不再简单定义为连续活跃月，而是定义为满足以下双条件的极端事件序列段：
 
 ```text
-active_month = C_k > 0
+1. 当前月若为 normal，则该月必须满足 S_k > 1
+2. 一个 segment 内不允许出现连续两个 normal 月
 ```
 
-对每个连续活跃段：
+等价地说：
+
+- `EEENEE` 可以视为同一段，但中间那个 `N` 必须满足 `S_k > 1`
+- `ENENE` 可以视为同一段，但每个 `N` 都必须满足 `S_k > 1`
+- `EENNEE` 一定断开，因为出现了连续两个 `N`
+
+segment 的时间范围从首个 extreme 月开始，到最后一个被纳入该段的月份结束；若中间单个 `N` 被允许桥接，则该 `N` 计入 `duration_months`。
+
+对每个 segment：
 - 若同时包含 high 和 low 极端事件 → `transition`（急转段）
 - 若仅包含单一类型 → `unilateral`（单边极端段）
 
@@ -291,7 +300,7 @@ active_month = C_k > 0
 | `start_year/month`, `end_year/month` | INT | 段起止时间 |
 | `duration_months` | INT | 持续月数 |
 | `has_high`, `has_low` | BOOL | 是否包含高/低极端事件 |
-| `max_C`, `mean_C`, `integral_C` | FLOAT | C_k 统计量 |
+| `max_C`, `mean_C`, `integral_C` | FLOAT | 历史命名保留；当前语义上对应衰减强度统计量 |
 | `n_extreme_events` | INT | 段内极端月数 |
 | `first_extreme_type`, `last_extreme_type` | TEXT | 首/末极端类型 |
 
@@ -348,7 +357,7 @@ extreme_low  → DRY (event_type = 0)
 
 Hawkes 输入的 `events_table.severity` 字段可选用：
 - 超阈值量 `exceedance`
-- C_k 累积强度（当前实验阶段）
+- S_k 累积强度（当前实验阶段）
 
 ### 6.6 输出
 
@@ -402,7 +411,7 @@ packages/
         │   └── monthly_climatology.py  # MonthlyClimatologyMethod (legacy)
         ├── pwm_extreme/            # PWM 阈值估计
         │   ├── compute.py          # PWM + 交叉熵 + 阈值 + 标签
-        │   ├── events.py           # C_k decay + segment extraction
+        │   ├── events.py           # S_k decay + segment extraction
         │   └── service.py          # run_single_lake_service
         ├── eot/                    # EOT/NHPP
         │   ├── preprocess.py       # QuantileThresholdModel, declustering
@@ -442,16 +451,16 @@ packages/
 | `run_quantile.py` | Quantile baseline | labels, extremes, transitions |
 | `run_pwm_extreme.py` | PWM Extreme | thresholds, labels, extremes |
 | `run_eot.py` | EOT/NHPP | results, extremes |
-| `run_pwm_hawkes.py` | PWM + C_k + Hawkes | hawkes_results, segments |
+| `run_pwm_hawkes.py` | PWM + S_k + Hawkes | hawkes_results, segments |
 | `run_hawkes_qc.py` | EOT + Hawkes QC | hawkes_results |
 
 ---
 
-## 9. 当前 C_k 实现与修正目标
+## 9. 当前 PWM-Hawkes 衰减强度实现与修正目标
 
 ### 9.1 当前实现（需修正）
 
-`packages/lakeanalysis/src/lakeanalysis/pwm_extreme/events.py:compute_decay_index()`：
+`packages/lakeanalysis/src/lakeanalysis/pwm/events.py:compute_decay_index()`：
 
 ```python
 f_i = ln(|z_i - 0.5| + 1)          # 错误：双层对数
@@ -461,18 +470,25 @@ C_k = Σ f_i · exp(-λ · gap)        # 错误：log域外乘衰减
 ### 9.2 目标公式
 
 ```text
-C_k = ln( Σ phi_i · exp(-a · gap(i,k)) )
+S_k = Σ phi_i · exp(-a · gap(i,k))
 ```
 
 其中 `phi_i` 来自 EVT event strength。
+
+Segment 判定不再由 `C_k > 0` 单独决定，而应由以下规则共同决定：
+
+```text
+- bridge normal 月必须满足 S_k > 1
+- segment 内不允许连续两个 normal 月
+```
 
 ### 9.3 修正影响范围
 
 | 文件 | 需修改 |
 |------|--------|
-| `pwm_extreme/events.py:compute_decay_index()` | 重写为 log-sum-exp 形式 |
-| `pwm_extreme/events.py:extract_segments()` | 复查 C_k > 0 阈值 |
-| `pwm_extreme/events.py:z_i 计算` | 替换为 EVT-based phi_i |
+| `pwm/events.py:compute_decay_index()` | 主状态量切换为 S_k 线性强度 |
+| `pwm/events.py:extract_segments()` | 改为 S_k > 1 + 单个 normal bridge 规则 |
+| `pwm/events.py:z_i 计算` | 替换为 EVT-based phi_i |
 | `batch/calculator/pwm_hawkes.py` | phi_i 来源切换到 EVT path |
 | `docs/memo_pwm_hawkes_decay_algorithm.md` | 由本文档 §5 替代 |
 

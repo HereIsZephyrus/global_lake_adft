@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lakeanalysis.extreme.service import run_single_lake_service as _run_extreme_service
-
-from .compute import compute_pooled_pwm_thresholds
 from lakesource.pwm.schema import (
-    PWMExtremeConfig,
     PWMExtremeResult,
     PWMExtremeServiceConfig,
 )
+
+from lakeanalysis.extreme.service import run_single_lake_service as _run_extreme_service
+
+from .compute import compute_pooled_pwm_thresholds
 
 
 def run_single_lake_service(

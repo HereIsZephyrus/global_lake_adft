@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from lakesource.quantile.schema import QuantileResult
+
 from lakeanalysis.decomposition.base import DecompositionResult
 from lakeanalysis.extreme.compute import (
     assign_extreme_labels,
@@ -10,7 +12,6 @@ from lakeanalysis.extreme.compute import (
     extract_extreme_events,
 )
 from lakeanalysis.extreme.models import ExtremeResult, QuantileDiagnostics
-from lakesource.quantile.schema import QuantileResult
 
 
 def compute_anomaly_thresholds(

@@ -53,7 +53,7 @@ def fit_gpd_exceedances(exceedances: np.ndarray) -> tuple[float, float]:
     return float(shape), float(scale)
 
 
-def compute_return_level(
+def compute_return_level(  # pylint: disable=too-many-arguments
     *,
     threshold: float,
     shape: float,
@@ -99,7 +99,7 @@ def build_empty_tail_summary_rows(
     ]
 
 
-def build_fitted_tail_summary_rows(
+def build_fitted_tail_summary_rows(  # pylint: disable=too-many-arguments
     tail_df: pd.DataFrame,
     *,
     tail: str,
