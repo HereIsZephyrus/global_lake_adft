@@ -73,7 +73,6 @@ def run(
         decomp = evaluate_intensity_decomposition(event_series, full_fit, eval_times, window_years=hawkes_window_months/12)
         plot_intensity_decomposition(decomp)
 
-        lrt_frame = pd.DataFrame([...])  # simplified
         plt.show()
 
 

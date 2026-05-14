@@ -139,6 +139,11 @@ class MonthlyTimeSeries:
         return float(times.max() - times.min() + 1.0 / 12.0)
 
     @property
+    def times(self) -> np.ndarray:
+        """Return the time coordinates used for model fitting."""
+        return self.data["time"].to_numpy(dtype=float)
+
+    @property
     def values(self) -> np.ndarray:
         """Return the working values used for tail modelling."""
         return self.data["value"].to_numpy(dtype=float)

@@ -54,6 +54,8 @@ def __getattr__(name: str):
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+# pylint: disable=undefined-all-variable
+# E0603: plot_* names are resolved lazily via __getattr__ above
 __all__ = [
     "PWMExtremeBatchConfig",
     "PWMExtremeConfig",

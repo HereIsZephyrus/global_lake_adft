@@ -61,14 +61,15 @@ def basemodel(
             df = fetch_lake_area(conn, hylak_id)
         series = MonthlyTimeSeries.from_frame(df)
         result = selector.select_result(series.times, series.values)
-        print(f"Selected: {result.selected_label}")
-        print(f"AIC: {result.selected_aic:.2f}")
+        base_name = result.selected_record.basis_name if result.selected_record else "none"
+        print(f"Selected: {base_name}")
+        print(f"AIC: {result.selected_record.aic:.2f}" if result.selected_record else "AIC: n/a")
         if plot:
             from lakeanalysis.eot import plot_candidate_scores, plot_basis_fit, plot_residuals
             fit = selector.fit_basis(series.times, series.values, result.selected_basis)
-            plot_candidate_scores(result)
-            plot_basis_fit(series, fit, result.selected_label)
-            plot_residuals(series, fit, result.selected_label)
+            plot_candidate_scores(result.candidate_records, result.criterion, base_name)
+            plot_basis_fit(fit, base_name, result.criterion, result.relative_rmse)
+            plot_residuals(fit)
     elif all_lakes or limit_id is not None:
         from lakesource.postgres import fetch_lake_area_by_ids, series_db
 
@@ -77,7 +78,8 @@ def basemodel(
         for hid, df in lake_map.items():
             series = MonthlyTimeSeries.from_frame(df)
             result = selector.select_result(series.times, series.values)
-            print(f"hylak_id={hid}: {result.selected_label}")
+            base_name = result.selected_record.basis_name if result.selected_record else "none"
+            print(f"hylak_id={hid}: {base_name}")
     else:
         typer.echo("Specify --hylak-id, --limit-id, or --all")
 
