@@ -54,11 +54,8 @@ def test_run_monthly_anomaly_transition_computes_expected_extremes() -> None:
     result = run_monthly_anomaly_transition(
         decomp,
         hylak_id=101,
-        min_valid_per_month=5,
-        min_valid_observations=60,
     )
 
-    assert len(result.climatology_df) == 12
     assert result.q_low == pytest.approx(-20.0)
     assert result.q_high == pytest.approx(20.0)
 
@@ -67,7 +64,7 @@ def test_run_monthly_anomaly_transition_computes_expected_extremes() -> None:
     assert low_count == 12
     assert high_count == 12
 
-    grouped_means = result.labels_df.groupby("month")["anomaly"].mean()
+    grouped_means = result.labels_df.groupby("month")["index_value"].mean()
     assert grouped_means.abs().max() == pytest.approx(0.0)
 
 
@@ -91,8 +88,6 @@ def test_frozen_months_are_excluded_from_outputs() -> None:
     result = run_monthly_anomaly_transition(
         decomp_filtered,
         hylak_id=101,
-        min_valid_per_month=4,
-        min_valid_observations=58,
     )
 
     remaining_keys = set((result.labels_df["year"] * 100 + result.labels_df["month"]).tolist())

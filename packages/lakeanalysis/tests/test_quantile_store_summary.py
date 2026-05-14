@@ -5,8 +5,8 @@ import pandas as pd
 
 matplotlib.use("Agg")
 
+from lakeanalysis.extreme.models import ExtremeResult, QuantileDiagnostics
 from lakeanalysis.quantile import (
-    QuantileResult,
     load_summary_cache,
     make_run_status_row,
     result_to_extreme_rows,
@@ -15,6 +15,7 @@ from lakeanalysis.quantile import (
     save_summary_plots,
     write_summary_cache,
 )
+from lakesource.quantile.schema import QuantileResult
 
 
 def build_result() -> QuantileResult:
@@ -25,10 +26,9 @@ def build_result() -> QuantileResult:
                 "year": 2000,
                 "month": 1,
                 "water_area": 90.0,
-                "monthly_climatology": 100.0,
-                "anomaly": -10.0,
-                "q_low": -8.0,
-                "q_high": 8.0,
+                "index_value": -10.0,
+                "threshold_low": -8.0,
+                "threshold_high": 8.0,
                 "extreme_label": "extreme_low",
             }
         ]
@@ -41,9 +41,9 @@ def build_result() -> QuantileResult:
                 "month": 1,
                 "event_type": "low",
                 "water_area": 90.0,
-                "monthly_climatology": 100.0,
-                "anomaly": -10.0,
+                "index_value": -10.0,
                 "threshold": -8.0,
+                "extreme_label": "extreme_low",
             }
         ]
     )
@@ -56,22 +56,21 @@ def build_result() -> QuantileResult:
                 "to_year": 2000,
                 "to_month": 2,
                 "transition_type": "low_to_high",
-                "from_anomaly": -10.0,
-                "to_anomaly": 11.0,
+                "from_index_value": -10.0,
+                "to_index_value": 11.0,
                 "from_label": "extreme_low",
                 "to_label": "extreme_high",
             }
         ]
     )
-    return QuantileResult(
+    extreme = ExtremeResult(
         hylak_id=101,
-        climatology_df=pd.DataFrame(),
         labels_df=labels_df,
         extremes_df=extremes_df,
         transitions_df=transitions_df,
-        q_low=-8.0,
-        q_high=8.0,
     )
+    diagnostics = QuantileDiagnostics(q_low=-8.0, q_high=8.0)
+    return QuantileResult(extreme=extreme, diagnostics=diagnostics)
 
 
 def test_store_row_helpers_shape_expected_columns() -> None:

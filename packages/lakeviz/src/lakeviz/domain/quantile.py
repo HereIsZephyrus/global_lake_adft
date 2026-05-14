@@ -43,7 +43,7 @@ def draw_monthly_timeline(
 ) -> None:
     dates = pd.to_datetime(dict(year=labels_df["year"], month=labels_df["month"], day=1))
     draw_line(ax, dates, labels_df["water_area"], style=water_area_style)
-    draw_line(ax, dates, labels_df["monthly_climatology"], style=climatology_style)
+    draw_line(ax, dates, labels_df["index_value"], style=climatology_style)
 
     high_df = labels_df.loc[labels_df["extreme_label"] == "extreme_high"]
     low_df = labels_df.loc[labels_df["extreme_label"] == "extreme_low"]
@@ -75,9 +75,9 @@ def draw_anomaly_timeline(
     labels_df: pd.DataFrame,
     *,
     hylak_id: int | None = None,
-    anomaly_style: LineStyle = LineStyle(color="tab:gray", linewidth=1.3, label="anomaly"),
-    q_low_style: ReferenceLineStyle = ReferenceLineStyle(color="tab:blue", linestyle="--", label="q_low"),
-    q_high_style: ReferenceLineStyle = ReferenceLineStyle(color="tab:red", linestyle="--", label="q_high"),
+    anomaly_style: LineStyle = LineStyle(color="tab:gray", linewidth=1.3, label="index_value"),
+    q_low_style: ReferenceLineStyle = ReferenceLineStyle(color="tab:blue", linestyle="--", label="threshold_low"),
+    q_high_style: ReferenceLineStyle = ReferenceLineStyle(color="tab:red", linestyle="--", label="threshold_high"),
     high_style: ScatterStyle = QUANTILE_EXTREME_HIGH,
     low_style: ScatterStyle = QUANTILE_EXTREME_LOW,
 ) -> None:
@@ -87,19 +87,19 @@ def draw_anomaly_timeline(
         apply_axis_style(ax, AxisStyle(title=f"Lake {title_suffix} Anomaly Timeline", xlabel="Month", ylabel="Anomaly"))
         return
     dates = pd.to_datetime(dict(year=labels_df["year"], month=labels_df["month"], day=1))
-    draw_line(ax, dates, labels_df["anomaly"], style=anomaly_style)
+    draw_line(ax, dates, labels_df["index_value"], style=anomaly_style)
     draw_axhline(ax, 0.0, style=ReferenceLineStyle(color="black", linewidth=0.8))
-    draw_axhline(ax, labels_df["q_low"].iloc[0], style=q_low_style)
-    draw_axhline(ax, labels_df["q_high"].iloc[0], style=q_high_style)
+    draw_axhline(ax, labels_df["threshold_low"].iloc[0], style=q_low_style)
+    draw_axhline(ax, labels_df["threshold_high"].iloc[0], style=q_high_style)
 
     high_df = labels_df.loc[labels_df["extreme_label"] == "extreme_high"]
     low_df = labels_df.loc[labels_df["extreme_label"] == "extreme_low"]
     if not high_df.empty:
         high_dates = pd.to_datetime(dict(year=high_df["year"], month=high_df["month"], day=1))
-        draw_scatter(ax, high_dates, high_df["anomaly"], style=high_style)
+        draw_scatter(ax, high_dates, high_df["index_value"], style=high_style)
     if not low_df.empty:
         low_dates = pd.to_datetime(dict(year=low_df["year"], month=low_df["month"], day=1))
-        draw_scatter(ax, low_dates, low_df["anomaly"], style=low_style)
+        draw_scatter(ax, low_dates, low_df["index_value"], style=low_style)
 
     title_suffix = "unknown" if hylak_id is None else str(hylak_id)
     apply_axis_style(ax, AxisStyle(title=f"Lake {title_suffix} Anomaly Timeline", xlabel="Month", ylabel="Anomaly"))

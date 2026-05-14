@@ -34,7 +34,7 @@ class QuantileCalculator(Calculator):
             method=method,
         )
 
-    def _compute_lake(self, task: LakeTask) -> Any:
+    def compute(self, task: LakeTask) -> Any:
         return run_single_lake_service(
             task.series_df,
             hylak_id=task.hylak_id,

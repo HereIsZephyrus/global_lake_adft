@@ -1,9 +1,4 @@
-"""Shared data types and constants for the PWM extreme quantile workflow.
-
-These schemas are owned by the data layer (lakesource) so that both
-lakesource and lakeanalysis can reference them without creating a
-circular dependency.
-"""
+"""Shared data types and constants for the PWM extreme quantile workflow."""
 
 from __future__ import annotations
 
@@ -12,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from lakeanalysis.extreme.models import ExtremeResult, PWMDiagnostics
 
 
 @dataclass(frozen=True)
@@ -45,32 +42,38 @@ class PWMExtremeMonthResult:
 
 @dataclass(frozen=True)
 class PWMExtremeResult:
-    """Aggregated PWM extreme quantile result for one lake (all 12 months)."""
+    """Aggregated PWM extreme quantile result for one lake (all 12 months).
 
-    hylak_id: int | None
-    month_results: list[PWMExtremeMonthResult]
-    labels_df: pd.DataFrame
-    extremes_df: pd.DataFrame = field(default_factory=pd.DataFrame)
-    transitions_df: pd.DataFrame = field(default_factory=pd.DataFrame)
+    ``extreme`` holds the shared extreme-event result (labels, events, transitions).
+    ``diagnostics`` holds PWM-specific month-level threshold diagnostics.
+    """
+
+    extreme: ExtremeResult
+    diagnostics: PWMDiagnostics
+
+    @property
+    def hylak_id(self) -> int | None:
+        return self.extreme.hylak_id
+
+    @property
+    def month_results(self) -> list[PWMExtremeMonthResult]:
+        return self.diagnostics.month_results
+
+    @property
+    def labels_df(self) -> pd.DataFrame:
+        return self.extreme.labels_df
+
+    @property
+    def extremes_df(self) -> pd.DataFrame:
+        return self.extreme.extremes_df
+
+    @property
+    def transitions_df(self) -> pd.DataFrame:
+        return self.extreme.transitions_df
 
     @property
     def thresholds_df(self) -> pd.DataFrame:
-        """Return a tidy DataFrame of monthly thresholds."""
-        return pd.DataFrame(
-            [
-                {
-                    "hylak_id": mr.hylak_id,
-                    "month": mr.month,
-                    "mean_area": mr.mean_area,
-                    "epsilon": mr.epsilon,
-                    "threshold_high": mr.threshold_high,
-                    "threshold_low": mr.threshold_low,
-                    "converged": mr.converged,
-                    "objective_value": mr.objective_value,
-                }
-                for mr in self.month_results
-            ]
-        )
+        return self.diagnostics.thresholds_df
 
 
 @dataclass(frozen=True)

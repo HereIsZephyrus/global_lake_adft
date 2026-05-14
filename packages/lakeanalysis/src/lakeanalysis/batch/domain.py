@@ -21,7 +21,7 @@ class LakeFilter(ABC):
 
 class Calculator(ABC):
     @abstractmethod
-    def _compute_lake(self, task: LakeTask) -> Any:
+    def compute(self, task: LakeTask) -> Any:
         """Per-lake computation logic.
 
         Subclasses implement this instead of the old ``run(task)`` method.
@@ -53,7 +53,7 @@ class Calculator(ABC):
         for idx in range(len(dataset)):
             task = dataset.to_task(idx)
             try:
-                result = self._compute_lake(task)
+                result = self.compute(task)
                 for table, rows in self.result_to_rows(result).items():
                     all_rows[table].extend(rows)
                 success_lakes += 1

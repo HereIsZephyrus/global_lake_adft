@@ -9,8 +9,8 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from scipy.stats import genpareto
 
+from lakeanalysis.extreme.evt import fit_gpd_exceedances
 from .basis import BaseBasis, HarmonicBasis
 from .series import MIN_OBSERVATIONS, MonthlyTimeSeries, TailDirection
 
@@ -330,7 +330,7 @@ class ThresholdSelector:
                 continue
 
             try:
-                shape, _, scale = genpareto.fit(exceedances, floc=0.0)
+                shape, scale = fit_gpd_exceedances(exceedances)
             except (RuntimeError, ValueError):
                 shape = float("nan")
                 scale = float("nan")

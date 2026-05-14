@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from lakeanalysis.extreme.models import ExtremeResult, PWMDiagnostics
 from lakesource.pwm_extreme.schema import (
     PWMExtremeMonthResult,
     PWMExtremeResult,
@@ -55,11 +56,13 @@ class TestStorageIncludesIndexValue:
 
     def test_label_rows_include_index_value(self) -> None:
         result = PWMExtremeResult(
-            hylak_id=1,
-            month_results=[],
-            labels_df=_make_labels_df(indexed=True),
-            extremes_df=pd.DataFrame(),
-            transitions_df=pd.DataFrame(),
+            extreme=ExtremeResult(
+                hylak_id=1,
+                labels_df=_make_labels_df(indexed=True),
+                extremes_df=pd.DataFrame(),
+                transitions_df=pd.DataFrame(),
+            ),
+            diagnostics=PWMDiagnostics(month_results=[]),
         )
         rows = result_to_label_rows(result)
         assert len(rows) == 1
@@ -69,11 +72,13 @@ class TestStorageIncludesIndexValue:
 
     def test_extreme_rows_include_index_value(self) -> None:
         result = PWMExtremeResult(
-            hylak_id=1,
-            month_results=[],
-            labels_df=pd.DataFrame(),
-            extremes_df=_make_extremes_df(indexed=True),
-            transitions_df=pd.DataFrame(),
+            extreme=ExtremeResult(
+                hylak_id=1,
+                labels_df=pd.DataFrame(),
+                extremes_df=_make_extremes_df(indexed=True),
+                transitions_df=pd.DataFrame(),
+            ),
+            diagnostics=PWMDiagnostics(month_results=[]),
         )
         rows = result_to_extreme_rows(result)
         assert len(rows) == 1
@@ -85,22 +90,26 @@ class TestStorageIncludesIndexValue:
         """Backward compat: index_value column missing → should raise KeyError,
         same as any missing column."""
         result = PWMExtremeResult(
-            hylak_id=1,
-            month_results=[],
-            labels_df=pd.DataFrame(),
-            extremes_df=_make_extremes_df(indexed=False),
-            transitions_df=pd.DataFrame(),
+            extreme=ExtremeResult(
+                hylak_id=1,
+                labels_df=pd.DataFrame(),
+                extremes_df=_make_extremes_df(indexed=False),
+                transitions_df=pd.DataFrame(),
+            ),
+            diagnostics=PWMDiagnostics(month_results=[]),
         )
         with np.testing.assert_raises(KeyError):
             result_to_extreme_rows(result)
 
     def test_label_rows_still_work_without_index_value(self) -> None:
         result = PWMExtremeResult(
-            hylak_id=1,
-            month_results=[],
-            labels_df=_make_labels_df(indexed=False),
-            extremes_df=pd.DataFrame(),
-            transitions_df=pd.DataFrame(),
+            extreme=ExtremeResult(
+                hylak_id=1,
+                labels_df=_make_labels_df(indexed=False),
+                extremes_df=pd.DataFrame(),
+                transitions_df=pd.DataFrame(),
+            ),
+            diagnostics=PWMDiagnostics(month_results=[]),
         )
         with np.testing.assert_raises(KeyError):
             result_to_label_rows(result)

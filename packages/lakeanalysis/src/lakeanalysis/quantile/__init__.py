@@ -1,12 +1,14 @@
 """Monthly anomaly quantile transition workflow."""
 
-from .compute import (
+from lakeanalysis.extreme.compute import (
     assign_extreme_labels,
-    compute_anomaly_thresholds,
     detect_abrupt_transitions,
     extract_extreme_events,
-    run_monthly_anomaly_transition,
     validate_monthly_series,
+)
+from .compute import (
+    compute_anomaly_thresholds,
+    run_monthly_anomaly_transition,
 )
 from lakesource.quantile.schema import QuantileResult
 from .config import QuantileBatchConfig, QuantileServiceConfig

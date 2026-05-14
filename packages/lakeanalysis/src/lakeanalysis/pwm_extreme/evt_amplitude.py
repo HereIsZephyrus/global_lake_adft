@@ -1,41 +1,22 @@
-"""Route B EVT helpers on continuous amplitude space."""
+"""Route B EVT helpers on continuous amplitude space.
+
+This file is a **method adapter** — it maps PWM percentile thresholds back
+to each calendar month's amplitude distribution and constructs exceedance
+samples for the shared EVT algorithm layer in ``evt_common.py``.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from scipy.stats import genpareto
 
-
-DEFAULT_RETURN_PERIODS = (2, 5, 10, 20)
-
-
-def _fit_gpd(exceedances: np.ndarray) -> tuple[float, float]:
-    if len(exceedances) < 3:
-        raise ValueError("Need at least 3 exceedances for GPD fit")
-    if np.any(exceedances < 0.0):
-        raise ValueError("Exceedances must be non-negative")
-    shape, _, scale = genpareto.fit(exceedances, floc=0.0)
-    if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
-        raise ValueError("GPD fit produced invalid parameters")
-    return float(shape), float(scale)
-
-
-def _return_level(
-    *,
-    threshold: float,
-    shape: float,
-    scale: float,
-    return_period: int,
-    n_total: int,
-    n_exceedances: int,
-) -> float:
-    rate = (return_period * n_exceedances) / max(n_total, 1)
-    if rate <= 1.0:
-        return float(threshold)
-    if abs(shape) < 1e-12:
-        return float(threshold + scale * np.log(rate))
-    return float(threshold + (scale / shape) * (rate**shape - 1.0))
+from lakeanalysis.extreme.evt import (
+    DEFAULT_RETURN_PERIODS,
+    EVT_STRENGTH_COLS,
+    EVT_SUMMARY_COLS,
+    ROUTE_B,
+    build_fitted_tail_summary_rows,
+)
 
 
 def _tail_threshold(values: np.ndarray, tail: str) -> float:
@@ -59,82 +40,6 @@ def _percentile_to_amplitude_threshold(
     )
     quantile = float(np.clip(percentile_threshold / 100.0, 0.0, 1.0))
     return float(np.quantile(amplitudes, quantile, method="linear"))
-
-
-def _build_tail_rows(
-    tail_df: pd.DataFrame,
-    *,
-    tail: str,
-    n_total: int,
-    route: str,
-    strength_unit: str,
-    return_periods: tuple[int, ...],
-) -> list[dict]:
-    if tail_df.empty:
-        return [
-            {
-                "tail": tail,
-                "threshold": None,
-                "n_total": n_total,
-                "n_exceedances": 0,
-                "shape": None,
-                "scale": None,
-                "converged": False,
-                "error_message": "No exceedances",
-                "return_period": period,
-                "return_level": None,
-                "evt_route": route,
-                "strength_unit": strength_unit,
-            }
-            for period in return_periods
-        ]
-
-    threshold = float(tail_df["amplitude_threshold"].iloc[0])
-    exceedances = tail_df["exceedance"].to_numpy(dtype=float)
-    try:
-        shape, scale = _fit_gpd(exceedances)
-        return [
-            {
-                "tail": tail,
-                "threshold": threshold,
-                "n_total": n_total,
-                "n_exceedances": len(exceedances),
-                "shape": shape,
-                "scale": scale,
-                "converged": True,
-                "error_message": None,
-                "return_period": period,
-                "return_level": _return_level(
-                    threshold=threshold,
-                    shape=shape,
-                    scale=scale,
-                    return_period=period,
-                    n_total=n_total,
-                    n_exceedances=len(exceedances),
-                ),
-                "evt_route": route,
-                "strength_unit": strength_unit,
-            }
-            for period in return_periods
-        ]
-    except ValueError as exc:
-        return [
-            {
-                "tail": tail,
-                "threshold": threshold,
-                "n_total": n_total,
-                "n_exceedances": len(exceedances),
-                "shape": None,
-                "scale": None,
-                "converged": False,
-                "error_message": str(exc),
-                "return_period": period,
-                "return_level": None,
-                "evt_route": route,
-                "strength_unit": strength_unit,
-            }
-            for period in return_periods
-        ]
 
 
 def compute_evt_amplitude_strengths(
@@ -163,34 +68,11 @@ def compute_evt_amplitude_strengths(
         raise ValueError(f"labeled_df missing required columns: {sorted(missing)}")
 
     df = labeled_df.copy()
-    empty_strengths = pd.DataFrame(
-        columns=[
-            "year",
-            "month",
-            "tail",
-            "threshold",
-            "exceedance",
-            "event_strength",
-            amplitude_column,
-        ]
-    )
-    summary_cols = [
-        "tail",
-        "threshold",
-        "n_total",
-        "n_exceedances",
-        "shape",
-        "scale",
-        "converged",
-        "error_message",
-        "return_period",
-        "return_level",
-        "evt_route",
-        "strength_unit",
-    ]
+    empty_cols = list(EVT_STRENGTH_COLS) + [amplitude_column]
+    empty_strengths = pd.DataFrame(columns=empty_cols)
     extreme_df = df[df["extreme_label"] != "normal"].copy()
     if extreme_df.empty:
-        return empty_strengths, pd.DataFrame(columns=summary_cols)
+        return empty_strengths, pd.DataFrame(columns=EVT_SUMMARY_COLS)
 
     threshold_rows: list[dict] = []
     for month, month_df in df.groupby("month", sort=True):
@@ -236,21 +118,23 @@ def compute_evt_amplitude_strengths(
 
     n_total = int(len(labeled_df))
     rows = []
-    for tail, tail_df in (("high", strengths_df[strengths_df["tail"] == "high"]), ("low", strengths_df[strengths_df["tail"] == "low"])):
+    for tail, tail_df in (
+        ("high", strengths_df[strengths_df["tail"] == "high"]),
+        ("low", strengths_df[strengths_df["tail"] == "low"]),
+    ):
         rows.extend(
-            _build_tail_rows(
+            build_fitted_tail_summary_rows(
                 tail_df,
                 tail=tail,
                 n_total=n_total,
-                route="B",
-                strength_unit=amplitude_column,
                 return_periods=return_periods,
+                evt_route=ROUTE_B,
+                strength_unit=amplitude_column,
             )
         )
 
+    out_cols = list(EVT_STRENGTH_COLS) + [amplitude_column]
     return (
-        strengths_df.loc[
-            :, ["year", "month", "tail", "threshold", "exceedance", "event_strength", amplitude_column]
-        ].copy(),
-        pd.DataFrame(rows, columns=summary_cols),
+        strengths_df.loc[:, out_cols].copy(),
+        pd.DataFrame(rows, columns=EVT_SUMMARY_COLS),
     )

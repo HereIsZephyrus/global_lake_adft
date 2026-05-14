@@ -17,7 +17,7 @@ class ShiftLabelsCalculator(Calculator):
         self._config = config or ShiftConfig()
         self._filter = ShiftFilter(self._config)
 
-    def _compute_lake(self, task: LakeTask) -> dict[str, Any]:
+    def compute(self, task: LakeTask) -> dict[str, Any]:
         ctx, _ = build_quality_context(
             df=task.series_df,
             atlas_area=0.0,

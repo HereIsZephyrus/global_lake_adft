@@ -9,8 +9,8 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from scipy.stats import genpareto
 
+from lakeanalysis.extreme.evt import fit_gpd_exceedances
 from .basis import BaseBasis, BasisSelector, HarmonicBasis
 from .likelihood import NHPPLogLikelihood
 from .models import FitResult, LocationModel, PreparedExtremes
@@ -52,8 +52,8 @@ class NHPPFitter:
         excesses = excesses[excesses >= 0.0]
         if excesses.size >= 3 and (excesses.max() - excesses.min()) > 0.0:
             try:
-                shape, _, scale = genpareto.fit(excesses, floc=0.0)
-                sigma = max(float(scale), EPSILON)
+                shape, scale = fit_gpd_exceedances(excesses)
+                sigma = max(scale, EPSILON)
                 xi = float(np.clip(shape, -0.9, 0.9))
                 return sigma, xi
             except (RuntimeError, ValueError):

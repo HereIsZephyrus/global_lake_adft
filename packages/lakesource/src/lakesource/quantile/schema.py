@@ -1,9 +1,4 @@
-"""Shared data types and constants for the monthly transition workflow.
-
-These schemas are owned by the data layer (lakesource) so that both
-lakesource and lakeanalysis can reference them without creating a
-circular dependency.
-"""
+"""Shared data types and constants for the monthly anomaly transition workflow."""
 
 from __future__ import annotations
 
@@ -12,18 +7,43 @@ from pathlib import Path
 
 import pandas as pd
 
+from lakeanalysis.extreme.models import ExtremeResult, QuantileDiagnostics
+
 
 @dataclass(frozen=True)
 class QuantileResult:
-    """Workflow outputs for one lake."""
+    """Workflow outputs for one lake.
 
-    hylak_id: int | None
-    climatology_df: pd.DataFrame
-    labels_df: pd.DataFrame
-    extremes_df: pd.DataFrame
-    transitions_df: pd.DataFrame
-    q_low: float
-    q_high: float
+    ``extreme`` holds the shared extreme-event result (labels, events, transitions).
+    ``diagnostics`` holds quantile-specific threshold values.
+    """
+
+    extreme: ExtremeResult
+    diagnostics: QuantileDiagnostics
+
+    @property
+    def hylak_id(self) -> int | None:
+        return self.extreme.hylak_id
+
+    @property
+    def labels_df(self) -> pd.DataFrame:
+        return self.extreme.labels_df
+
+    @property
+    def extremes_df(self) -> pd.DataFrame:
+        return self.extreme.extremes_df
+
+    @property
+    def transitions_df(self) -> pd.DataFrame:
+        return self.extreme.transitions_df
+
+    @property
+    def q_low(self) -> float:
+        return self.diagnostics.q_low
+
+    @property
+    def q_high(self) -> float:
+        return self.diagnostics.q_high
 
 
 @dataclass(frozen=True)

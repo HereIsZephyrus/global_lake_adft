@@ -141,7 +141,7 @@ class QualityCalculator(Calculator):
             shift_config=config.shift_config,
         )
 
-    def _compute_lake(self, task: LakeTask) -> dict[str, Any]:
+    def compute(self, task: LakeTask) -> dict[str, Any]:
         quality_task = task.extra["quality_task"]
         ctx, metrics = build_quality_context(
             df=quality_task.series_df,

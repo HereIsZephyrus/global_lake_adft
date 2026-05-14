@@ -56,7 +56,7 @@ class ComparisonCalculator(Calculator):
         self._min_valid_per_month = min_valid_per_month
         self._min_valid_observations = min_valid_observations
 
-    def _compute_lake(self, task: LakeTask) -> ComparisonResult:
+    def compute(self, task: LakeTask) -> ComparisonResult:
         frozen = set(task.frozen_year_months) or None
 
         q_result: QuantileResult | Exception | None = None

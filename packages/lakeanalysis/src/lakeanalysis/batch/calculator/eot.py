@@ -32,7 +32,7 @@ class EOTCalculator(Calculator):
         self._tails = tails or ["high", "low"]
         self._quantiles = quantiles or [0.95, 0.98]
 
-    def _compute_lake(self, task: LakeTask) -> EOTResult:
+    def compute(self, task: LakeTask) -> EOTResult:
         estimator = EOTEstimator()
         frozen = set(task.frozen_year_months)
         fits: list[tuple[str, float, Any]] = []

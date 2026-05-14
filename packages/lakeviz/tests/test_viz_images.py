@@ -155,8 +155,8 @@ def _labels_df(n=120):
         y, m = 2000 + i // 12, (i % 12) + 1
         rows.append({"year": y, "month": m,
                       "water_area": 100 + 10 * np.sin(m / 12 * 2 * np.pi) + rng.normal(0, 5),
-                      "monthly_climatology": 100 + 10 * np.sin(m / 12 * 2 * np.pi),
-                      "anomaly": rng.normal(0, 5), "q_low": -15.0, "q_high": 15.0,
+                      "index_value": rng.normal(0, 5),
+                      "threshold_low": -15.0, "threshold_high": 15.0,
                       "extreme_label": rng.choice(["normal", "extreme_high", "extreme_low"], p=[0.7, 0.15, 0.15])})
     return pd.DataFrame(rows)
 

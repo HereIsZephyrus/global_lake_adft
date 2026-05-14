@@ -30,8 +30,7 @@ from lakeanalysis.pwm_extreme.events import (
     extract_hawkes_events_from_segments,
     extract_segments,
 )
-from lakeanalysis.pwm_extreme.evt_amplitude import compute_evt_amplitude_strengths
-from lakeanalysis.pwm_extreme.evt_index import compute_evt_index_strengths
+from lakeanalysis.pwm_extreme.evt import compute_pwm_evt_strengths
 from lakeanalysis.pwm_extreme.phi import map_strength_df_to_phi
 from lakeanalysis.pwm_extreme.store import return_levels_to_rows
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
@@ -92,22 +91,10 @@ class PWMExtremeHawkesCalculator(Calculator):
         self._evt_route = evt_route
         self._phi_method = phi_method
 
-    def _compute_strengths(self, labeled_df: pd.DataFrame) -> pd.DataFrame:
-        if self._evt_route == "A":
-            strengths_df, summary_df = compute_evt_index_strengths(labeled_df)
-            self._last_summary_df = summary_df
-            return strengths_df
-        if self._evt_route == "B":
-            strengths_df, summary_df = compute_evt_amplitude_strengths(labeled_df)
-            self._last_summary_df = summary_df
-            return strengths_df
-        raise ValueError(f"Unknown evt_route: {self._evt_route!r}")
-
-    def _compute_lake(self, task: LakeTask) -> PWMHawkesPipelineResult:
+    def compute(self, task: LakeTask) -> PWMHawkesPipelineResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
-        self._last_summary_df = pd.DataFrame()
 
         try:
             pwm_result = run_single_lake_service(
@@ -116,7 +103,10 @@ class PWMExtremeHawkesCalculator(Calculator):
                 config=self._service_config,
                 frozen_year_months=frozen or None,
             )
-            strengths_df = self._compute_strengths(pwm_result.labels_df)
+            strengths_df, summary_df = compute_pwm_evt_strengths(
+                pwm_result.labels_df,
+                evt_route=self._evt_route,
+            )
             phi_df = map_strength_df_to_phi(
                 strengths_df,
                 method=self._phi_method,
@@ -131,7 +121,7 @@ class PWMExtremeHawkesCalculator(Calculator):
             segments_rows = _build_segments_rows(hylak_id, segments_df)
             return_level_rows = return_levels_to_rows(
                 hylak_id,
-                self._last_summary_df,
+                summary_df,
                 workflow_version=f"evt_route={self._evt_route};phi_method={self._phi_method}",
             )
             route_summary_rows = _build_route_summary_rows(
@@ -140,7 +130,7 @@ class PWMExtremeHawkesCalculator(Calculator):
                 phi_method=self._phi_method,
                 strengths_df=strengths_df,
                 segments_df=segments_df,
-                summary_df=self._last_summary_df,
+                summary_df=summary_df,
             )
 
             events_df = extract_hawkes_events_from_segments(

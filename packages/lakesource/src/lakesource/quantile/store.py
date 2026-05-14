@@ -167,13 +167,19 @@ def result_to_label_rows(
         "year",
         "month",
         "water_area",
-        "monthly_climatology",
-        "anomaly",
-        "q_low",
-        "q_high",
+        "index_value",
+        "threshold_low",
+        "threshold_high",
         "extreme_label",
     ]
-    return result.labels_df.loc[:, columns].to_dict("records")
+    df = result.labels_df.loc[:, columns].copy()
+    df = df.rename(columns={
+        "index_value": "anomaly",
+        "threshold_low": "q_low",
+        "threshold_high": "q_high",
+    })
+    df["monthly_climatology"] = df["anomaly"]
+    return df.to_dict("records")
 
 
 def result_to_extreme_rows(
@@ -181,7 +187,10 @@ def result_to_extreme_rows(
 ) -> list[dict]:
     if result.extremes_df.empty:
         return []
-    return result.extremes_df.to_dict("records")
+    df = result.extremes_df.copy()
+    df = df.rename(columns={"index_value": "anomaly"})
+    df["monthly_climatology"] = df["anomaly"]
+    return df.to_dict("records")
 
 
 def result_to_transition_rows(
@@ -189,7 +198,13 @@ def result_to_transition_rows(
 ) -> list[dict]:
     if result.transitions_df.empty:
         return []
-    return result.transitions_df.to_dict("records")
+    df = result.transitions_df.copy()
+    columns_map = {
+        "from_index_value": "from_anomaly",
+        "to_index_value": "to_anomaly",
+    }
+    df = df.rename(columns=columns_map)
+    return df.to_dict("records")
 
 
 def make_run_status_row(

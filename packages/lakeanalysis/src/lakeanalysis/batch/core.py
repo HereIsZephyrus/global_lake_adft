@@ -16,7 +16,7 @@ import pandas as pd
 class LakeTask:
     """Per-lake work unit constructed from a ``LakeDataset`` row.
 
-    This is an internal type consumed by ``Calculator._compute_lake``.
+    This is an internal type consumed by ``Calculator.compute``.
     Public callers should use ``Calculator.run_dataset(dataset)`` instead.
     """
 

@@ -61,7 +61,7 @@ class EOTHawkesCalculator(Calculator):
         self._monthly_significance_quantile = monthly_significance_quantile
         self._decluster_run_length = decluster_run_length
 
-    def _compute_lake(self, task: LakeTask) -> RunHawkesPipelineResult:
+    def compute(self, task: LakeTask) -> RunHawkesPipelineResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else None

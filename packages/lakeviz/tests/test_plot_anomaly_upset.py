@@ -75,7 +75,7 @@ def test_plot_anomaly_upset_custom_title():
 
 
 def test_plot_anomaly_timeline_empty_labels_df():
-    fig = plot_anomaly_timeline(pd.DataFrame(columns=["year", "month", "anomaly", "q_low", "q_high", "extreme_label"]))
+    fig = plot_anomaly_timeline(pd.DataFrame(columns=["year", "month", "index_value", "threshold_low", "threshold_high", "extreme_label"]))
     assert fig is not None
     import matplotlib.pyplot as plt
     plt.close(fig)

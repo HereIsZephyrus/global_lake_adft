@@ -38,8 +38,6 @@ def test_result_row_shapers_emit_expected_keys() -> None:
     result = run_monthly_anomaly_transition(
         decomp,
         hylak_id=123,
-        min_valid_per_month=3,
-        min_valid_observations=36,
     )
 
     label_rows = result_to_label_rows(result)
@@ -66,8 +64,8 @@ def test_result_row_shapers_emit_expected_keys() -> None:
         "water_area",
         "monthly_climatology",
         "anomaly",
-        "index_value",
         "threshold",
+        "extreme_label",
     }
     assert isinstance(transition_rows, list)
 
