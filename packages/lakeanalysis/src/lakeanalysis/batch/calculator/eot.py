@@ -10,7 +10,7 @@ from typing import Any
 
 from lakeanalysis.eot import EOTEstimator
 
-from ..engine import Calculator, LakeTask
+from ..domain import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 

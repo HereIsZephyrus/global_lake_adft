@@ -34,7 +34,7 @@ from lakesource.quantile.store import (
 from lakeanalysis.pwm_extreme.service import run_single_lake_service as run_pwm_service
 from lakeanalysis.quantile.service import run_single_lake_service as run_quantile_service
 
-from ..batch.engine import Calculator, LakeTask
+from ..batch.domain import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 

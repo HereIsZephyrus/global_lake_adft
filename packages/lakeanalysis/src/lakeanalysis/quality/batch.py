@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from lakeanalysis.batch.engine import Calculator, LakeTask
+from lakeanalysis.batch.domain import Calculator, LakeTask
 from lakeanalysis.batch.io import BatchReader, BatchWriter
 from lakesource.provider.base import LakeProvider
 from lakesource.postgres.quality_run_status_schema import (

@@ -17,7 +17,7 @@ from lakesource.quantile.store import (
 from lakeanalysis.quantile.service import run_single_lake_service
 from lakesource.quantile.schema import QuantileServiceConfig
 
-from ..engine import Calculator, LakeTask
+from ..domain import Calculator, LakeTask
 
 
 class QuantileCalculator(Calculator):

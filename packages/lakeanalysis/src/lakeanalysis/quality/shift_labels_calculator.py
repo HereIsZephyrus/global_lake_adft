@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from lakeanalysis.batch.engine import Calculator, LakeTask
+from lakeanalysis.batch.domain import Calculator, LakeTask
 from lakeanalysis.quality.batch import build_quality_context
 from .filters.shift import ShiftConfig, ShiftFilter
 

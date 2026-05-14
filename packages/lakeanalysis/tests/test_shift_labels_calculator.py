@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lakeanalysis.batch.engine import LakeTask
+from lakeanalysis.batch.domain import LakeTask
 from lakeanalysis.quality import ShiftConfig
 from lakeanalysis.quality.filters import LakeContext
 from lakeanalysis.quality.shift_labels_calculator import ShiftLabelsCalculator

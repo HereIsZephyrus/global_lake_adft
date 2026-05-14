@@ -12,7 +12,8 @@ import logging
 
 from lakesource.config import SourceConfig
 from lakesource.provider import create_provider
-from .engine import IdSetFilter, LakeFilter
+from .domain import LakeFilter
+from .filter import IdSetFilter
 
 log = logging.getLogger(__name__)
 

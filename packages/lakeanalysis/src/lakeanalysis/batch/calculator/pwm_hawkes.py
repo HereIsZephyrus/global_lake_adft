@@ -24,14 +24,18 @@ from lakeanalysis.hawkes import (
     make_hawkes_run_status_row,
     run_hawkes_pipeline,
 )
-from lakeanalysis.pwm_extreme.events import compute_decay_index, extract_segments
+from lakeanalysis.pwm_extreme.events import (
+    compute_decay_index,
+    extract_hawkes_events_from_segments,
+    extract_segments,
+)
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
     PWMExtremeServiceConfig,
 )
 
-from ..engine import Calculator, LakeTask
+from ..domain import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 
@@ -91,22 +95,6 @@ class PWMExtremeHawkesCalculator(Calculator):
                 config=self._service_config,
                 frozen_year_months=frozen or None,
             )
-            raw_events = pwm_result.extremes_df
-
-            if len(raw_events) < self._min_events:
-                return _make_fail_result(
-                    hylak_id,
-                    f"only {len(raw_events)} raw extreme months < min {self._min_events}",
-                )
-
-            raw_events = raw_events.copy()
-            raw_events["time"] = (
-                raw_events["year"] + (raw_events["month"] - 1) / 12.0
-            )
-
-            event_series, events_table = build_events_from_pwm(
-                raw_events, series_df
-            )
 
             decay_df = compute_decay_index(
                 pwm_result.labels_df,
@@ -114,6 +102,20 @@ class PWMExtremeHawkesCalculator(Calculator):
             )
             segments_df = extract_segments(decay_df)
             segments_rows = _build_segments_rows(hylak_id, segments_df)
+
+            events_df = extract_hawkes_events_from_segments(
+                pwm_result.labels_df, decay_df, segments_df
+            )
+
+            if len(events_df) < self._min_events:
+                return _make_fail_result(
+                    hylak_id,
+                    f"only {len(events_df)} segment-scoped events < min {self._min_events}",
+                )
+
+            event_series, events_table = build_events_from_pwm(
+                events_df, series_df
+            )
 
             pipeline_result = run_hawkes_pipeline(
                 event_series,
