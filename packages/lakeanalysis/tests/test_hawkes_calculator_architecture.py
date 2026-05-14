@@ -117,10 +117,10 @@ class TestPWMHawkesUsesSTLPath:
 
         result = calculator.run(task)
 
-        assert result.success, f"PWM-Hawkes should succeed: {result.error_message}"
-        assert result.summary is not None
-        assert result.summary.get("qc_pass") is True, \
-            f"QC should pass: {result.summary.get('error_message')}"
+        pr = result.pipeline
+        assert pr.summary is not None
+        assert pr.summary.get("qc_pass") is True, \
+            f"QC should pass: {pr.summary.get('error_message')}"
 
         # Table keys should be pwm_hawkes_* (not legacy hawkes_*)
         rows_by_table = calculator.result_to_rows(result)
@@ -130,7 +130,7 @@ class TestPWMHawkesUsesSTLPath:
         assert "pwm_hawkes_run_status" in rows_by_table
 
         # threshold_quantile should be 0.0 (PWM-Hawkes tag)
-        summary = result.summary
+        summary = pr.summary
         assert summary["threshold_quantile"] == 0.0
 
 
@@ -155,18 +155,15 @@ class TestEOTHawkesDefaults:
         """EOT-Hawkes calculator uses eot_hawkes_* table keys, not legacy hawkes_*."""
         from lakeanalysis.batch.calculator.eot_hawkes import (
             EOTHawkesCalculator,
-            EOTHawkesFitResult,
         )
-        from lakeanalysis.hawkes.pipeline import build_hawkes_result_row
+        from lakeanalysis.hawkes.pipeline import (
+            RunHawkesPipelineResult,
+            build_error_summary,
+            build_hawkes_result_row,
+        )
 
         calc = EOTHawkesCalculator()
 
-        err_result = EOTHawkesFitResult(
-            hylak_id=42, success=False, summary={},
-            lrt_rows=[], hawkes_result_rows=[],
-            transition_monthly_rows=[],
-            error_message="test error",
-        )
         rows_by_table = calc.error_to_rows(42, ValueError("test"), 0, 100)
         assert "eot_hawkes_results" in rows_by_table
         assert "eot_hawkes_run_status" in rows_by_table
@@ -179,13 +176,10 @@ class TestEOTHawkesDefaults:
                       "significance_level": 0.05, "reject_null": False,
                       "restricted_log_likelihood": -110.0, "full_log_likelihood": -100.0}]
 
-        success_result = EOTHawkesFitResult(
-            hylak_id=42, success=True,
+        success_result = RunHawkesPipelineResult(
             summary=summary,
             lrt_rows=lrt_rows,
-            hawkes_result_rows=[build_hawkes_result_row(summary)],
             transition_monthly_rows=[],
-            error_message=None,
         )
         rows_by_table = calc.result_to_rows(success_result)
         assert "eot_hawkes_results" in rows_by_table

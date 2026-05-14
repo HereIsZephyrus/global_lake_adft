@@ -1,6 +1,6 @@
 """Public API for Hawkes modelling utilities."""
 
-from .bridge import build_events_from_eot
+from .bridge import build_events_from_eot, build_events_from_pwm
 from .mining import (
     build_overall_stats,
     load_events_from_case,
@@ -16,6 +16,16 @@ from .fit import (
     run_model_comparison,
 )
 from .model import evaluate_intensity_decomposition
+from .pipeline import (
+    HawkesQCFailError,
+    RunHawkesPipelineResult,
+    build_error_summary,
+    build_hawkes_result_row,
+    build_hawkes_transition_monthly_rows,
+    build_qc_fail_summary,
+    make_hawkes_run_status_row,
+    run_hawkes_pipeline,
+)
 from .plot_adapter import (
     plot_event_timeline,
     plot_intensity_decomposition,
@@ -49,6 +59,15 @@ __all__ = [
     "run_model_comparison",
     "evaluate_intensity_decomposition",
     "build_events_from_eot",
+    "build_events_from_pwm",
+    "HawkesQCFailError",
+    "RunHawkesPipelineResult",
+    "run_hawkes_pipeline",
+    "build_error_summary",
+    "build_qc_fail_summary",
+    "build_hawkes_result_row",
+    "build_hawkes_transition_monthly_rows",
+    "make_hawkes_run_status_row",
     "load_summary",
     "safe_series_divide",
     "select_transition_lakes",
@@ -59,4 +78,3 @@ __all__ = [
     "plot_kernel_matrix",
     "plot_lrt_summary",
 ]
-
