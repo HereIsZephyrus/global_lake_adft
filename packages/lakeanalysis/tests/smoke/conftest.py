@@ -75,18 +75,14 @@ _PWM_CANDIDATE_WINDOW = 10
 # Backend parametrization
 # ------------------------------------------------------------------
 
-@pytest.fixture(params=["parquet", "postgres"], scope="session")
+@pytest.fixture(params=["parquet"], scope="session")
 def backend(request):
-    """Parametrize tests across both backends.
+    """Parametrize tests across parquet backend only.
 
-    Skips postgres if DB env vars are not available.
-    Skips parquet if data dir is not available.
+    Postgres removed to avoid hang when local PG is unreachable.
     """
     load_env()
-    if request.param == "postgres":
-        _require_db_env()
-    elif request.param == "parquet":
-        _parquet_data_dir()  # validates availability
+    _parquet_data_dir()  # validates availability
     return request.param
 
 
