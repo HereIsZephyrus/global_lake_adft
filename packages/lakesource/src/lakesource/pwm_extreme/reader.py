@@ -157,6 +157,19 @@ def fetch_pwm_monthly_threshold_grid_agg(
     return df
 
 
+def _crossent_threshold_sql_pg(p: float, direction: str) -> str:
+    u = 1.0 - p if direction == "high" else p
+    ln_arg = 1.0 - u
+    return f"""t.mean_area * (
+               (t.epsilon - (1 - t.epsilon) * LN({ln_arg}))
+               * EXP(-(t.lambda_0
+                     + t.lambda_1 * {u}
+                     + t.lambda_2 * {u} * {u}
+                     + t.lambda_3 * {u} * {u} * {u}
+                     + t.lambda_4 * {u} * {u} * {u} * {u}))
+           )"""
+
+
 def _exceedance_grid_agg_sql(tc: TableConfig, p_high: float, p_low: float) -> psql.Composed:  # noqa: ARG001
     return psql.SQL("""
 WITH exceedance AS (
