@@ -37,7 +37,7 @@ def run_runs_declustering(
     """
     warnings.warn(
         "run_runs_declustering is a legacy compatibility helper. "
-        "Prefer the C_k + segment pipeline in lakeanalysis.pwm.events.",
+        "Prefer the S_k + segment pipeline in lakeanalysis.pwm.events.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -102,9 +102,9 @@ def compute_decay_index(
     decay_rate: float = 1.0,
     phi_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Compute exponential decay index C_k over the full monthly timeline.
+    """Compute exponential decay strength S_k over the full monthly timeline.
 
-    ``C_k`` is defined as ``ln(sum(phi_i * exp(-a * gap(i, k))))`` over all
+    ``S_k`` is defined as ``sum(phi_i * exp(-a * gap(i, k)))`` over all
     extreme months ``i <= k``. Normal months do not contribute new ``phi``;
     they only decay the accumulated extreme-memory strength.
 
@@ -119,7 +119,7 @@ def compute_decay_index(
             fallback ``phi``.
 
     Returns:
-        DataFrame with columns: year, month, C_k, has_high, has_low,
+        DataFrame with columns: year, month, S_k, has_high, has_low,
         phi_i, exceedance. One row per month in the original timeline.
     """
     if labeled_df.empty:
@@ -127,7 +127,7 @@ def compute_decay_index(
             columns=[
                 "year",
                 "month",
-                "C_k",
+                "S_k",
                 "has_high",
                 "has_low",
                 "phi_i",
@@ -150,6 +150,7 @@ def compute_decay_index(
 
     high_mask = df["extreme_label"] == "extreme_high"
     low_mask = df["extreme_label"] == "extreme_low"
+    extreme_mask = high_mask | low_mask
 
     df["has_high"] = high_mask.to_numpy()
     df["has_low"] = low_mask.to_numpy()
@@ -181,7 +182,10 @@ def compute_decay_index(
         phi_values = merged["phi"].to_numpy(dtype=float)
         phi_i = np.nan_to_num(phi_values, nan=0.0)
 
-    c_k = np.zeros(len(df), dtype=float)
+    # Only extreme months are allowed to inject new strength.
+    phi_i = np.where(extreme_mask.to_numpy(dtype=bool), phi_i, 0.0)
+
+    s_k = np.zeros(len(df), dtype=float)
     running_strength = 0.0
     prev_month_seq: int | None = None
     for idx in range(len(df)):
@@ -190,14 +194,14 @@ def compute_decay_index(
             month_gap = month_seq - prev_month_seq
             running_strength *= float(np.exp(-decay_rate * month_gap))
         running_strength += float(phi_i[idx])
-        c_k[idx] = float(np.log(running_strength)) if running_strength > 0.0 else -np.inf
+        s_k[idx] = running_strength
         prev_month_seq = month_seq
 
     result = pd.DataFrame(
         {
             "year": df["year"].to_numpy(dtype=int),
             "month": df["month"].to_numpy(dtype=int),
-            "C_k": c_k,
+            "S_k": s_k,
             "has_high": df["has_high"].to_numpy(),
             "has_low": df["has_low"].to_numpy(),
             "phi_i": phi_i,
@@ -208,21 +212,24 @@ def compute_decay_index(
 
 
 def extract_segments(decay_df: pd.DataFrame) -> pd.DataFrame:
-    """Extract abrupt-transition and unilateral segments from C_k sequence.
+    """Extract abrupt-transition and unilateral segments from S_k sequence.
 
-    A *transition* segment is a continuous run of months with C_k > 0
-    that contains at least one high *and* one low extreme event.
+    A segment is anchored by extreme months and may include a single normal
+    bridge month only when that normal month still satisfies ``S_k > 1``.
+    Two consecutive normal months always break the segment.
+
+    A *transition* segment contains at least one high *and* one low extreme.
 
     A *unilateral* segment contains only one type of extreme event.
 
     Args:
-        decay_df: Output from ``compute_decay_index``.  Must contain
-            columns: year, month, C_k, has_high, has_low.
+        decay_df: Output from ``compute_decay_index``. Must contain
+            columns: year, month, S_k, has_high, has_low.
 
     Returns:
         DataFrame with columns: segment_id, start_year, start_month,
         end_year, end_month, duration_months, segment_type, has_high,
-        has_low, max_C, mean_C, integral_C, n_extreme_events,
+        has_low, max_S, mean_S, integral_S, n_extreme_events,
         first_extreme_type, last_extreme_type.
     """
     empty_result = pd.DataFrame(
@@ -230,14 +237,14 @@ def extract_segments(decay_df: pd.DataFrame) -> pd.DataFrame:
             "segment_id", "start_year", "start_month",
             "end_year", "end_month", "duration_months",
             "segment_type", "has_high", "has_low",
-            "max_C", "mean_C", "integral_C", "n_extreme_events",
+            "max_S", "mean_S", "integral_S", "n_extreme_events",
             "first_extreme_type", "last_extreme_type",
         ]
     )
     if decay_df.empty:
         return empty_result
 
-    required_cols = {"year", "month", "C_k", "has_high", "has_low"}
+    required_cols = {"year", "month", "S_k", "has_high", "has_low"}
     missing = required_cols - set(decay_df.columns)
     if missing:
         raise ValueError(
@@ -245,23 +252,19 @@ def extract_segments(decay_df: pd.DataFrame) -> pd.DataFrame:
         )
 
     df = decay_df.sort_values(["year", "month"]).reset_index(drop=True)
-    active = (df["C_k"] > 0.0).to_numpy(dtype=bool)
 
     segments: list[dict] = []
     seg_id = 0
-    i = 0
     n = len(df)
+    seg_start: int | None = None
+    seg_end: int | None = None
+    consecutive_normals = 0
 
-    while i < n:
-        if not active[i]:
-            i += 1
-            continue
-
-        j = i
-        while j < n and active[j]:
-            j += 1
-
-        seg_df = df.iloc[i:j]
+    def close_segment(end_idx: int) -> None:
+        nonlocal seg_id, seg_start, seg_end, consecutive_normals
+        if seg_start is None:
+            return
+        seg_df = df.iloc[seg_start:end_idx + 1]
         seg_has_high = bool(seg_df["has_high"].any())
         seg_has_low = bool(seg_df["has_low"].any())
         seg_type = "transition" if (seg_has_high and seg_has_low) else "unilateral"
@@ -288,19 +291,45 @@ def extract_segments(decay_df: pd.DataFrame) -> pd.DataFrame:
                 "start_month": int(seg_df.iloc[0]["month"]),
                 "end_year": int(seg_df.iloc[-1]["year"]),
                 "end_month": int(seg_df.iloc[-1]["month"]),
-                "duration_months": j - i,
+                "duration_months": len(seg_df),
                 "segment_type": seg_type,
                 "has_high": seg_has_high,
                 "has_low": seg_has_low,
-                "max_C": float(seg_df["C_k"].max()),
-                "mean_C": float(seg_df["C_k"].mean()),
-                "integral_C": float(seg_df["C_k"].sum()),
+                "max_S": float(seg_df["S_k"].max()),
+                "mean_S": float(seg_df["S_k"].mean()),
+                "integral_S": float(seg_df["S_k"].sum()),
                 "n_extreme_events": n_ext,
                 "first_extreme_type": first_extreme_type,
                 "last_extreme_type": last_extreme_type,
             }
         )
-        i = j
+
+        seg_start = None
+        seg_end = None
+        consecutive_normals = 0
+
+    for idx in range(n):
+        row = df.iloc[idx]
+        is_extreme = bool(row["has_high"] or row["has_low"])
+        if is_extreme:
+            if seg_start is None:
+                seg_start = idx
+            seg_end = idx
+            consecutive_normals = 0
+            continue
+
+        if seg_start is None:
+            continue
+
+        consecutive_normals += 1
+        if consecutive_normals >= 2 or float(row["S_k"]) <= 1.0:
+            close_segment(seg_end if seg_end is not None else idx - 1)
+            continue
+
+        seg_end = idx
+
+    if seg_start is not None and seg_end is not None:
+        close_segment(seg_end)
 
     if not segments:
         return empty_result

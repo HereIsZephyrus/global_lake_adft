@@ -1,10 +1,10 @@
-"""PWMHawkesCalculator: PWM event -> exponential decay C_k -> Hawkes fit.
+"""PWMHawkesCalculator: PWM event -> exponential decay S_k -> Hawkes fit.
 
 Uses ``run_single_lake_service`` (STL decomposition + pooled PWM) so that
 the event-detection math is identical to the standalone PWM batch pipeline.
 
-Replaces the old hard-threshold runs declustering with an exponential
-decay index C_k and transition/unilateral segment extraction.
+Replaces the old hard-threshold runs declustering with exponential
+decay strength S_k and transition/unilateral segment extraction.
 """
 
 from __future__ import annotations
@@ -186,9 +186,9 @@ def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]
                 "segment_type": str(seg["segment_type"]),
                 "has_high": bool(seg["has_high"]),
                 "has_low": bool(seg["has_low"]),
-                "max_C": float(seg["max_C"]),
-                "mean_C": float(seg["mean_C"]),
-                "integral_C": float(seg["integral_C"]),
+                "max_S": float(seg["max_S"]),
+                "mean_S": float(seg["mean_S"]),
+                "integral_S": float(seg["integral_S"]),
                 "n_extreme_events": int(seg["n_extreme_events"]),
                 "first_extreme_type": (
                     str(seg["first_extreme_type"])
