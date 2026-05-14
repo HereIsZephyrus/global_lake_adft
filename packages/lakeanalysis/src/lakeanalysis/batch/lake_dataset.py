@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
+
+from .domain import LakeTask
 
 
 @dataclass(frozen=True)
@@ -48,5 +51,28 @@ class LakeDataset:
             year_months=self.year_months,
             values=self.values[idx],
             frozen_mask=frozen_mask,
+            extra=extra,
+        )
+
+    def to_task(self, idx: int) -> LakeTask:
+        """Return a ``LakeTask`` for the lake at *idx*."""
+        ym = self.year_months.astype(int)
+        years = ym // 100
+        months = ym % 100
+        series_df = pd.DataFrame(
+            {"year": years, "month": months, "water_area": self.values[idx]}
+        )
+        frozen_year_months: frozenset[int] = frozenset()
+        if self.frozen_mask is not None:
+            frozen_ym = ym[self.frozen_mask[idx].astype(bool)]
+            if len(frozen_ym) > 0:
+                frozen_year_months = frozenset(frozen_ym.tolist())
+        extra = None
+        if self.extra is not None:
+            extra = {key: float(value[idx]) for key, value in self.extra.items()}
+        return LakeTask(
+            hylak_id=int(self.hylak_ids[idx]),
+            series_df=series_df,
+            frozen_year_months=frozen_year_months,
             extra=extra,
         )

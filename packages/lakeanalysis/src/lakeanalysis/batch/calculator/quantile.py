@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-import pandas as pd
-
 from lakesource.quantile.schema import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
@@ -38,7 +36,7 @@ class QuantileCalculator(Calculator):
             method=method,
         )
 
-    def run(self, task: LakeTask) -> Any:
+    def _compute_lake(self, task: LakeTask) -> Any:
         return run_single_lake_service(
             task.series_df,
             hylak_id=task.hylak_id,
@@ -72,39 +70,17 @@ class QuantileCalculator(Calculator):
         success_lakes = 0
         error_lakes = 0
         chunk_start, chunk_end = error_chunk
-        year_months = dataset.year_months.astype(int)
-        years = year_months // 100
-        months = year_months % 100
 
-        for idx, hylak_id in enumerate(dataset.hylak_ids.astype(int)):
-            series_df = pd.DataFrame(
-                {
-                    "year": years,
-                    "month": months,
-                    "water_area": dataset.values[idx],
-                }
-            )
-            frozen_year_months = None
-            use_frozen_mask = False
-            if dataset.frozen_mask is not None:
-                frozen = year_months[dataset.frozen_mask[idx]]
-                if len(frozen) > 0:
-                    frozen_year_months = set(frozen.tolist())
-                    use_frozen_mask = True
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
             try:
-                result = run_single_lake_service(
-                    series_df,
-                    hylak_id=hylak_id,
-                    config=self._service_config,
-                    frozen_year_months=frozen_year_months,
-                    use_frozen_mask=use_frozen_mask,
-                )
+                result = self._compute_lake(task)
                 for table, rows in self.result_to_rows(result).items():
                     all_rows[table].extend(rows)
                 success_lakes += 1
             except Exception as exc:
                 for table, rows in self.error_to_rows(
-                    hylak_id,
+                    task.hylak_id,
                     exc,
                     chunk_start,
                     chunk_end,

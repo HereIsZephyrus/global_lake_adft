@@ -9,6 +9,7 @@ NoDeclustering available for comparison.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 
 from lakeanalysis.eot import NoDeclustering, RunsDeclustering
 from lakeanalysis.hawkes import (
@@ -23,6 +24,7 @@ from lakeanalysis.hawkes import (
 )
 
 from ..domain import Calculator, LakeTask
+from ..lake_dataset import LakeDataset
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +47,6 @@ class EOTHawkesCalculator(Calculator):
         *,
         threshold_quantile: float = 0.90,
         hawkes_window_months: float = 4.0,
-        min_events: int = 10,
         min_event_rate: float = 0.01,
         max_event_rate: float = 0.30,
         min_relative_amplitude: float = 0.05,
@@ -55,7 +56,6 @@ class EOTHawkesCalculator(Calculator):
     ) -> None:
         self._threshold_quantile = threshold_quantile
         self._hawkes_window_months = hawkes_window_months
-        self._min_events = min_events
         self._min_event_rate = min_event_rate
         self._max_event_rate = max_event_rate
         self._min_relative_amplitude = min_relative_amplitude
@@ -63,7 +63,7 @@ class EOTHawkesCalculator(Calculator):
         self._monthly_significance_quantile = monthly_significance_quantile
         self._decluster_run_length = decluster_run_length
 
-    def run(self, task: LakeTask) -> RunHawkesPipelineResult:
+    def _compute_lake(self, task: LakeTask) -> RunHawkesPipelineResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else None
@@ -82,13 +82,6 @@ class EOTHawkesCalculator(Calculator):
                 declustering_strategy=decluster_strategy,
             )
             events_table = event_series.events_table
-
-            if len(event_series.times) < self._min_events:
-                return _make_fail_result(
-                    hylak_id,
-                    f"only {len(event_series.times)} EOT events < min {self._min_events}",
-                    self._threshold_quantile,
-                )
 
             return run_hawkes_pipeline(
                 event_series,
@@ -118,6 +111,35 @@ class EOTHawkesCalculator(Calculator):
             return RunHawkesPipelineResult(
                 summary=error_summary, lrt_rows=[], transition_monthly_rows=[]
             )
+
+    def run_dataset(
+        self,
+        dataset: LakeDataset,
+        *,
+        error_chunk: tuple[int, int] = (0, 0),
+    ) -> tuple[dict[str, list[dict]], int, int]:
+        all_rows: dict[str, list[dict]] = defaultdict(list)
+        success_lakes = 0
+        error_lakes = 0
+        chunk_start, chunk_end = error_chunk
+
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
+            try:
+                result = self._compute_lake(task)
+                for table, rows in self.result_to_rows(result).items():
+                    all_rows[table].extend(rows)
+                success_lakes += 1
+            except Exception as exc:
+                for table, rows in self.error_to_rows(
+                    task.hylak_id,
+                    exc,
+                    chunk_start,
+                    chunk_end,
+                ).items():
+                    all_rows[table].extend(rows)
+                error_lakes += 1
+        return dict(all_rows), success_lakes, error_lakes
 
     def result_to_rows(
         self, result: RunHawkesPipelineResult
@@ -153,11 +175,3 @@ class EOTHawkesCalculator(Calculator):
                 build_hawkes_result_row(error_summary)
             ],
         }
-
-
-def _make_fail_result(
-    hylak_id: int, message: str, threshold_quantile: float
-) -> RunHawkesPipelineResult:
-    summary = build_error_summary(hylak_id, message, threshold_quantile)
-    summary["qc_pass"] = False
-    return RunHawkesPipelineResult(summary=summary, lrt_rows=[], transition_monthly_rows=[])

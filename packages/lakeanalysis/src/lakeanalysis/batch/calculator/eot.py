@@ -15,8 +15,6 @@ from lakeanalysis.eot import EOTEstimator
 from ..domain import Calculator, LakeTask
 from ..lake_dataset import LakeDataset
 
-import pandas as pd
-
 log = logging.getLogger(__name__)
 
 
@@ -36,7 +34,7 @@ class EOTCalculator(Calculator):
         self._tails = tails or ["high", "low"]
         self._quantiles = quantiles or [0.95, 0.98]
 
-    def run(self, task: LakeTask) -> EOTResult:
+    def _compute_lake(self, task: LakeTask) -> EOTResult:
         estimator = EOTEstimator()
         frozen = set(task.frozen_year_months)
         fits: list[tuple[str, float, Any]] = []
@@ -125,36 +123,17 @@ class EOTCalculator(Calculator):
         success_lakes = 0
         error_lakes = 0
         chunk_start, chunk_end = error_chunk
-        year_months = dataset.year_months.astype(int)
-        years = year_months // 100
-        months = year_months % 100
 
-        for idx, hylak_id in enumerate(dataset.hylak_ids.astype(int)):
-            series_df = pd.DataFrame(
-                {
-                    "year": years,
-                    "month": months,
-                    "water_area": dataset.values[idx],
-                }
-            )
-            frozen_months = frozenset()
-            if dataset.frozen_mask is not None:
-                frozen = year_months[dataset.frozen_mask[idx]]
-                if len(frozen) > 0:
-                    frozen_months = frozenset(frozen.tolist())
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
             try:
-                task = LakeTask(
-                    hylak_id=int(hylak_id),
-                    series_df=series_df,
-                    frozen_year_months=frozen_months,
-                )
-                result = self.run(task)
+                result = self._compute_lake(task)
                 for table, rows in self.result_to_rows(result).items():
                     all_rows[table].extend(rows)
                 success_lakes += 1
             except Exception as exc:
                 for table, rows in self.error_to_rows(
-                    hylak_id,
+                    task.hylak_id,
                     exc,
                     chunk_start,
                     chunk_end,

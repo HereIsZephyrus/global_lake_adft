@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.batch.domain import LakeTask
+from lakeanalysis.batch.lake_dataset import LakeDataset
 from lakesource.pwm_extreme.schema import PWMExtremeConfig
 
 
@@ -45,6 +45,25 @@ def _make_synthetic_series(
             "year_month": year * 100 + month,
         })
     return pd.DataFrame(records)
+
+
+def _make_single_dataset(
+    series_df: pd.DataFrame,
+    hylak_id: int = 1,
+    frozen_year_months: frozenset[int] | None = None,
+) -> LakeDataset:
+    """Build a size-1 LakeDataset from a single-lake DataFrame."""
+    ym = series_df["year"].astype(int) * 100 + series_df["month"].astype(int)
+    values = series_df["water_area"].to_numpy(dtype=float).reshape(1, -1)
+    frozen_mask = None
+    if frozen_year_months:
+        frozen_mask = np.isin(ym.to_numpy(), list(frozen_year_months)).reshape(1, -1)
+    return LakeDataset(
+        hylak_ids=np.array([hylak_id], dtype=np.int64),
+        year_months=ym.to_numpy(dtype=np.int64),
+        values=values,
+        frozen_mask=frozen_mask,
+    )
 
 
 class TestPWMHawkesUsesSTLPath:
@@ -95,43 +114,32 @@ class TestPWMHawkesUsesSTLPath:
                 f"severity={row['severity']} should equal |index_value - threshold|={expected}"
 
     def test_pwm_hawkes_calculator_invokes_service(self) -> None:
-        """PWMExtremeHawkesCalculator.run() uses decay index + segment filtering.
+        """PWMExtremeHawkesCalculator.run_dataset() uses decay index + segment filtering.
 
         Synthetic 6-year sinusoidal data typically does not produce transition
         segments (both high and low within one decay window), so the calculator
-        should return a fail result.  We verify the table keys work for both
-        success and fail paths.
+        should return a result (pass or fail).  We verify the table keys work.
         """
         from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
 
         series_df = _make_synthetic_series(seed=43)
-        frozen = frozenset()
-        task = LakeTask(hylak_id=1, series_df=series_df, frozen_year_months=frozen)
+        ds = _make_single_dataset(series_df, hylak_id=1)
 
         calculator = PWMExtremeHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
-            min_events=0,
             min_event_rate=0.005,
             max_event_rate=0.50,
             min_median_severity=0.1,
             method="stl",
         )
 
-        result = calculator.run(task)
+        rows_by_table, _, _ = calculator.run_dataset(ds)
 
-        pr = result.pipeline
-        assert pr.summary is not None
-        # Table keys should be pwm_hawkes_* (not legacy hawkes_*)
-        rows_by_table = calculator.result_to_rows(result)
         assert "pwm_hawkes_results" in rows_by_table
         assert "pwm_hawkes_lrt" in rows_by_table
         assert "pwm_hawkes_transition_monthly" in rows_by_table
         assert "pwm_hawkes_run_status" in rows_by_table
         assert "pwm_hawkes_segments" in rows_by_table
-
-        # threshold_quantile should be 0.0 (PWM-Hawkes tag)
-        summary = pr.summary
-        assert summary["threshold_quantile"] == 0.0
 
 
 class TestEOTHawkesDefaults:

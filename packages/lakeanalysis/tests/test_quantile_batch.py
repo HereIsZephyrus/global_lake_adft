@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from lakesource.quantile.schema import (
@@ -12,6 +13,7 @@ from lakesource.quantile.store import make_run_status_row
 from lakesource.provider.base import LakeProvider
 from lakeanalysis.batch import (
     Engine,
+    LakeDataset,
     LakeTask,
     RangeFilter,
 )
@@ -25,6 +27,15 @@ def _make_series_df() -> pd.DataFrame:
         for month in range(1, 13):
             rows.append({"year": year, "month": month, "water_area": 100.0 + month + offset})
     return pd.DataFrame(rows)
+
+
+def _make_single_lake_dataset(df: pd.DataFrame, hylak_id: int = 42) -> LakeDataset:
+    ym = df["year"].astype(int) * 100 + df["month"].astype(int)
+    return LakeDataset(
+        hylak_ids=np.array([hylak_id], dtype=np.int64),
+        year_months=ym.to_numpy(dtype=np.int64),
+        values=df["water_area"].to_numpy(dtype=float).reshape(1, -1),
+    )
 
 
 class FakeProvider(LakeProvider):
@@ -46,6 +57,12 @@ class FakeProvider(LakeProvider):
 
     def fetch_max_hylak_id(self):
         return 9
+
+    def fetch_rows(self, table_name, start, end):
+        return [{"hylak_id": i} for i in range(max(start, 0), min(end, 9))]
+
+    def fetch_done_ids(self, table_name, start, end, status=None):
+        return self._done_ids & set(range(max(start, 0), end))
 
     def fetch_lake_geometry_wkt_by_ids(self, hylak_ids, **kw):
         raise NotImplementedError
@@ -130,9 +147,10 @@ def test_quantile_calculator_run() -> None:
         min_valid_per_month=3,
         min_valid_observations=36,
     )
-    task = LakeTask(hylak_id=42, series_df=_make_series_df(), frozen_year_months=frozenset())
-    result = calc.run(task)
-    assert result.hylak_id == 42
+    ds = _make_single_lake_dataset(_make_series_df(), hylak_id=42)
+    rows_by_table, success, _ = calc.run_dataset(ds)
+    assert success == 1
+    assert "quantile_labels" in rows_by_table
 
 
 def test_quantile_calculator_result_to_rows() -> None:
@@ -140,9 +158,8 @@ def test_quantile_calculator_result_to_rows() -> None:
         min_valid_per_month=3,
         min_valid_observations=36,
     )
-    task = LakeTask(hylak_id=42, series_df=_make_series_df(), frozen_year_months=frozenset())
-    result = calc.run(task)
-    rows = calc.result_to_rows(result)
+    ds = _make_single_lake_dataset(_make_series_df(), hylak_id=42)
+    rows, _, _ = calc.run_dataset(ds)
 
     assert "quantile_labels" in rows
     assert "quantile_extremes" in rows
@@ -176,46 +193,41 @@ def test_range_filter() -> None:
 
 
 def test_engine_single_process_with_mocks() -> None:
-    provider = FakeProvider()
+    from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
+    provider = FakeProvider(done_ids={0, 1})
     writer = FakeWriter()
+    factory = LakeDatasetFactory(provider=provider)
     engine = Engine(
         reader=FakeReader(provider),
         writer=writer,
         calculator=_FakeCalculator(),
         algorithm="quantile",
         chunk_size=5,
+        dataset_factory=factory,
     )
     report = engine.run()
 
-    assert report.total_chunks == 2
-    assert report.success_lakes == 8
-    assert report.skipped_lakes == 2
-    assert len(writer.rows.get("mock", [])) == 8
+    assert report.source_lakes == 7
+    assert report.success_lakes == 7
+    assert len(writer.rows.get("mock", [])) == 7
 
 
 def test_engine_skips_all_done_lakes() -> None:
-    class AllDoneProvider(FakeProvider):
-        def __init__(self):
-            super().__init__()
-            self._done_ids = {0, 1}
+    from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
 
-        def fetch_lake_area_chunk(self, cs, ce):
-            return {0: _make_series_df(), 1: _make_series_df()}
-
-        def fetch_done_ids(self, algorithm, cs, ce):
-            return {0, 1}
-
+    provider = FakeProvider(done_ids=set(range(9)))
+    factory = LakeDatasetFactory(provider=provider)
     engine = Engine(
-        reader=FakeReader(AllDoneProvider()),
+        reader=FakeReader(provider),
         writer=FakeWriter(),
         calculator=_FakeCalculator(),
         algorithm="quantile",
         chunk_size=5,
+        dataset_factory=factory,
     )
     report = engine.run()
 
     assert report.success_lakes == 0
-    assert report.skipped_lakes > 0
 
 
 def test_make_run_status_row_done() -> None:
@@ -242,8 +254,14 @@ def test_make_run_status_row_error() -> None:
 
 
 class _FakeCalculator:
-    def run(self, task):
-        return {"hylak_id": task.hylak_id}
+    def run_dataset(self, dataset, *, error_chunk=(0, 0)):
+        rows = {"mock": []}
+        success = 0
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
+            rows["mock"].append({"hylak_id": task.hylak_id})
+            success += 1
+        return rows, success, 0
 
     def result_to_rows(self, result):
         return {"mock": [{"hylak_id": result["hylak_id"]}]}

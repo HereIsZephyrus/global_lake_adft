@@ -48,7 +48,6 @@ def hawkes(
     io_budget: IoBudgetOpt = 4,
     decay_rate: float = typer.Option(1.0, help="Exponential decay rate λ for C_k index"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
-    min_events: int = typer.Option(10, help="Minimum events for Hawkes fitting"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.30, help="Maximum event rate"),
     min_relative_amplitude: float = typer.Option(0.05, help="Minimum relative amplitude"),
@@ -69,7 +68,6 @@ def hawkes(
         calculator_kwargs=dict(
             decay_rate=decay_rate,
             hawkes_window_months=hawkes_window_months,
-            min_events=min_events,
             min_event_rate=min_event_rate,
             max_event_rate=max_event_rate,
             min_relative_amplitude=min_relative_amplitude,
@@ -85,7 +83,6 @@ def diag(
     chunk_size: ChunkSizeOpt = 10_000,
     io_budget: IoBudgetOpt = 4,
     skip_run: bool = typer.Option(False, "--skip-run", help="Skip batch run, only fetch diagnosis"),
-    min_events: int = typer.Option(5, help="Minimum events for Hawkes fitting"),
     min_event_rate: float = typer.Option(0.005, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.50, help="Maximum event rate"),
 ) -> None:
@@ -104,7 +101,7 @@ def diag(
             io_budget=io_budget,
             calculator_kwargs=dict(
                 decay_rate=1.0, hawkes_window_months=4.0,
-                min_events=min_events, min_event_rate=min_event_rate,
+                min_event_rate=min_event_rate,
                 max_event_rate=max_event_rate, min_relative_amplitude=0.05,
                 min_median_severity=1.0, monthly_significance_quantile=0.95,
             ),

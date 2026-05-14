@@ -45,6 +45,9 @@ def run_batch_engine(
     from lakeanalysis.batch.calculator.factory import CalculatorFactory
     calculator = CalculatorFactory.create(algorithm, **(calculator_kwargs or {}))
 
+    from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
+    dataset_factory = LakeDatasetFactory.from_config(source_config)
+
     reader = build_provider_batch_reader(
         source_config,
         done_table=done_table,
@@ -65,6 +68,7 @@ def run_batch_engine(
         lake_filter=lake_filter,
         chunk_size=chunk_size,
         io_budget=io_budget,
+        dataset_factory=dataset_factory,
     )
     engine.run()
 

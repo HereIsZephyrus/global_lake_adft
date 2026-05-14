@@ -59,8 +59,10 @@ class _FakeProvider:
 
 
 class _FakeCalculator:
-    def run(self, task):
-        return {"hylak_id": task.hylak_id}
+    def run_dataset(self, dataset, *, error_chunk=(0, 0)):
+        del error_chunk
+        rows = {"mock": [{"hylak_id": int(hid)} for hid in dataset.hylak_ids.tolist()]}
+        return rows, len(dataset), 0
 
     def result_to_rows(self, result):
         return {"mock": [result]}
@@ -69,91 +71,19 @@ class _FakeCalculator:
         return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
 
 
-def test_worker_run_emits_expected_status_sequence() -> None:
-    comm = _FakeComm(trigger_count=1)
-    worker = Worker(
-        rank=1,
-        reader=_FakeProvider(),
-        algorithm="quantile",
-        calculator=_FakeCalculator(),
-        chunk_size=2,
-    )
-
-    worker.run(comm, {1: (0, 2)})
-
-    status_messages = [payload for tag, payload in comm.messages if tag == TAG_STATUS]
-    assert [state for state, _ in status_messages] == [
-        WorkerState.PENDING,
-        WorkerState.READING,
-        WorkerState.CALCULATING,
-        WorkerState.DONE,
-    ]
-
-    data_messages = [payload for tag, payload in comm.messages if tag == TAG_DATA]
-    assert data_messages == [{"mock": [{"hylak_id": 0}, {"hylak_id": 1}]}]
-
-
-def test_worker_run_empty_chunk_returns_to_pending_then_done() -> None:
-    comm = _FakeComm(trigger_count=2)
-    worker = Worker(
-        rank=1,
-        reader=_FakeProvider(empty=True),
-        algorithm="quantile",
-        calculator=_FakeCalculator(),
-        chunk_size=1,
-    )
-
-    worker.run(comm, {1: (0, 2)})
-
-    status_messages = [payload for tag, payload in comm.messages if tag == TAG_STATUS]
-    assert [state for state, _ in status_messages] == [
-        WorkerState.PENDING,
-        WorkerState.READING,
-        WorkerState.PENDING,
-        WorkerState.READING,
-        WorkerState.DONE,
-    ]
-
-
-def test_worker_run_id_batch_masks_done_ids() -> None:
-    comm = _FakeComm(trigger_count=1)
-    worker = Worker(
-        rank=1,
-        reader=_FakeProvider(done_ids={10}),
-        algorithm="comparison",
-        calculator=_FakeCalculator(),
-        chunk_size=10,
-    )
-
-    worker.run_id_batch(comm, {1: [[10, 20]]})
-
-    data_messages = [payload for tag, payload in comm.messages if tag == TAG_DATA]
-    assert data_messages == [{"mock": [{"hylak_id": 20}]}]
-
-    done_state = [payload for tag, payload in comm.messages if tag == TAG_STATUS][-1]
-    assert done_state == (
-        WorkerState.DONE,
-        {"source": 2, "skipped": 1, "success": 1, "error": 0, "chunks": 1},
-    )
-
-
 class _FakeDatasetFactory:
-    def build(self, query: LakeDatasetQuery):
-        lo = query.id_range[0] if query.id_range else 0
-        hi = query.id_range[1] if query.id_range else 10
+    def __init__(self) -> None:
+        self._build_count = 0
+
+    def build(self, query):
+        self._build_count += 1
+        lo, hi = query.id_range or (0, 3)
         n = hi - lo
         return LakeDataset(
-            hylak_ids=np.asarray(list(range(lo, hi)), dtype=np.int64),
+            hylak_ids=np.arange(lo, hi, dtype=np.int64),
             year_months=np.asarray([200001, 200002], dtype=np.int64),
             values=np.ones((n, 2), dtype=float),
         )
-
-
-class _FakeDatasetCalculator:
-    def run_dataset(self, dataset, *, error_chunk=(0, 0)):
-        del error_chunk
-        rows = {"mock": [{"hylak_id": int(hid)} for hid in dataset.hylak_ids.tolist()]}
-        return rows, len(dataset), 0
 
 
 def test_worker_run_dataset_id_batch_emits_correct_status_sequence() -> None:
@@ -162,7 +92,7 @@ def test_worker_run_dataset_id_batch_emits_correct_status_sequence() -> None:
         rank=1,
         reader=_FakeProvider(),
         algorithm="pwm_extreme",
-        calculator=_FakeDatasetCalculator(),
+        calculator=_FakeCalculator(),
         chunk_size=10,
     )
     factory = _FakeDatasetFactory()

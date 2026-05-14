@@ -85,7 +85,6 @@ def eot_batch(
     io_budget: IoBudgetOpt = 4,
     threshold_quantile: float = typer.Option(0.90, help="EOT threshold quantile"),
     hawkes_window_months: float = typer.Option(4.0, help="Kernel window in months"),
-    min_events: int = typer.Option(10, help="Minimum events"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.30, help="Maximum event rate"),
     min_relative_amplitude: float = typer.Option(0.05, help="Minimum relative amplitude"),
@@ -107,7 +106,6 @@ def eot_batch(
         calculator_kwargs=dict(
             threshold_quantile=threshold_quantile,
             hawkes_window_months=hawkes_window_months,
-            min_events=min_events,
             min_event_rate=min_event_rate,
             max_event_rate=max_event_rate,
             min_relative_amplitude=min_relative_amplitude,

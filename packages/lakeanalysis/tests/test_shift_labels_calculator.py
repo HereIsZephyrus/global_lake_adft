@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
-from lakeanalysis.batch.domain import LakeTask
+from lakeanalysis.batch.lake_dataset import LakeDataset
 from lakeanalysis.quality import ShiftConfig
 from lakeanalysis.quality.filters import LakeContext
 from lakeanalysis.quality.shift_labels_calculator import ShiftLabelsCalculator
 
 
-def _make_task(hylak_id: int, values: list[float]) -> LakeTask:
+def _make_dataset(df: pd.DataFrame, hylak_id: int) -> LakeDataset:
+    ym = df["year"].astype(int) * 100 + df["month"].astype(int)
+    return LakeDataset(
+        hylak_ids=np.array([hylak_id], dtype=np.int64),
+        year_months=ym.to_numpy(dtype=np.int64),
+        values=df["water_area"].to_numpy(dtype=float).reshape(1, -1),
+    )
+
+
+def _make_df(values: list[float]) -> pd.DataFrame:
     n = len(values)
-    df = pd.DataFrame(
+    return pd.DataFrame(
         {
             "year": [2000 + (i // 12) for i in range(n)],
             "month": [(i % 12) + 1 for i in range(n)],
             "water_area": values,
         }
-    )
-    return LakeTask(
-        hylak_id=hylak_id,
-        series_df=df,
-        frozen_year_months=frozenset(),
     )
 
 
@@ -49,30 +54,33 @@ class TestShiftLabelsCalculator:
     def test_run_degraded_lake(self) -> None:
         calc = ShiftLabelsCalculator(ShiftConfig(min_segment_months=3, smooth_window=3))
         values = [100.0] * 6 + [10.0] * 6
-        task = _make_task(123, values)
-        result = calc.run(task)
+        ds = _make_dataset(_make_df(values), 123)
+        rows, success, _ = calc.run_dataset(ds)
 
-        assert result["hylak_id"] == 123
-        assert result["detail"]["label"] == "degraded"
-        assert result["detail"]["udmax_break_index"] is not None
+        assert success == 1
+        assert rows["area_shift_labels"][0]["hylak_id"] == 123
+        assert rows["area_shift_labels"][0]["shift_label"] == "degraded"
+        assert rows["area_shift_labels"][0]["udmax_break_index"] is not None
 
     def test_run_stable_lake(self) -> None:
         calc = ShiftLabelsCalculator()
         values = [10.0] * 24
-        task = _make_task(456, values)
-        result = calc.run(task)
+        ds = _make_dataset(_make_df(values), 456)
+        rows, success, _ = calc.run_dataset(ds)
 
-        assert result["hylak_id"] == 456
-        assert result["detail"]["label"] == "stable"
+        assert success == 1
+        assert rows["area_shift_labels"][0]["hylak_id"] == 456
+        assert rows["area_shift_labels"][0]["shift_label"] == "stable"
 
     def test_run_intermittent_lake(self) -> None:
         calc = ShiftLabelsCalculator(ShiftConfig(min_segment_months=3, smooth_window=3))
         values = [0.0] * 3 + [50.0] * 3 + [0.0] * 3 + [50.0] * 3
-        task = _make_task(789, values)
-        result = calc.run(task)
+        ds = _make_dataset(_make_df(values), 789)
+        rows, success, _ = calc.run_dataset(ds)
 
-        assert result["hylak_id"] == 789
-        assert result["detail"]["label"] == "intermittent"
+        assert success == 1
+        assert rows["area_shift_labels"][0]["hylak_id"] == 789
+        assert rows["area_shift_labels"][0]["shift_label"] == "intermittent"
 
     def test_result_to_rows_degraded(self) -> None:
         calc = ShiftLabelsCalculator()

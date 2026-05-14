@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +36,7 @@ from lakeanalysis.pwm_extreme.service import run_single_lake_service as run_pwm_
 from lakeanalysis.quantile.service import run_single_lake_service as run_quantile_service
 
 from ..batch.domain import Calculator, LakeTask
+from ..batch.lake_dataset import LakeDataset
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class ComparisonCalculator(Calculator):
         self._min_valid_per_month = min_valid_per_month
         self._min_valid_observations = min_valid_observations
 
-    def run(self, task: LakeTask) -> ComparisonResult:
+    def _compute_lake(self, task: LakeTask) -> ComparisonResult:
         frozen = set(task.frozen_year_months) or None
 
         q_result: QuantileResult | Exception | None = None
@@ -88,6 +90,35 @@ class ComparisonCalculator(Calculator):
             quantile_result=q_result,
             pwm_result=pwm_result,
         )
+
+    def run_dataset(
+        self,
+        dataset: LakeDataset,
+        *,
+        error_chunk: tuple[int, int] = (0, 0),
+    ) -> tuple[dict[str, list[dict]], int, int]:
+        all_rows: dict[str, list[dict]] = defaultdict(list)
+        success_lakes = 0
+        error_lakes = 0
+        chunk_start, chunk_end = error_chunk
+
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
+            try:
+                result = self._compute_lake(task)
+                for table, rows in self.result_to_rows(result).items():
+                    all_rows[table].extend(rows)
+                success_lakes += 1
+            except Exception as exc:
+                for table, rows in self.error_to_rows(
+                    task.hylak_id,
+                    exc,
+                    chunk_start,
+                    chunk_end,
+                ).items():
+                    all_rows[table].extend(rows)
+                error_lakes += 1
+        return dict(all_rows), success_lakes, error_lakes
 
     def result_to_rows(self, result: ComparisonResult) -> dict[str, list[dict]]:
         rows: dict[str, list[dict]] = {}

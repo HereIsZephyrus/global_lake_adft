@@ -4,13 +4,9 @@ import pandas as pd
 import numpy as np
 
 from lakesource.provider.base import LakeProvider
-from lakeanalysis.batch import IdSetFilter, LakeDataset, LakeDatasetFactory, LakeDatasetQuery, RangeFilter
+from lakeanalysis.batch import LakeDataset, LakeDatasetQuery
 from lakeanalysis.batch.io import BatchReader, BatchWriter
-from lakeanalysis.batch.single_process import (
-    SingleProcessIdBatchRunner,
-    SingleProcessLakeDatasetRunner,
-    SingleProcessRunner,
-)
+from lakeanalysis.batch.single_process import SingleProcessLakeDatasetRunner
 
 
 def _make_series_df() -> pd.DataFrame:
@@ -39,13 +35,10 @@ class _FakeProvider(LakeProvider):
         return {}
 
     def fetch_max_hylak_id(self):
-        return 3
+        return 10
 
     def fetch_lake_geometry_wkt_by_ids(self, hylak_ids, **kw):
         raise NotImplementedError
-
-    def fetch_grid_agg(self, query_name, resolution=0.5, **kw):
-        return pd.DataFrame()
 
     def fetch_extremes_grid_agg(self, resolution=0.5, **kw):
         return pd.DataFrame()
@@ -69,6 +62,9 @@ class _FakeProvider(LakeProvider):
         return pd.DataFrame()
 
     def fetch_pwm_converged_grid_agg(self, resolution=0.5, **kw):
+        return pd.DataFrame()
+
+    def fetch_grid_agg(self, query_name, resolution=0.5, **kw):
         return pd.DataFrame()
 
     @property
@@ -117,17 +113,6 @@ class _FakeWriter(BatchWriter):
         pass
 
 
-class _FakeCalculator:
-    def run(self, task):
-        return {"hylak_id": task.hylak_id}
-
-    def result_to_rows(self, result):
-        return {"mock": [result]}
-
-    def error_to_rows(self, hylak_id, error, cs, ce):
-        return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
-
-
 class _FakeDatasetFactory:
     def build(self, query):
         del query
@@ -145,45 +130,11 @@ class _FakeDatasetCalculator:
         rows = {"mock": [{"hylak_id": int(hid)} for hid in dataset.hylak_ids.tolist()]}
         return rows, len(dataset), 0
 
+    def result_to_rows(self, result):
+        return {"mock": [result]}
 
-def test_single_process_runner_handles_range_batches() -> None:
-    provider = _FakeProvider(done_ids={0})
-    runner = SingleProcessRunner(
-        _FakeReader(provider),
-        _FakeWriter(provider),
-        _FakeCalculator(),
-        algorithm="quantile",
-        lake_filter=RangeFilter(start=0, end=4),
-        chunk_size=2,
-    )
-
-    report = runner.run()
-
-    assert provider.ensured == ["quantile"]
-    assert report.total_chunks == 2
-    assert report.success_lakes == 3
-    assert report.skipped_lakes == 1
-    assert len(provider.persisted) == 2
-
-
-def test_single_process_id_batch_runner_filters_done_ids() -> None:
-    provider = _FakeProvider(done_ids={10})
-    runner = SingleProcessIdBatchRunner(
-        _FakeReader(provider),
-        _FakeWriter(provider),
-        _FakeCalculator(),
-        algorithm="comparison",
-        lake_filter=IdSetFilter({10, 20}),
-        chunk_size=10,
-    )
-
-    report = runner.run()
-
-    assert provider.ensured == ["comparison"]
-    assert report.total_chunks == 1
-    assert report.success_lakes == 1
-    assert report.skipped_lakes == 1
-    assert provider.persisted == [{"mock": [{"hylak_id": 20}]}]
+    def error_to_rows(self, hylak_id, error, cs, ce):
+        return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
 
 
 def test_single_process_lake_dataset_runner_persists_dataset_results() -> None:

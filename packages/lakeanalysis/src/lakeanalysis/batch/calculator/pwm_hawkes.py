@@ -10,6 +10,7 @@ decay index C_k and transition/unilateral segment extraction.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 
 import pandas as pd
@@ -36,6 +37,7 @@ from lakesource.pwm_extreme.schema import (
 )
 
 from ..domain import Calculator, LakeTask
+from ..lake_dataset import LakeDataset
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +63,6 @@ class PWMExtremeHawkesCalculator(Calculator):
         pwm_config: PWMExtremeConfig | None = None,
         decay_rate: float = 1.0,
         hawkes_window_months: float = 4.0,
-        min_events: int = 10,
         min_event_rate: float = 0.01,
         max_event_rate: float = 0.30,
         min_relative_amplitude: float = 0.05,
@@ -76,14 +77,13 @@ class PWMExtremeHawkesCalculator(Calculator):
         )
         self._decay_rate = decay_rate
         self._hawkes_window_months = hawkes_window_months
-        self._min_events = min_events
         self._min_event_rate = min_event_rate
         self._max_event_rate = max_event_rate
         self._min_relative_amplitude = min_relative_amplitude
         self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
 
-    def run(self, task: LakeTask) -> PWMHawkesPipelineResult:
+    def _compute_lake(self, task: LakeTask) -> PWMHawkesPipelineResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
@@ -106,12 +106,6 @@ class PWMExtremeHawkesCalculator(Calculator):
             events_df = extract_hawkes_events_from_segments(
                 pwm_result.labels_df, decay_df, segments_df
             )
-
-            if len(events_df) < self._min_events:
-                return _make_fail_result(
-                    hylak_id,
-                    f"only {len(events_df)} segment-scoped events < min {self._min_events}",
-                )
 
             event_series, events_table = build_events_from_pwm(
                 events_df, series_df
@@ -151,6 +145,35 @@ class PWMExtremeHawkesCalculator(Calculator):
                 segments_rows=[],
             )
 
+    def run_dataset(
+        self,
+        dataset: LakeDataset,
+        *,
+        error_chunk: tuple[int, int] = (0, 0),
+    ) -> tuple[dict[str, list[dict]], int, int]:
+        all_rows: dict[str, list[dict]] = defaultdict(list)
+        success_lakes = 0
+        error_lakes = 0
+        chunk_start, chunk_end = error_chunk
+
+        for idx in range(len(dataset)):
+            task = dataset.to_task(idx)
+            try:
+                result = self._compute_lake(task)
+                for table, rows in self.result_to_rows(result).items():
+                    all_rows[table].extend(rows)
+                success_lakes += 1
+            except Exception as exc:
+                for table, rows in self.error_to_rows(
+                    task.hylak_id,
+                    exc,
+                    chunk_start,
+                    chunk_end,
+                ).items():
+                    all_rows[table].extend(rows)
+                error_lakes += 1
+        return dict(all_rows), success_lakes, error_lakes
+
     def result_to_rows(
         self, result: PWMHawkesPipelineResult
     ) -> dict[str, list[dict]]:
@@ -187,17 +210,6 @@ class PWMExtremeHawkesCalculator(Calculator):
                 build_hawkes_result_row(error_summary)
             ],
         }
-
-
-def _make_fail_result(hylak_id: int, message: str) -> PWMHawkesPipelineResult:
-    summary = build_error_summary(hylak_id, message)
-    summary["qc_pass"] = False
-    return PWMHawkesPipelineResult(
-        pipeline=RunHawkesPipelineResult(
-            summary=summary, lrt_rows=[], transition_monthly_rows=[]
-        ),
-        segments_rows=[],
-    )
 
 
 def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]:
