@@ -9,7 +9,8 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 
-from .engine import Calculator, IdSetFilter, LakeFilter, LakeTask, RangeFilter
+from .domain import Calculator, LakeFilter, LakeTask
+from .filter import IdSetFilter, RangeFilter
 from .io import BatchReader, BatchWriter
 from .protocol import RunReport, _iter_chunk_ranges, _iter_id_batches
 

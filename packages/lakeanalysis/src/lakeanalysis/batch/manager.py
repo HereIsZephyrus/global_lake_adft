@@ -15,7 +15,7 @@ import time
 from collections import deque
 
 from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges, _iter_id_batches
-from .engine import IdSetFilter, RangeFilter
+from .filter import IdSetFilter, RangeFilter
 
 log = logging.getLogger(__name__)
 

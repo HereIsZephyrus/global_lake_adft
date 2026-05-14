@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 
-from .engine import LakeTask
+from .domain import LakeTask
 from .io import BatchReader
 from .protocol import TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_chunk_ranges
 

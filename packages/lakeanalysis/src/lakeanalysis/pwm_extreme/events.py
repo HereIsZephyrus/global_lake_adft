@@ -3,18 +3,10 @@ index for Hawkes input."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 
 from lakeanalysis.hawkes.bridge import build_events_from_pwm
-
-
-@dataclass(frozen=True)
-class DecaySegments:
-    decay_df: pd.DataFrame
-    segments_df: pd.DataFrame
 
 
 def run_runs_declustering(
@@ -292,3 +284,116 @@ def extract_segments(decay_df: pd.DataFrame) -> pd.DataFrame:
     if not segments:
         return empty_result
     return pd.DataFrame(segments)
+
+
+def extract_hawkes_events_from_segments(
+    labeled_df: pd.DataFrame,
+    decay_df: pd.DataFrame,
+    segments_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Extract Hawkes-ready events from transition segments.
+
+    Only transition segments (containing both high and low extremes) are used.
+    Within each transition segment, consecutive months of the same extreme type
+    are collapsed into one representative event (max severity).
+
+    Args:
+        labeled_df: From ``assign_pwm_extreme_labels``; columns include
+            year, month, water_area, index_value, threshold_low,
+            threshold_high, extreme_label.
+        decay_df: From ``compute_decay_index``; aligned with labeled_df,
+            contains has_high, has_low boolean columns.
+        segments_df: From ``extract_segments``; contains segment boundaries
+            and type ("transition" / "unilateral").
+
+    Returns:
+        DataFrame with columns: year, month, event_type, water_area,
+        index_value, threshold, severity, time.
+    """
+    transition = segments_df[segments_df["segment_type"] == "transition"]
+    if transition.empty:
+        return pd.DataFrame(
+            columns=[
+                "year", "month", "event_type", "water_area",
+                "index_value", "threshold", "severity", "time",
+            ]
+        )
+
+    # Build year_month keys for efficient segment filtering
+    labeled_df = labeled_df.copy()
+    labeled_df["year_month"] = labeled_df["year"] * 100 + labeled_df["month"]
+    decay_df = decay_df.copy()
+    decay_df["year_month"] = decay_df["year"] * 100 + decay_df["month"]
+
+    events: list[dict] = []
+    for _, seg in transition.iterrows():
+        start_ym = int(seg["start_year"]) * 100 + int(seg["start_month"])
+        end_ym = int(seg["end_year"]) * 100 + int(seg["end_month"])
+
+        seg_mask = (decay_df["year_month"] >= start_ym) & (decay_df["year_month"] <= end_ym)
+        seg_decay = decay_df[seg_mask]
+        extreme_mask = seg_decay["has_high"] | seg_decay["has_low"]
+        if not extreme_mask.any():
+            continue
+
+        extreme_yms = set(seg_decay.loc[extreme_mask, "year_month"].to_numpy(dtype=int))
+        seg_labeled = labeled_df[labeled_df["year_month"].isin(extreme_yms)].sort_values("year_month")
+
+        # Determine event type
+        seg_labeled["event_type"] = np.where(
+            seg_labeled["extreme_label"] == "extreme_high", "high", "low"
+        )
+
+        # Segment-scoped runs declustering: consecutive same-type → one event
+        current_cluster: list[pd.Series] = []
+        for _, row in seg_labeled.iterrows():
+            if not current_cluster:
+                current_cluster.append(row)
+            elif row["event_type"] == current_cluster[-1]["event_type"]:
+                current_cluster.append(row)
+            else:
+                _emit_cluster(events, current_cluster)
+                current_cluster = [row]
+        if current_cluster:
+            _emit_cluster(events, current_cluster)
+
+    if not events:
+        return pd.DataFrame(
+            columns=[
+                "year", "month", "event_type", "water_area",
+                "index_value", "threshold", "severity", "time",
+            ]
+        )
+
+    result = pd.DataFrame(events)
+    return result.sort_values("year_month").reset_index(drop=True)
+
+
+def _emit_cluster(events: list[dict], cluster: list[pd.Series]) -> None:
+    """Pick the representative (max severity) from a same-type cluster."""
+    best = max(
+        cluster,
+        key=lambda r: abs(float(r["index_value"]) - (
+            float(r["threshold_high"]) if r["extreme_label"] == "extreme_high"
+            else float(r["threshold_low"])
+        )),
+    )
+    event_type = "high" if best["extreme_label"] == "extreme_high" else "low"
+    threshold = (
+        best["threshold_high"] if event_type == "high" else best["threshold_low"]
+    )
+    severity = abs(float(best["index_value"]) - float(threshold))
+    events.append({
+        "year": int(best["year"]),
+        "month": int(best["month"]),
+        "year_month": int(best["year"]) * 100 + int(best["month"]),
+        "event_type": event_type,
+        "water_area": float(best["water_area"]),
+        "index_value": float(best["index_value"]),
+        "threshold": float(threshold),
+        "severity": float(severity),
+        "time": float(best["year"]) + (float(best["month"]) - 1.0) / 12.0,
+    })
+
+
+build_hawkes_event_series_from_pwm_events = build_events_from_pwm

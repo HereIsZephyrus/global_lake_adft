@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..engine import Calculator
+from ..domain import Calculator
 
 
 class CalculatorFactory:

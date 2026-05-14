@@ -22,7 +22,7 @@ from lakeanalysis.hawkes import (
     run_hawkes_pipeline,
 )
 
-from ..engine import Calculator, LakeTask
+from ..domain import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 

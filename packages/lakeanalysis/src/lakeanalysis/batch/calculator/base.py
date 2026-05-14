@@ -1,5 +1,5 @@
-"""Calculator ABC — re-exported from engine for convenience."""
+"""Calculator ABC — re-exported from domain for convenience."""
 
-from ..engine import Calculator
+from ..domain import Calculator
 
 __all__ = ["Calculator"]

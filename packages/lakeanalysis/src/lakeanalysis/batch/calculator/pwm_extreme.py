@@ -18,7 +18,7 @@ from lakesource.pwm_extreme.store import (
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig, PWMExtremeConfig
 
-from ..engine import Calculator, LakeTask
+from ..domain import Calculator, LakeTask
 
 
 class PWMExtremeCalculator(Calculator):

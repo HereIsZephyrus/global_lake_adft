@@ -1,66 +1,11 @@
-"""Engine entry point and ABC definitions for batch lake computation."""
+"""Engine entry point for batch lake computation."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Iterable
-
-import pandas as pd
-
+from .domain import Calculator, LakeFilter, LakeTask
+from .filter import IdSetFilter, RangeFilter
 from .io import BatchReader, BatchWriter
 from .protocol import RunReport
-
-
-@dataclass(frozen=True)
-class LakeTask:
-    hylak_id: int
-    series_df: pd.DataFrame
-    frozen_year_months: frozenset[int]
-    extra: dict[str, Any] | None = None
-
-
-class LakeFilter(ABC):
-    @abstractmethod
-    def __call__(self, hylak_ids: Iterable[int]) -> set[int]: ...
-
-
-class RangeFilter(LakeFilter):
-    def __init__(self, start: int = 0, end: int | None = None) -> None:
-        self.start = start
-        self.end = end
-
-    def __call__(self, hylak_ids: Iterable[int]) -> set[int]:
-        ids = set(hylak_ids)
-        ids = {i for i in ids if i >= self.start}
-        if self.end is not None:
-            ids = {i for i in ids if i < self.end}
-        return ids
-
-
-class IdSetFilter(LakeFilter):
-    def __init__(self, ids: set[int] | list[int]) -> None:
-        self._ids = set(ids)
-
-    def __call__(self, hylak_ids: Iterable[int]) -> set[int]:
-        return self._ids & set(hylak_ids)
-
-    @property
-    def ids(self) -> set[int]:
-        return self._ids
-
-
-class Calculator(ABC):
-    @abstractmethod
-    def run(self, task: LakeTask) -> Any: ...
-
-    @abstractmethod
-    def result_to_rows(self, result: Any) -> dict[str, list[dict]]: ...
-
-    @abstractmethod
-    def error_to_rows(
-        self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
-    ) -> dict[str, list[dict]]: ...
 
 
 class Engine:
