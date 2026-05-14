@@ -381,11 +381,27 @@ def compute_pooled_pwm_thresholds(
 
 def extract_pwm_extreme_events(labeled_df: pd.DataFrame) -> pd.DataFrame:
     """Extract extreme events from labelled raw-water_area data (legacy compat)."""
+    import warnings as _warnings
+
+    _warnings.warn(
+        "extract_pwm_extreme_events is a legacy raw-water_area compatibility "
+        "wrapper. Prefer PWMExtremeResult.extremes_df from the STL pipeline.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _extract_events_raw(labeled_df)
 
 
 def detect_pwm_abrupt_transitions(labeled_df: pd.DataFrame) -> pd.DataFrame:
     """Detect abrupt transitions from labelled raw-water_area data (legacy compat)."""
+    import warnings as _warnings
+
+    _warnings.warn(
+        "detect_pwm_abrupt_transitions is a legacy raw-water_area compatibility "
+        "wrapper. Prefer PWMExtremeResult.transitions_df from the STL pipeline.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _detect_transitions_raw(labeled_df)
 
 

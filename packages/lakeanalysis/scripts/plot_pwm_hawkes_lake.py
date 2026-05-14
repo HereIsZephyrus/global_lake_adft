@@ -19,9 +19,9 @@ from lakesource.provider import create_provider
 from lakeviz.domain.eot import draw_extremes_with_hawkes
 from lakeviz.style.presets import Theme
 from lakeanalysis.logger import Logger
-from lakeanalysis.pwm_extreme.compute import compute_monthly_thresholds
-from lakeanalysis.pwm_extreme.events import run_runs_declustering
+from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import PWMExtremeConfig
+from lakesource.pwm_extreme.schema import PWMExtremeServiceConfig
 
 log = logging.getLogger(__name__)
 
@@ -40,14 +40,16 @@ def parse_args() -> argparse.Namespace:
 def _compute_extremes_in_memory(
     hylak_id: int, series_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Compute PWM extreme events in-memory from lake_area data."""
-    config = PWMExtremeConfig(min_observations_per_month=2)
-    result = compute_monthly_thresholds(series_df, hylak_id=hylak_id, config=config)
+    """Compute PWM extreme events in-memory from the STL-based PWM path."""
+    config = PWMExtremeServiceConfig(
+        pwm_config=PWMExtremeConfig(min_observations_per_month=2),
+        method="stl",
+    )
+    result = run_single_lake_service(series_df, hylak_id=hylak_id, config=config)
     extremes = result.extremes_df.copy()
     if extremes.empty:
         return pd.DataFrame(columns=["year", "month", "water_area", "threshold_at_event", "tail"])
-    declustered = run_runs_declustering(extremes, run_length=1)
-    events = declustered.rename(
+    events = extremes.rename(
         columns={"threshold": "threshold_at_event", "event_type": "tail"}
     )
     events["tail"] = events["tail"].astype(str)

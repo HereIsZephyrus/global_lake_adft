@@ -3,6 +3,8 @@ index for Hawkes input."""
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -33,6 +35,12 @@ def run_runs_declustering(
         DataFrame with the same columns as input, plus ``cluster_id`` and
         ``cluster_size``, containing one representative row per cluster.
     """
+    warnings.warn(
+        "run_runs_declustering is a legacy compatibility helper. "
+        "Prefer the C_k + segment pipeline in lakeanalysis.pwm_extreme.events.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if events_df.empty:
         return pd.DataFrame(
             columns=list(events_df.columns) + ["cluster_id", "cluster_size", "time"]
