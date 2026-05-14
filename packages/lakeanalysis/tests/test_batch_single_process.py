@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
 
 from lakesource.provider.base import LakeProvider
-from lakeanalysis.batch import IdSetFilter, RangeFilter
+from lakeanalysis.batch import IdSetFilter, LakeDataset, LakeDatasetFactory, LakeDatasetQuery, RangeFilter
 from lakeanalysis.batch.io import BatchReader, BatchWriter
-from lakeanalysis.batch.single_process import SingleProcessIdBatchRunner, SingleProcessRunner
+from lakeanalysis.batch.single_process import (
+    SingleProcessIdBatchRunner,
+    SingleProcessLakeDatasetRunner,
+    SingleProcessRunner,
+)
 
 
 def _make_series_df() -> pd.DataFrame:
@@ -123,6 +128,24 @@ class _FakeCalculator:
         return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
 
 
+class _FakeDatasetFactory:
+    def build(self, query):
+        del query
+        return LakeDataset(
+            hylak_ids=np.asarray([10, 20], dtype=np.int64),
+            year_months=np.asarray([200001, 200002], dtype=np.int64),
+            values=np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+            frozen_mask=np.asarray([[False, True], [False, False]], dtype=bool),
+        )
+
+
+class _FakeDatasetCalculator:
+    def run_dataset(self, dataset, *, error_chunk=(0, 0)):
+        del error_chunk
+        rows = {"mock": [{"hylak_id": int(hid)} for hid in dataset.hylak_ids.tolist()]}
+        return rows, len(dataset), 0
+
+
 def test_single_process_runner_handles_range_batches() -> None:
     provider = _FakeProvider(done_ids={0})
     runner = SingleProcessRunner(
@@ -161,3 +184,23 @@ def test_single_process_id_batch_runner_filters_done_ids() -> None:
     assert report.success_lakes == 1
     assert report.skipped_lakes == 1
     assert provider.persisted == [{"mock": [{"hylak_id": 20}]}]
+
+
+def test_single_process_lake_dataset_runner_persists_dataset_results() -> None:
+    provider = _FakeProvider()
+    runner = SingleProcessLakeDatasetRunner(
+        _FakeDatasetFactory(),
+        LakeDatasetQuery(algorithm="pwm_extreme"),
+        _FakeWriter(provider),
+        _FakeDatasetCalculator(),
+        algorithm="pwm_extreme",
+    )
+
+    report = runner.run()
+
+    assert provider.ensured == ["pwm_extreme"]
+    assert report.total_chunks == 1
+    assert report.processed_chunks == 1
+    assert report.source_lakes == 2
+    assert report.success_lakes == 2
+    assert provider.persisted == [{"mock": [{"hylak_id": 10}, {"hylak_id": 20}]}]

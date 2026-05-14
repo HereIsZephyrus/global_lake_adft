@@ -23,7 +23,11 @@ from .protocol import (
     _iter_id_batches,
 )
 from .worker import Worker
-from .single_process import SingleProcessIdBatchRunner, SingleProcessRunner
+from .single_process import (
+    SingleProcessIdBatchRunner,
+    SingleProcessLakeDatasetRunner,
+    SingleProcessRunner,
+)
 
 __all__ = [
     "Calculator",
@@ -40,6 +44,7 @@ __all__ = [
     "RangeFilter",
     "RunReport",
     "SingleProcessIdBatchRunner",
+    "SingleProcessLakeDatasetRunner",
     "SingleProcessRunner",
     "TAG_STATUS",
     "TAG_TRIGGER",
