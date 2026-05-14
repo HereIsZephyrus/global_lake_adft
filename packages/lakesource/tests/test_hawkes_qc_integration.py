@@ -1,7 +1,7 @@
 """Integration tests for hawkes_qc read-only queries (P0).
 
-Requires pwm_hawkes_results, pwm_hawkes_lrt, pwm_hawkes_transition_monthly,
-eot_hawkes_results tables to be created and seeded.
+Requires hawkes_results, hawkes_lrt, hawkes_transition_monthly,
+and eot_results tables to be created and seeded.
 """
 
 from __future__ import annotations
@@ -36,14 +36,13 @@ def _make_provider() -> "PostgresLakeProvider":
 def _seed_hawkes():
     """Module-scoped: create tables, seed data, cleanup on teardown."""
     provider = _make_provider()
-    provider.ensure_table("pwm_hawkes")
-    provider.ensure_table("eot_hawkes")
+    provider.ensure_table("hawkes")
     provider.ensure_table("eot")
 
     conn = psycopg.connect(TEST_DSN)
     conn.autocommit = True
     with conn.cursor() as cur:
-        # pwm_hawkes_results — 4 rows across 2 quantiles
+        # hawkes_results — 4 rows across 2 quantiles
         for hid, q, conv, mu_d, mu_w, la, qc_pass in [
             (1, 0.95, True, 0.1, 0.2, -100.0, True),
             (2, 0.95, False, 0.3, 0.4, -200.0, False),
@@ -51,7 +50,7 @@ def _seed_hawkes():
             (2, 0.98, True, 0.35, 0.45, -120.0, True),
         ]:
             cur.execute(
-                """INSERT INTO pwm_hawkes_results (
+                """INSERT INTO hawkes_results (
                     hylak_id, threshold_quantile, converged, log_likelihood,
                     objective_value, n_events, n_dry_events, n_wet_events,
                     mu_d, mu_w, alpha_dd, alpha_dw, alpha_wd, alpha_ww,
@@ -70,13 +69,13 @@ def _seed_hawkes():
                  "err timeout" if not qc_pass else None),
             )
 
-        # pwm_hawkes_lrt — 2 rows
+        # hawkes_lrt — 2 rows
         for hid, q, test_name, p_val, reject in [
             (1, 0.95, "d->w", 0.001, True),
             (2, 0.95, "d->w", 0.500, False),
         ]:
             cur.execute(
-                """INSERT INTO pwm_hawkes_lrt (
+                """INSERT INTO hawkes_lrt (
                     hylak_id, threshold_quantile, test_name,
                     lr_statistic, df, p_value, significance_level,
                     reject_null, restricted_log_likelihood, full_log_likelihood
@@ -84,34 +83,19 @@ def _seed_hawkes():
                 (hid, q, test_name, p_val, reject),
             )
 
-        # pwm_hawkes_transition_monthly — 2 rows
+        # hawkes_transition_monthly — 2 rows
         for hid, q, year, month, direction, sig in [
             (1, 0.95, 2020, 1, "dry->wet", True),
             (2, 0.95, 2020, 6, "wet->dry", False),
         ]:
             cur.execute(
-                """INSERT INTO pwm_hawkes_transition_monthly (
+                """INSERT INTO hawkes_transition_monthly (
                     hylak_id, threshold_quantile, year, month, direction,
                     score_raw, score_norm, significance_quantile,
                     significance_threshold, significant
                 ) VALUES (%s, %s, %s, %s, %s, 5.0, 2.5, 0.95, 3.0, %s)""",
                 (hid, q, year, month, direction, sig),
             )
-
-        # eot_hawkes_results — 1 row for coverage test
-        cur.execute(
-            """INSERT INTO eot_hawkes_results (
-                hylak_id, threshold_quantile, converged, log_likelihood,
-                objective_value, n_events, n_dry_events, n_wet_events,
-                mu_d, mu_w, alpha_dd, alpha_dw, alpha_wd, alpha_ww,
-                beta_dd, beta_dw, beta_wd, beta_ww, spectral_radius,
-                lrt_p_d_to_w, lrt_p_w_to_d, qc_pass, qc_exceedance_rate,
-                qc_relative_amplitude, qc_median_excess, error_message
-            ) VALUES (1, 0.95, TRUE, -100.0, 0.0, 10, 5, 5,
-                      0.1, 0.2, 0.1, 0.1, 0.1, 0.1,
-                      1.0, 1.0, 1.0, 1.0, 0.5,
-                      0.01, 0.02, TRUE, 0.5, 0.3, 0.2, NULL)"""
-        )
 
         # eot_results — 4 rows for coverage test
         for hid, q, tail in [
@@ -136,10 +120,8 @@ def _seed_hawkes():
     conn.autocommit = True
     with conn.cursor() as cur:
         for tbl in [
-            "pwm_hawkes_results", "pwm_hawkes_lrt",
-            "pwm_hawkes_transition_monthly",
-            "eot_hawkes_results",
-            "eot_results",
+            "hawkes_results", "hawkes_lrt",
+            "hawkes_transition_monthly", "eot_results",
         ]:
             cur.execute(f"TRUNCATE {tbl} CASCADE")
     conn.close()

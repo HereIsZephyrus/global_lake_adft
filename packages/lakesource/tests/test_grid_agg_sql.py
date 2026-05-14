@@ -13,6 +13,7 @@ from lakesource.table_config import TableConfig
 from lakesource.pwm_extreme.reader import (
     _convergence_grid_agg_sql,
     _converged_grid_agg_sql,
+    _crossent_threshold_sql_pg,
     _exceedance_grid_agg_sql,
     _monthly_exceedance_grid_agg_sql,
     _monthly_threshold_grid_agg_sql,
@@ -43,19 +44,21 @@ def tc() -> TableConfig:
 # ======================================================================
 
 class TestPWMExceedanceSQL:
-    """Regression + correctness for exceedance SQL builders using labels table."""
+    """Regression + correctness for parameterized exceedance SQL builders."""
 
     def test_exceedance_grid_agg_sql_builds(self, tc: TableConfig) -> None:
         sql = _exceedance_grid_agg_sql(tc, 0.01, 0.05)
         query = sql.as_string()
         assert query
-        assert "WITH exceedance AS" in query
-        assert "extreme_label = 'extreme_high'" in query
-        assert "extreme_label = 'extreme_low'" in query
+        assert "WITH deduped_area AS" in query
+        assert "quantile_thresholds AS" in query
+        assert "threshold_high" in query
+        assert "threshold_low" in query
         assert "mean_high_exceedance" in query
         assert "mean_low_exceedance" in query
         assert "mean_all_exceedance" in query
         assert "median_all_exceedance" in query
+        assert "EXTRACT(MONTH FROM" in query
         assert "ORDER BY 1, 2" in query
 
     def test_exceedance_grid_agg_sql_no_sql_attr(self, tc: TableConfig) -> None:
@@ -64,13 +67,13 @@ class TestPWMExceedanceSQL:
         assert sql.as_string() is not None  # must not raise AttributeError
 
     def test_exceedance_grid_agg_sql_different_p(self, tc: TableConfig) -> None:
-        """Different p values produce structurally identical SQL (p no longer embedded)."""
+        """Different p values embed different threshold expressions."""
         sql1 = _exceedance_grid_agg_sql(tc, 0.01, 0.05).as_string()
         sql2 = _exceedance_grid_agg_sql(tc, 0.10, 0.05).as_string()
-        assert sql1 == sql2  # p is no longer embedded in SQL
+        assert sql1 != sql2
 
     def test_exceedance_grid_agg_sql_symmetric_p(self, tc: TableConfig) -> None:
-        """Symmetric p yields same high/low counts (from labels, not thresholds)."""
+        """Symmetric p yields same high/low thresholds (structure, not value)."""
         sql = _exceedance_grid_agg_sql(tc, 0.05, 0.05)
         query = sql.as_string()
         assert query
@@ -79,16 +82,31 @@ class TestPWMExceedanceSQL:
         sql = _monthly_exceedance_grid_agg_sql(tc, 0.01, 0.05)
         query = sql.as_string()
         assert query
-        assert "WITH exceedance AS" in query
+        assert "deduped_area AS" in query
         assert "high_exceedance_rate" in query
         assert "low_exceedance_rate" in query
-        assert "GROUP BY hylak_id, month" in query
+        assert "EXTRACT(MONTH FROM" in query
         assert "ORDER BY 1, 2, 3" in query
 
     def test_monthly_exceedance_grid_agg_sql_no_sql_attr(self, tc: TableConfig) -> None:
         """Regression: psycopg3 SQL has no .sql attr (psycopg2-ism)."""
         sql = _monthly_exceedance_grid_agg_sql(tc, 0.01, 0.05)
         assert sql.as_string() is not None  # must not raise AttributeError
+
+    def test_crossent_threshold_sql_pg_high(self) -> None:
+        expr = _crossent_threshold_sql_pg(0.05, "high")
+        assert "t.mean_area" in expr
+        assert "t.epsilon" in expr
+        assert "t.lambda_0" in expr
+        assert "t.lambda_4" in expr
+        assert "LN(" in expr
+        assert "EXP(-" in expr
+
+    def test_crossent_threshold_sql_pg_low(self) -> None:
+        expr = _crossent_threshold_sql_pg(0.05, "low")
+        assert "t.mean_area" in expr
+        assert "t.epsilon" in expr
+        assert "LN(" in expr
 
 
 # ======================================================================
