@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -419,7 +420,8 @@ class ParquetLakeProvider(LakeProvider):
         return result
 
     def _table_path(self, table_name: str) -> Path:
-        return self._data_dir / f"{table_name}.parquet"
+        suffix = os.environ.get("PARQUET_TABLE_SUFFIX", "")
+        return self._data_dir / f"{table_name}{suffix}.parquet"
 
     def _read_table_df(self, table_name: str) -> pd.DataFrame:
         table_path = self._table_path(table_name)
