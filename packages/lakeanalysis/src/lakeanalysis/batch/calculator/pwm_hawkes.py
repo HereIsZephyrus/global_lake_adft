@@ -29,6 +29,8 @@ from lakeanalysis.pwm_extreme.events import (
     extract_hawkes_events_from_segments,
     extract_segments,
 )
+from lakeanalysis.pwm_extreme.evt_index import compute_evt_index_strengths
+from lakeanalysis.pwm_extreme.phi import map_strength_df_to_phi
 from lakeanalysis.pwm_extreme.service import run_single_lake_service
 from lakesource.pwm_extreme.schema import (
     PWMExtremeConfig,
@@ -93,10 +95,13 @@ class PWMExtremeHawkesCalculator(Calculator):
                 config=self._service_config,
                 frozen_year_months=frozen or None,
             )
+            strengths_df, _ = compute_evt_index_strengths(pwm_result.labels_df)
+            phi_df = map_strength_df_to_phi(strengths_df, method="identity")
 
             decay_df = compute_decay_index(
                 pwm_result.labels_df,
                 decay_rate=self._decay_rate,
+                phi_df=phi_df,
             )
             segments_df = extract_segments(decay_df)
             segments_rows = _build_segments_rows(hylak_id, segments_df)

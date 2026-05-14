@@ -92,17 +92,13 @@ def compute_decay_index(
     labeled_df: pd.DataFrame,
     *,
     decay_rate: float = 1.0,
+    phi_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Compute exponential decay index C_k over the full monthly timeline.
 
-    This function replaces hard-threshold runs declustering with a
-    continuous exponential decay model.  It operates on ``index_value``
-    (from STL decomposition) across all months, including normal ones.
-
-    Algorithm (per lake, already filtered upstream):
-    1. Per-type z-score of severity = |index_value - threshold|
-    2. f_i = ln(|z_i - 0.5| + 1) for extreme months (0 for normal)
-    3. Step through timeline: C -= e^{-λ} × C, C += f_i
+    ``C_k`` is defined as ``ln(sum(phi_i * exp(-a * gap(i, k))))`` over all
+    extreme months ``i <= k``. Normal months do not contribute new ``phi``;
+    they only decay the accumulated extreme-memory strength.
 
     Args:
         labeled_df: DataFrame from ``assign_pwm_extreme_labels``,
@@ -110,14 +106,25 @@ def compute_decay_index(
             threshold_low, threshold_high for ALL months.
         decay_rate: λ parameter controlling decay strength.
             Default 1.0 → e^{-1} per month.
+        phi_df: Optional month-level strength table with columns ``year``,
+            ``month``, ``phi``. If omitted, raw exceedance is used as the
+            fallback ``phi``.
 
     Returns:
         DataFrame with columns: year, month, C_k, has_high, has_low,
-        f_i, z_i.  One row per month in the original timeline.
+        phi_i, exceedance. One row per month in the original timeline.
     """
     if labeled_df.empty:
         return pd.DataFrame(
-            columns=["year", "month", "C_k", "has_high", "has_low", "f_i", "z_i"]
+            columns=[
+                "year",
+                "month",
+                "C_k",
+                "has_high",
+                "has_low",
+                "phi_i",
+                "exceedance",
+            ]
         )
 
     required_cols = {"year", "month", "index_value", "extreme_label",
@@ -131,6 +138,7 @@ def compute_decay_index(
         )
 
     df = labeled_df.sort_values(["year", "month"]).reset_index(drop=True)
+    df["month_seq"] = df["year"].astype(int) * 12 + df["month"].astype(int)
 
     high_mask = df["extreme_label"] == "extreme_high"
     low_mask = df["extreme_label"] == "extreme_low"
@@ -138,39 +146,44 @@ def compute_decay_index(
     df["has_high"] = high_mask.to_numpy()
     df["has_low"] = low_mask.to_numpy()
 
-    severity = np.full(len(df), np.nan, dtype=float)
-    severity[high_mask] = (
+    exceedance = np.zeros(len(df), dtype=float)
+    exceedance[high_mask] = (
         df.loc[high_mask, "index_value"].to_numpy(dtype=float)
         - df.loc[high_mask, "threshold_high"].to_numpy(dtype=float)
     )
-    severity[low_mask] = (
+    exceedance[low_mask] = (
         df.loc[low_mask, "threshold_low"].to_numpy(dtype=float)
         - df.loc[low_mask, "index_value"].to_numpy(dtype=float)
     )
-    severity = np.abs(severity)
+    exceedance = np.abs(exceedance)
 
-    z_scores = np.zeros(len(df), dtype=float)
-    for mask, label in ((high_mask, "high"), (low_mask, "low")):
-        if not mask.any():
-            continue
-        s_vals = severity[mask]
-        mu = float(np.mean(s_vals))
-        sigma = float(np.std(s_vals))
-        if sigma < 1e-15:
-            continue
-        z_scores[mask] = (s_vals - mu) / sigma
+    phi_i = exceedance.copy()
+    if phi_df is not None:
+        required_phi_cols = {"year", "month", "phi"}
+        missing_phi = required_phi_cols - set(phi_df.columns)
+        if missing_phi:
+            raise ValueError(
+                f"phi_df missing required columns: {sorted(missing_phi)}"
+            )
+        merged = df.loc[:, ["year", "month"]].merge(
+            phi_df.loc[:, ["year", "month", "phi"]],
+            on=["year", "month"],
+            how="left",
+        )
+        phi_values = merged["phi"].to_numpy(dtype=float)
+        phi_i = np.nan_to_num(phi_values, nan=0.0)
 
-    extreme_mask = high_mask | low_mask
-    f_i = np.zeros(len(df), dtype=float)
-    f_i[extreme_mask] = np.log(np.abs(z_scores[extreme_mask] - 0.5) + 1.0)
-
-    decay_factor = float(np.exp(-decay_rate))
     c_k = np.zeros(len(df), dtype=float)
-    c = 0.0
+    running_strength = 0.0
+    prev_month_seq: int | None = None
     for idx in range(len(df)):
-        c *= decay_factor
-        c += float(f_i[idx])
-        c_k[idx] = c
+        month_seq = int(df.iloc[idx]["month_seq"])
+        if prev_month_seq is not None:
+            month_gap = month_seq - prev_month_seq
+            running_strength *= float(np.exp(-decay_rate * month_gap))
+        running_strength += float(phi_i[idx])
+        c_k[idx] = float(np.log(running_strength)) if running_strength > 0.0 else -np.inf
+        prev_month_seq = month_seq
 
     result = pd.DataFrame(
         {
@@ -179,8 +192,8 @@ def compute_decay_index(
             "C_k": c_k,
             "has_high": df["has_high"].to_numpy(),
             "has_low": df["has_low"].to_numpy(),
-            "f_i": f_i,
-            "z_i": z_scores,
+            "phi_i": phi_i,
+            "exceedance": exceedance,
         }
     )
     return result
