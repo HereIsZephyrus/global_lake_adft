@@ -101,7 +101,7 @@ class ShiftLabelsSpec(TaskSpec):
 
 ```python
 class ShiftLabelsCalculator(Calculator):
-    def run(self, task: LakeTask) -> dict:
+    def _compute_lake(self, task: LakeTask) -> dict:
         """调用 ShiftFilter.classify()，返回 AnomalyFlag.detail + label"""
 
     def result_to_rows(self, result: dict) -> dict[str, list[dict]]:

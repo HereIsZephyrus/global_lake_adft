@@ -1,290 +1,321 @@
 # Batch 计算框架
 
-`lakeanalysis.batch` 提供统一的单进程 / MPI 批处理框架，用于按湖泊粒度执行大规模算法计算。
+`lakeanalysis.batch` 是当前湖泊算法的统一批处理执行框架，支持单进程和 MPI 两种运行模式。
 
-当前实现已经明确拆分为四层：
+当前实现遵循两个核心原则：
 
-- `Engine`：运行模式选择与对象组装入口
-- `SingleProcessRunner` / `SingleProcessIdBatchRunner`：单进程执行循环
-- `Manager` / `Worker`：MPI 调度与执行
-- `BatchReader` / `BatchWriter`：批处理业务 IO 语义
+- **dataset-first**：`Calculator` 的唯一公开入口是 `run_dataset(dataset)`
+- **quality-domain first**：批处理的候选湖泊全集来自 `area_quality.hylak_id`
 
-`lakesource.provider` 不再承担 batch 的业务语义；它只保留 backend-oriented 的共享数据访问能力。
+也就是说，Engine 不是先按连续 ID 空间切块，再在后面“自然过滤”；而是先确定真正允许计算的湖泊集合，再对这批 ID 做 chunking 和调度。
+
+## 当前组件分层
+
+- `Engine`：运行入口，负责候选 ID 解析、query 构建、单机/MPI 路由
+- `SingleProcessLakeDatasetRunner`：单进程 dataset 执行器
+- `Manager` / `Worker`：MPI 调度和执行
+- `LakeDatasetFactory`：按 query 读取源数据并物化 `LakeDataset`
+- `Calculator`：逐湖计算逻辑与结果序列化
+- `BatchReader` / `BatchWriter`：批处理读写语义
 
 ## 架构概览
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                               scripts                               │
-│   SourceConfig -> build_batch_reader/writer -> Engine.run()         │
-└──────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                               Engine                                │
-│  负责：                                                              │
-│  - 检测 MPI 环境                                                     │
-│  - 选择单进程 / MPI 模式                                             │
-│  - 选择 range / id-batch 模式                                        │
-└──────────────────────────────────────────────────────────────────────┘
-                 │                                      │
-                 ▼                                      ▼
-┌─────────────────────────────────┐    ┌──────────────────────────────┐
-│     SingleProcessRunner         │    │           MPI Mode            │
-│  / SingleProcessIdBatchRunner   │    │  rank 0 -> Manager           │
-│                                 │    │  rank 1+ -> Worker           │
-└─────────────────────────────────┘    └──────────────────────────────┘
-                 │                                      │
-                 └──────────────────┬───────────────────┘
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                     BatchReader / BatchWriter                        │
-│  PostgresBatchReader/Writer                                          │
-│  ParquetBatchReader/Writer                                           │
-└──────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                            Calculator                                │
-│  Quantile / PWM Extreme / EOT / Comparison                           │
-└──────────────────────────────────────────────────────────────────────┘
+scripts / CLI
+  -> SourceConfig
+  -> CalculatorFactory.create(...)
+  -> LakeDatasetFactory.from_config(...)
+  -> build_provider_batch_reader / writer
+  -> Engine.run()
+
+Engine
+  -> _resolve_candidate_ids()
+      1. reader.fetch_quality_ids()            # area_quality domain
+      2. apply lake_filter                     # RangeFilter / IdSetFilter
+      3. subtract done_ids                     # resume / skip completed
+  -> _build_queries()
+      -> chunk exact sorted IDs into id_subset batches
+  -> single process OR MPI
+
+Single process
+  -> SingleProcessLakeDatasetRunner
+  -> LakeDatasetFactory.build(query)
+  -> Calculator.run_dataset(dataset)
+  -> writer.persist(rows)
+
+MPI
+  rank 0 -> Manager
+      -> assign id_subset batches to workers
+      -> throttle read IO with io_budget
+      -> collect TAG_DATA rows and flush centrally
+  rank 1+ -> Worker
+      -> wait for TRIGGER_READ
+      -> LakeDatasetFactory.build(query)
+      -> Calculator.run_dataset(dataset)
+      -> send rows back to rank 0
 ```
 
-## 核心组件
+## 计算域定义
 
-### Engine
+当前 batch engine 的计算域定义为：
 
-入口类，负责：
+```text
+U = area_quality.hylak_id
+```
 
-- 检测 MPI 环境，决定单进程或分布式模式
-- range 模式与 id-batch 模式选择
-- 在单进程模式下选择 `SingleProcessRunner` 或 `SingleProcessIdBatchRunner`
-- 在 MPI 模式下启动 `Manager` 或 `Worker`
+然后依次应用：
+
+1. `lake_filter`
+2. 当前算法的 `done_ids`
+3. chunk 分片
+
+因此 Engine 中真正进入调度的 ID 集合是：
+
+```text
+effective_ids = sort((area_quality_ids ∩ user_filter) - done_ids)
+```
+
+这个定义同时适用于：
+
+- 单进程 `_build_queries()`
+- MPI rank 0 的 worker assignment
+
+这样可以保证：
+
+- `total_chunks` 反映真实有效湖泊集合，而不是连续 ID 空间
+- 稀疏 ID 集不会被退化成巨大 range
+- 单进程和 MPI 的 chunk 语义一致
+
+## 关键数据对象
+
+### LakeDatasetQuery
+
+`LakeDatasetQuery` 是 worker / runner 读取数据的结构化请求。
+
+当前 batch engine 的主路径使用：
+
+- `id_subset`: 精确的一批 `hylak_id`
+- `algorithm`: 用于算法上下文
+- `require_quality=False`: 因为进入 query 之前已经限定在 quality domain
+- `exclude_done=False`: 因为 done 过滤已经在 Engine 中提前完成
+
+`id_range` 仍然保留在数据结构中，但当前 Engine 主路径不再用它做真实分片表达。
+
+### LakeDataset
+
+`LakeDataset` 是 worker 侧的稠密内存表示，包含：
+
+- `hylak_ids: np.ndarray`
+- `year_months: np.ndarray`
+- `values: np.ndarray`
+- `frozen_mask: np.ndarray | None`
+- `extra: dict[str, np.ndarray] | None`
+
+它是 `LakeDatasetFactory.build(query)` 的输出，也是 `Calculator.run_dataset()` 的输入。
+
+### LakeTask
+
+`LakeTask` 是单湖任务对象，由 `LakeDataset.to_task(idx)` 按需构造。它不是公共调度入口，而是 `Calculator._compute_lake()` 的内部输入。
+
+字段包括：
+
+- `hylak_id`
+- `series_df`
+- `frozen_year_months`
+- `extra`
+
+## 数据流
+
+### 1. CLI / 脚本层
+
+CLI 或脚本通过 `run_batch_engine(...)` 或显式组装方式构造：
+
+- `SourceConfig`
+- `Calculator`
+- `LakeDatasetFactory`
+- `BatchReader`
+- `BatchWriter`
+- `Engine`
+
+### 2. Engine 解析候选 ID
+
+`Engine._resolve_candidate_ids()` 的流程是：
+
+1. `reader.fetch_quality_ids()` 读取 `area_quality` 的 `hylak_id`
+2. 对这批 ID 应用 `RangeFilter` 或 `IdSetFilter`
+3. 调用 `reader.fetch_done_ids(...)` 排除已完成湖泊
+4. 返回排序后的 `list[int]`
+
+这个阶段完成后，真正的计算域已经固定。
+
+### 3. Engine 构建 query
+
+`Engine._build_queries()` 会对 `sorted_ids` 调用 `_iter_id_batches(...)`，为每个 batch 生成：
 
 ```python
-from lakesource.config import SourceConfig
-
-from lakeanalysis.batch import Engine, RangeFilter, build_batch_reader, build_batch_writer
-from lakeanalysis.batch.calculator import CalculatorFactory
-
-source_config = SourceConfig()
-
-engine = Engine(
-    reader=build_batch_reader(source_config),
-    writer=build_batch_writer(source_config),
-    calculator=CalculatorFactory.create("quantile"),
-    algorithm="quantile",
-    lake_filter=RangeFilter(start=0, end=100000),
-    chunk_size=10000,
-    io_budget=4,
+LakeDatasetQuery(
+    algorithm=self._algorithm,
+    id_subset=frozenset(id_batch),
+    require_quality=False,
+    exclude_done=False,
 )
-report = engine.run()
 ```
 
-### SingleProcessRunner
+这表示 query 已经是“精确 ID 子集”，不需要在 factory 内再做质量筛选或 done 筛选。
 
-单进程执行器，负责完整串行循环：
+### 4. LakeDatasetFactory 物化数据集
 
-- `ensure_schema`
-- 读取 chunk / id batch
-- done-id 跳过
-- 构造 `LakeTask`
-- 调用 `Calculator`
-- 批量 `persist`
+`LakeDatasetFactory.build(query)` 负责：
+
+1. 解析 query 中的 `id_subset` / `id_range`
+2. 读取 `lake_area` 中对应湖泊的时序数据
+3. 读取 frozen year-month 信息
+4. 读取 `fields` 指定的附加字段，例如 `atlas_area`
+5. 组装成 `LakeDataset`
+
+注意：
+
+- **计算域定义不在 factory 中完成**
+- factory 的职责是“按给定 query 取数并物化数据集”
+
+### 5. Calculator 执行
+
+`Calculator` 的唯一公开入口是：
+
+```python
+run_dataset(dataset) -> (rows_by_table, success_lakes, error_lakes)
+```
+
+基类默认实现会：
+
+1. 遍历 `dataset`
+2. 调用 `dataset.to_task(idx)` 构造 `LakeTask`
+3. 调用子类实现的 `_compute_lake(task)`
+4. 用 `result_to_rows(...)` 转成写入行
+5. 如有异常，用 `error_to_rows(...)` 生成错误行
+
+也就是说，当前架构中：
+
+- `run_dataset()` 负责通用的逐湖循环
+- `_compute_lake()` 负责具体算法
+
+## 单进程路径
+
+单进程路径由 `SingleProcessLakeDatasetRunner` 执行：
+
+1. `writer.ensure_schema(algorithm)`
+2. `dataset_factory.build(query)`
+3. `calculator.run_dataset(dataset)`
+4. `writer.persist(rows_by_table)`
+5. 汇总 `RunReport`
+
+当前单进程只有这一个 runner，不再区分早期的 range runner / id-batch runner。
+
+## MPI 路径
+
+### Manager
+
+`Manager` 只运行在 rank 0，负责：
+
+- 把 `sorted_ids` 切成 worker 级别的 `id_subset` queries
+- 用 `io_budget` 限制同时进入读取阶段的 worker 数量
+- 接收 worker 的 `TAG_STATUS` 和 `TAG_DATA`
+- 聚合结果并批量 `flush`
 - 汇总 `RunReport`
 
-`Engine` 不再直接持有这些执行细节。
+`Manager._assign_dataset_queries()` 保留稀疏批次的精确 `id_subset`，不会把 `{2, 100, 300}` 这种集合扩张成 `(2, 301)`。
 
-### Manager (rank 0)
+### Worker
 
-MPI 模式下的调度器，负责：
+`Worker` 只运行在 rank 1+，负责：
 
-- 分配 chunk range 或 id batches 给各 worker
-- 控制读 IO 并发预算 `io_budget`
-- 接收 worker 状态消息
-- 接收 worker 发送的结果行并集中 flush
-- 汇总 `RunReport`
+1. 等待 `TRIGGER_READ`
+2. `factory.build(query)` 读取自己的 dataset
+3. `calculator.run_dataset(dataset)` 执行计算
+4. 把 `rows_by_table` 通过 `TAG_DATA` 发给 rank 0
+5. 报告状态和统计信息
 
-`Manager` 只依赖 `BatchWriter`，不直接读取源数据。
-
-### Worker (rank 1+)
-
-MPI 模式下的执行单元，负责：
-
-- 等待 `TRIGGER_READ`
-- 通过 `BatchReader` 读取 chunk / id batch
-- 构造 `LakeTask`
-- 调用 `Calculator`
-- 把结果行发送给 `Manager`
-
-状态机如下：
+### 状态机
 
 ```text
 PENDING -> READING -> CALCULATING -> PENDING -> ... -> DONE
 ```
 
-`Worker` 只依赖 `BatchReader`，不负责写入。
+其中：
+
+- `PENDING`：worker 已空闲，等待被分配下一次读机会
+- `READING`：正在执行数据读取
+- `CALCULATING`：数据已到内存，正在计算
+- `DONE`：该 worker 的所有 query 已完成
+
+Manager 只对 **read IO** 做预算控制，写 IO 始终集中在 rank 0。
+
+## BatchReader / BatchWriter
 
 ### BatchReader
 
-批处理读取接口，表达 batch 自己的业务读取语义：
+当前和 Engine 强相关的读取能力包括：
 
-```python
-class BatchReader(ABC):
-    def fetch_lake_area_chunk(self, chunk_start: int, chunk_end: int) -> dict[int, DataFrame]: ...
-    def fetch_lake_area_by_ids(self, id_list: list[int]) -> dict[int, DataFrame]: ...
-    def fetch_frozen_year_months_chunk(self, chunk_start: int, chunk_end: int) -> dict[int, set[int]]: ...
-    def fetch_frozen_year_months_by_ids(self, id_list: list[int]) -> dict[int, set[int]]: ...
-    def fetch_max_hylak_id(self) -> int: ...
-    def fetch_done_ids(self, algorithm: str, chunk_start: int, chunk_end: int) -> set[int]: ...
-```
+- `fetch_quality_ids()`
+- `fetch_done_ids(...)`
+- `fetch_lake_area_by_ids(...)`
+- `fetch_frozen_year_months_by_ids(...)`
 
-当前实现：
+其中：
 
-- `PostgresBatchReader`
-- `ParquetBatchReader`
+- `fetch_quality_ids()` 定义批处理的候选 lake universe
+- `fetch_done_ids(...)` 支持断点续跑
 
 ### BatchWriter
 
-批处理写接口，表达 batch 自己的业务写语义：
+`BatchWriter` 负责：
 
-```python
-class BatchWriter(ABC):
-    def persist(self, rows_by_table: dict[str, list[dict]]) -> None: ...
-    def ensure_schema(self, algorithm: str) -> None: ...
-```
+- `ensure_schema(algorithm)`
+- `persist(rows_by_table)`
+- `truncate_run_status(algorithm)`
 
-当前实现：
+`truncate_run_status()` 只在 **全量运行**（`lake_filter is None`）后触发，用于清空增量状态表。
 
-- `PostgresBatchWriter`
-- `ParquetBatchWriter`
+## 为什么不再按连续 range 分片
 
-### LakeProvider
+旧思路是对 `0..max_hylak_id` 做区间切块，然后在后续读取中自然过滤掉无效湖泊。
 
-`LakeProvider` 已降级为 backend-oriented 共享能力层，主要服务：
+当前实现不再这样做，原因是：
 
-- 基础湖泊时序读取
-- geometry 读取
-- grid aggregation 读取
-- 其他非 batch 的共享 backend 访问场景
+- 连续 range 会产生大量空 chunk 或稀疏 chunk
+- `total_chunks` 和真实工作量不一致
+- MPI 会把无效范围分配给 worker
+- 稀疏 quality IDs 会被扩张成巨大区间，造成额外读放大
 
-它不再作为 batch 框架的直接依赖，也不再定义 `done_ids / persist / ensure_schema` 这类 batch 语义。
+当前改成 quality-domain first 后：
 
-### Calculator
+- chunk 数量更真实
+- 调度更稳定
+- 单机与 MPI 一致性更强
 
-纯计算逻辑，不做调度和底层 IO：
-
-```python
-class Calculator(ABC):
-    def run(self, task: LakeTask) -> Any: ...
-    def result_to_rows(self, result: Any) -> dict[str, list[dict]]: ...
-    def error_to_rows(self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int) -> dict[str, list[dict]]: ...
-```
-
-已实现：
-
-- `QuantileCalculator`
-- `PWMExtremeCalculator`
-- `EOTCalculator`
-- `ComparisonCalculator`
-
-### LakeTask
-
-引擎与算法之间的数据契约：
-
-```python
-@dataclass(frozen=True)
-class LakeTask:
-    hylak_id: int
-    series_df: pd.DataFrame
-    frozen_year_months: frozenset[int]
-```
-
-### RangeFilter / IdSetFilter
-
-用于控制批处理范围：
-
-```python
-RangeFilter(start=0, end=100000)
-IdSetFilter({1, 2, 3})
-```
-
-## MPI 通信协议
-
-### 消息类型
-
-| Tag | 方向 | 说明 |
-|-----|------|------|
-| `TAG_STATUS` | Worker -> Manager | 状态更新 |
-| `TAG_TRIGGER` | Manager -> Worker | 读取触发信号 |
-| `TAG_DATA` | Worker -> Manager | 结果行数据 |
-
-### 状态消息
-
-```python
-(state: str, stats: dict)
-```
-
-状态值：
-
-- `pending`
-- `reading`
-- `calculating`
-- `done`
-
-### 触发信号
-
-- `TRIGGER_READ`：允许 worker 开始下一轮读取
-
-## IO 调度策略
-
-当前实现只对**读 IO 并发**做预算控制。
-
-1. Worker 进入 `PENDING` 后加入 `read_queue`
-2. `Manager` 在 `io_active < io_budget` 时发送 `TRIGGER_READ`
-3. Worker 进入 `READING`，执行 batch 读取
-4. Worker 进入 `CALCULATING` 或直接回 `PENDING/DONE` 时释放 IO slot
-5. Worker 把结果行通过 `TAG_DATA` 发回 `Manager`
-6. `Manager` 聚合行数据并按 flush 策略集中持久化
-
-也就是说，当前架构是：
-
-- Worker 负责读和算
-- Manager 负责集中写
-
-不是早期设计稿中的双向 `READ/WRITE` IO 状态机。
-
-## 运行报告
-
-```python
-@dataclass
-class RunReport:
-    total_chunks: int
-    processed_chunks: int
-    skipped_chunks: int
-    source_lakes: int
-    skipped_lakes: int
-    success_lakes: int
-    error_lakes: int
-```
-
-## 扩展指南
+## 扩展约定
 
 ### 添加新算法
 
 1. 实现 `Calculator` 子类
-2. 注册到 `CalculatorFactory`
-3. 在脚本层组装 `SourceConfig + BatchReader/BatchWriter + Engine`
+2. 实现 `_compute_lake()`、`result_to_rows()`、`error_to_rows()`
+3. 注册到 `CalculatorFactory`
+4. 通过脚本或 CLI 组装到 `Engine`
 
-### 添加新 batch backend
+### 添加新字段
 
-为 batch 新增：
+如果某算法需要附加字段，例如 `atlas_area`：
 
-- `MyBackendBatchReader`
-- `MyBackendBatchWriter`
+1. 在 query 中通过 `fields` 声明
+2. 在 `LakeDatasetFactory._materialize_extra()` 中补充读取逻辑
+3. 在 `LakeTask.extra` 中消费
 
-然后在 `build_batch_reader()` / `build_batch_writer()` 中注册。
+### 调整计算域
 
-### 添加新共享 backend 能力
+如果未来需要改变候选 lake universe，不应从 calculator 或 factory 临时绕过；应优先调整：
 
-如果能力是 batch 之外的共享能力，例如 geometry 或 grid aggregation，则扩展 `lakesource.provider`。
+1. `BatchReader.fetch_quality_ids()` 或其上游语义
+2. `Engine._resolve_candidate_ids()`
+3. 对应文档与测试
+
+这样才能保证 query、调度、统计和计算域始终一致。

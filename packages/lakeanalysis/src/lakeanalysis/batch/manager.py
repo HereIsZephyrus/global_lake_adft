@@ -161,6 +161,11 @@ class Manager:
         batch_size: int,
         algorithm: str,
     ) -> dict[int, list[LakeDatasetQuery]]:
+        """Split the already-filtered quality-domain IDs across workers.
+
+        Queries keep the exact sparse ``id_subset`` for each worker batch
+        instead of expanding back to contiguous ranges.
+        """
         id_batches = _iter_id_batches(sorted_ids, batch_size)
         n_batches = len(id_batches)
         base = n_batches // self._n_workers

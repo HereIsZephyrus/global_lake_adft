@@ -416,10 +416,13 @@ packages/
         │   ├── types.py            # HawkesEventSeries
         │   └── bridge.py           # build_events_from_pwm/eot
         ├── batch/                  # 批处理框架
-        │   ├── engine.py           # Engine (路由)
-        │   ├── domain.py           # Calculator, LakeTask
+        │   ├── engine.py           # Engine (quality-domain query routing)
+        │   ├── domain.py           # Calculator / LakeFilter contracts
+        │   ├── core.py             # LakeTask concrete type
         │   ├── lake_dataset.py     # LakeDataset dense container
+        │   ├── lake_dataset_query.py
         │   ├── lake_dataset_factory.py
+        │   ├── single_process.py   # SingleProcessLakeDatasetRunner
         │   ├── calculator/         # 各算法 calculator
         │   │   ├── quantile.py
         │   │   ├── pwm_extreme.py

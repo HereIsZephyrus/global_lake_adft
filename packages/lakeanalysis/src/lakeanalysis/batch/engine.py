@@ -36,6 +36,13 @@ class Engine:
             self._writer.truncate_run_status(self._algorithm)
 
     def _resolve_candidate_ids(self) -> list[int]:
+        """Resolve the actual computation domain before chunking.
+
+        The batch engine computes only lakes present in ``area_quality``.
+        User-supplied ``lake_filter`` and algorithm-specific done-state are
+        both applied before chunk construction so that single-process and MPI
+        scheduling operate on the same precise ID universe.
+        """
         candidate_ids = self._reader.fetch_quality_ids()
         if self._lake_filter is not None:
             candidate_ids = self._lake_filter(candidate_ids)
@@ -125,7 +132,7 @@ class Engine:
     # ── query construction ─────────────────────────────────────────────
 
     def _build_queries(self):
-        """Yield ``LakeDatasetQuery`` objects for the configured filter."""
+        """Yield ``LakeDatasetQuery`` objects over exact quality-domain ID batches."""
         sorted_ids = self._resolve_candidate_ids()
         for id_batch in _iter_id_batches(sorted_ids, self._chunk_size):
             yield LakeDatasetQuery(
