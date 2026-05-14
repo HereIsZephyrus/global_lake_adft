@@ -9,6 +9,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from .io import BatchReader, BatchWriter
+from .lake_dataset_query import LakeDatasetQuery
 from .protocol import RunReport
 
 
@@ -122,6 +123,30 @@ class Engine:
 
         if self._is_id_batch_mode():
             if size <= 1:
+                if self._dataset_factory is not None:
+                    from .single_process import SingleProcessLakeDatasetRunner
+                    sorted_ids = sorted(self._lake_filter.ids)
+
+                    query = None
+                    if sorted_ids:
+                        lo, hi = min(sorted_ids), max(sorted_ids) + 1
+                        query = LakeDatasetQuery(
+                            algorithm=self._algorithm,
+                            id_range=(lo, hi),
+                            require_quality=False,
+                            exclude_done=True,
+                        )
+
+                    result = SingleProcessLakeDatasetRunner(
+                        self._dataset_factory,
+                        query,
+                        self._writer,
+                        self._calculator,
+                        algorithm=self._algorithm,
+                    ).run()
+                    self._maybe_truncate()
+                    return result
+
                 from .single_process import SingleProcessIdBatchRunner
 
                 result = SingleProcessIdBatchRunner(

@@ -11,6 +11,7 @@ import pandas as pd
 from lakesource.config import SourceConfig
 from lakeanalysis.batch import (
     Engine,
+    LakeDatasetFactory,
     RangeFilter,
     build_provider_batch_reader,
     build_provider_batch_writer,
@@ -117,6 +118,7 @@ def main() -> None:
         lake_filter=dataset.as_filter(),
         chunk_size=args.chunk_size,
         io_budget=args.io_budget,
+        dataset_factory=LakeDatasetFactory.from_config(source_config),
     )
 
     report = engine.run()

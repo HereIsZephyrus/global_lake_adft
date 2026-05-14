@@ -109,6 +109,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     monkeypatch.setattr(MODULE, "build_provider_batch_reader", fake_build_reader)
     monkeypatch.setattr(MODULE, "build_provider_batch_writer", fake_build_writer)
     monkeypatch.setattr(MODULE.CalculatorFactory, "create", fake_create)
+    monkeypatch.setattr(MODULE.LakeDatasetFactory, "from_config", lambda *a, **kw: "fake_factory")
 
     MODULE.main()
 
@@ -133,6 +134,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     assert engine_kwargs["algorithm"] == "quantile"
     assert engine_kwargs["chunk_size"] == 25
     assert engine_kwargs["io_budget"] == 2
+    assert engine_kwargs["dataset_factory"] == "fake_factory"
     lake_filter = engine_kwargs["lake_filter"]
     assert isinstance(lake_filter, _FakeIdSetFilter)
     assert captured["engine_run_called"] is True
@@ -157,6 +159,7 @@ def test_main_skips_range_filter_when_full_scan(monkeypatch) -> None:
     monkeypatch.setattr(MODULE, "build_provider_batch_reader", _make_object)
     monkeypatch.setattr(MODULE, "build_provider_batch_writer", _make_object)
     monkeypatch.setattr(MODULE.CalculatorFactory, "create", _make_object)
+    monkeypatch.setattr(MODULE.LakeDatasetFactory, "from_config", lambda *a, **kw: object())
 
     MODULE.main()
 
