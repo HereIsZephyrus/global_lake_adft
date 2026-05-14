@@ -260,7 +260,17 @@ def assign_pwm_extreme_labels(
 
     Returns:
         DataFrame with added columns threshold_low, threshold_high, extreme_label.
+
+    Raises:
+        ValueError: If ``index_value`` column is missing (e.g. legacy raw-water_area
+            path was used instead of STL decomposition).
     """
+    if "index_value" not in index_df.columns:
+        raise ValueError(
+            "index_df lacks 'index_value' column — use assign_pwm_extreme_labels "
+            "with an STL decomposition result (which provides index_value), "
+            "or switch to _assign_labels_raw for the legacy raw-water_area path"
+        )
     labeled_df = index_df.copy()
     labeled_df["threshold_low"] = labeled_df["month"].map(
         lambda m: thresholds.get(m, (np.nan, np.nan))[0]
@@ -552,7 +562,17 @@ def _extract_events_index(labeled_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with columns: hylak_id, year, month, event_type, water_area,
         index_value, threshold, severity, extreme_label.
+
+    Raises:
+        ValueError: If ``index_value`` column is missing (e.g. legacy
+            raw-water_area path was used instead of STL decomposition).
     """
+    if "index_value" not in labeled_df.columns:
+        raise ValueError(
+            "labeled_df lacks 'index_value' column — use _extract_events_raw "
+            "for the legacy raw-water_area path, or ensure the dataframe comes "
+            "from assign_pwm_extreme_labels (STL decomposition)"
+        )
     extreme_df = labeled_df.loc[labeled_df["extreme_label"] != "normal"].copy()
     if extreme_df.empty:
         return pd.DataFrame(
