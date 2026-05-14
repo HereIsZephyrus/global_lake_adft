@@ -53,6 +53,7 @@ class TestLakeModulesImport:
         from lakesource.postgres import lake_pwm
         assert hasattr(lake_pwm, "ensure_pwm_extreme_tables")
         assert hasattr(lake_pwm, "upsert_pwm_extreme_thresholds")
+        assert hasattr(lake_pwm, "upsert_pwm_extreme_return_levels")
         assert hasattr(lake_pwm, "upsert_pwm_extreme_run_status")
         assert hasattr(lake_pwm, "count_pwm_extreme_status_in_range")
         assert hasattr(lake_pwm, "fetch_pwm_extreme_status_ids_in_range")

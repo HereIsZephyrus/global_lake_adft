@@ -32,6 +32,7 @@ SYNC_TABLES: list[str] = [
     "pwm_extreme_thresholds",
     "pwm_extreme_labels",
     "pwm_extreme_extremes",
+    "pwm_extreme_return_levels",
     "pwm_extreme_abrupt_transitions",
     "pwm_hawkes_results",
     "pwm_hawkes_lrt",
@@ -54,6 +55,7 @@ TABLE_TO_ENSURE_KEY: dict[str, str] = {
     "pwm_extreme_thresholds": "pwm_extreme",
     "pwm_extreme_labels": "pwm_extreme",
     "pwm_extreme_extremes": "pwm_extreme",
+    "pwm_extreme_return_levels": "pwm_extreme",
     "pwm_extreme_abrupt_transitions": "pwm_extreme",
     "pwm_hawkes_results": "pwm_hawkes",
     "pwm_hawkes_lrt": "pwm_hawkes",
@@ -352,6 +354,7 @@ _TABLE_PK: dict[str, tuple[str, ...]] = {
     "pwm_extreme_thresholds": ("hylak_id", "month"),
     "pwm_extreme_labels": ("hylak_id", "year", "month"),
     "pwm_extreme_extremes": ("hylak_id", "year", "month"),
+    "pwm_extreme_return_levels": ("hylak_id", "tail", "return_period", "evt_route"),
     "pwm_extreme_abrupt_transitions": (
         "hylak_id", "from_year", "from_month", "to_year", "to_month",
     ),

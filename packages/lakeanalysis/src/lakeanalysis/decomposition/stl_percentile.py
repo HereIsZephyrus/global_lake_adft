@@ -142,6 +142,10 @@ class STLPercentileMethod:
         months_arr = df["month"].to_numpy(dtype=int)
         percentile = _compute_monthly_percentiles(residual, months_arr)
 
+        df["log_area"] = log_area
+        df["stl_trend"] = result.trend.astype(float)
+        df["stl_seasonal"] = result.seasonal.astype(float)
+        df["stl_residual"] = residual
         df["index_value"] = percentile
 
         return DecompositionResult(

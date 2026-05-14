@@ -14,7 +14,10 @@ from lakesource.postgres.quality_run_status_schema import (
 )
 from lakesource.postgres.lake_eot import _upsert_eot_results_sql
 from lakesource.postgres.lake_quantile import _upsert_quantile_labels_sql
-from lakesource.postgres.lake_pwm import _upsert_pwm_extreme_thresholds_sql
+from lakesource.postgres.lake_pwm import (
+    _upsert_pwm_extreme_return_levels_sql,
+    _upsert_pwm_extreme_thresholds_sql,
+)
 from lakesource.postgres.lake_hawkes import _upsert_hawkes_results_sql
 from lakesource.postgres.lake_entropy import _upsert_entropy_sql
 from lakesource.postgres.comparison_schema import _upsert_comparison_run_status_sql
@@ -87,6 +90,15 @@ class TestUpsertSQLTemplates:
         assert "now()" in query
         assert "EXCLUDED." in query
         assert "lambda_" in query
+
+    def test_upsert_pwm_return_levels_sql_builds(self, table_config: TableConfig) -> None:
+        sql = _upsert_pwm_extreme_return_levels_sql(table_config)
+        query = sql.as_string()
+        assert "INSERT INTO" in query
+        assert "VALUES" in query
+        assert "ON CONFLICT" in query
+        assert "return_level" in query
+        assert "evt_route" in query
 
     def test_upsert_hawkes_results_sql_builds(self, table_config: TableConfig) -> None:
         sql = _upsert_hawkes_results_sql(table_config, "pwm_hawkes_results")

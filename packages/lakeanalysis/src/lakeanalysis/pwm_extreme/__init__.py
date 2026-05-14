@@ -24,6 +24,7 @@ from .diagnostics import (
     pwm_constraint_residuals,
     quantile_function_curve,
 )
+from .evt_amplitude import compute_evt_amplitude_strengths
 from .evt_index import compute_evt_index_strengths
 from .phi import map_strength_df_to_phi, map_strength_to_phi
 from .plot_adapter import (
@@ -71,6 +72,7 @@ __all__ = [
     "compute_pwm_beta",
     "crossent_quantile",
     "compute_evt_index_strengths",
+    "compute_evt_amplitude_strengths",
     "ensure_pwm_extreme_tables",
     "map_strength_df_to_phi",
     "map_strength_to_phi",

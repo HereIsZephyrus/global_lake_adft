@@ -31,6 +31,7 @@ def test_compute_evt_index_strengths_uses_exceedance_as_strength() -> None:
     assert list(strengths_df["event_strength"]) == [7.0, 6.0, 5.0, 1.0, 2.0, 3.0]
     assert set(summary_df["tail"]) == {"high", "low"}
     assert bool(summary_df["converged"].all())
+    assert set(summary_df["evt_route"]) == {"A"}
 
 
 def test_compute_evt_index_strengths_falls_back_when_fit_fails() -> None:

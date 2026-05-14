@@ -28,6 +28,7 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_requires_status=True,
         ensure_tables=(
             "pwm_extreme_thresholds",
+            "pwm_extreme_return_levels",
             "pwm_extreme_labels",
             "pwm_extreme_extremes",
             "pwm_extreme_abrupt_transitions",
@@ -61,6 +62,7 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_requires_status=True,
         ensure_tables=(
             "pwm_extreme_thresholds",
+            "pwm_extreme_return_levels",
             "pwm_extreme_run_status",
             "pwm_hawkes_run_status",
         ),

@@ -159,7 +159,7 @@ class TestPWMHawkesUsesSTLPath:
         rows_by_table, _, _ = calculator.run_dataset(ds)
         assert "pwm_hawkes_results" in rows_by_table
 
-    def test_pwm_hawkes_route_b_reports_not_implemented(self) -> None:
+    def test_pwm_hawkes_route_b_runs_with_amplitude_evt(self) -> None:
         from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
 
         series_df = _make_synthetic_series(seed=45)
@@ -175,8 +175,7 @@ class TestPWMHawkesUsesSTLPath:
         )
 
         rows_by_table, _, _ = calculator.run_dataset(ds)
-        summary = rows_by_table["pwm_hawkes_results"][0]
-        assert "not implemented" in str(summary.get("error_message", "")).lower()
+        assert "pwm_hawkes_results" in rows_by_table
 
 
 class TestEOTHawkesDefaults:

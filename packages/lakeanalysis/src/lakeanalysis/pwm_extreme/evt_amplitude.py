@@ -1,4 +1,4 @@
-"""Route A EVT helpers on ``index_value`` exceedances."""
+"""Route B EVT helpers on continuous amplitude space."""
 
 from __future__ import annotations
 
@@ -6,40 +6,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import genpareto
 
+
 DEFAULT_RETURN_PERIODS = (2, 5, 10, 20)
-
-
-def _exceedance_from_labels(labeled_df: pd.DataFrame) -> pd.DataFrame:
-    required_cols = {
-        "year",
-        "month",
-        "index_value",
-        "extreme_label",
-        "threshold_low",
-        "threshold_high",
-    }
-    missing = required_cols - set(labeled_df.columns)
-    if missing:
-        raise ValueError(f"labeled_df missing required columns: {sorted(missing)}")
-
-    df = labeled_df.copy()
-    high_mask = df["extreme_label"] == "extreme_high"
-    low_mask = df["extreme_label"] == "extreme_low"
-
-    df["tail"] = np.select([high_mask, low_mask], ["high", "low"], default="normal")
-    df["threshold"] = np.where(
-        high_mask,
-        df["threshold_high"],
-        np.where(low_mask, df["threshold_low"], np.nan),
-    )
-    df["exceedance"] = 0.0
-    df.loc[high_mask, "exceedance"] = (
-        df.loc[high_mask, "index_value"] - df.loc[high_mask, "threshold_high"]
-    )
-    df.loc[low_mask, "exceedance"] = (
-        df.loc[low_mask, "threshold_low"] - df.loc[low_mask, "index_value"]
-    )
-    return df.loc[high_mask | low_mask].copy()
 
 
 def _fit_gpd(exceedances: np.ndarray) -> tuple[float, float]:
@@ -70,14 +38,21 @@ def _return_level(
     return float(threshold + (scale / shape) * (rate**shape - 1.0))
 
 
+def _tail_threshold(values: np.ndarray, tail: str) -> float:
+    if tail == "high":
+        return float(np.min(values))
+    return float(np.max(values))
+
+
 def _build_tail_rows(
     tail_df: pd.DataFrame,
     *,
     tail: str,
     n_total: int,
+    route: str,
+    strength_unit: str,
     return_periods: tuple[int, ...],
 ) -> list[dict]:
-    threshold = float(tail_df["threshold"].iloc[0]) if not tail_df.empty else np.nan
     if tail_df.empty:
         return [
             {
@@ -91,12 +66,13 @@ def _build_tail_rows(
                 "error_message": "No exceedances",
                 "return_period": period,
                 "return_level": None,
-                "evt_route": "A",
-                "strength_unit": "index_value",
+                "evt_route": route,
+                "strength_unit": strength_unit,
             }
             for period in return_periods
         ]
 
+    threshold = float(tail_df["amplitude_threshold"].iloc[0])
     exceedances = tail_df["exceedance"].to_numpy(dtype=float)
     try:
         shape, scale = _fit_gpd(exceedances)
@@ -119,8 +95,8 @@ def _build_tail_rows(
                     n_total=n_total,
                     n_exceedances=len(exceedances),
                 ),
-                "evt_route": "A",
-                "strength_unit": "index_value",
+                "evt_route": route,
+                "strength_unit": strength_unit,
             }
             for period in return_periods
         ]
@@ -137,26 +113,43 @@ def _build_tail_rows(
                 "error_message": str(exc),
                 "return_period": period,
                 "return_level": None,
-                "evt_route": "A",
-                "strength_unit": "index_value",
+                "evt_route": route,
+                "strength_unit": strength_unit,
             }
             for period in return_periods
         ]
 
 
-def compute_evt_index_strengths(
+def compute_evt_amplitude_strengths(
     labeled_df: pd.DataFrame,
     *,
+    amplitude_column: str = "stl_residual",
     return_periods: tuple[int, ...] = DEFAULT_RETURN_PERIODS,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute Route A month-level strengths and tail fit summaries.
+    """Compute Route B strengths using a continuous amplitude coordinate.
 
-    The current minimal implementation uses exceedance as the primary event
-    strength and fits a GPD only for diagnostics / future upgrade paths.
-    Fit failure falls back to raw exceedance automatically because
-    ``event_strength`` is always set to ``exceedance``.
+    The current minimal implementation derives an amplitude-space threshold from
+    the PWM-labeled extreme months themselves:
+
+    - high tail threshold: minimum amplitude among ``extreme_high`` months
+    - low tail threshold: maximum amplitude among ``extreme_low`` months
+
+    Strength remains the raw amplitude exceedance, while GPD fit and return
+    levels are emitted as diagnostics / persisted outputs.
     """
-    extremes_df = _exceedance_from_labels(labeled_df)
+    required_cols = {
+        "year",
+        "month",
+        "extreme_label",
+        amplitude_column,
+    }
+    missing = required_cols - set(labeled_df.columns)
+    if missing:
+        raise ValueError(f"labeled_df missing required columns: {sorted(missing)}")
+
+    df = labeled_df.copy()
+    high_df = df[df["extreme_label"] == "extreme_high"].copy()
+    low_df = df[df["extreme_label"] == "extreme_low"].copy()
     empty_strengths = pd.DataFrame(
         columns=[
             "year",
@@ -165,6 +158,7 @@ def compute_evt_index_strengths(
             "threshold",
             "exceedance",
             "event_strength",
+            amplitude_column,
         ]
     )
     summary_cols = [
@@ -181,27 +175,44 @@ def compute_evt_index_strengths(
         "evt_route",
         "strength_unit",
     ]
-    if extremes_df.empty:
+    if high_df.empty and low_df.empty:
         return empty_strengths, pd.DataFrame(columns=summary_cols)
 
-    extremes_df = extremes_df.sort_values(["year", "month"]).reset_index(drop=True)
-    extremes_df["event_strength"] = extremes_df["exceedance"].to_numpy(dtype=float)
+    if not high_df.empty:
+        high_threshold = _tail_threshold(high_df[amplitude_column].to_numpy(dtype=float), "high")
+        high_df["tail"] = "high"
+        high_df["amplitude_threshold"] = high_threshold
+        high_df["threshold"] = high_threshold
+        high_df["exceedance"] = high_df[amplitude_column].to_numpy(dtype=float) - high_threshold
+    if not low_df.empty:
+        low_threshold = _tail_threshold(low_df[amplitude_column].to_numpy(dtype=float), "low")
+        low_df["tail"] = "low"
+        low_df["amplitude_threshold"] = low_threshold
+        low_df["threshold"] = low_threshold
+        low_df["exceedance"] = low_threshold - low_df[amplitude_column].to_numpy(dtype=float)
+
+    strengths_df = pd.concat([high_df, low_df], ignore_index=True)
+    strengths_df = strengths_df.sort_values(["year", "month"]).reset_index(drop=True)
+    strengths_df["exceedance"] = strengths_df["exceedance"].clip(lower=0.0)
+    strengths_df["event_strength"] = strengths_df["exceedance"].to_numpy(dtype=float)
 
     n_total = int(len(labeled_df))
-    summary_rows = []
-    for tail in ("high", "low"):
-        tail_df = extremes_df[extremes_df["tail"] == tail]
-        summary_rows.extend(
+    rows = []
+    for tail, tail_df in (("high", strengths_df[strengths_df["tail"] == "high"]), ("low", strengths_df[strengths_df["tail"] == "low"])):
+        rows.extend(
             _build_tail_rows(
                 tail_df,
                 tail=tail,
                 n_total=n_total,
+                route="B",
+                strength_unit=amplitude_column,
                 return_periods=return_periods,
             )
         )
 
-    strengths_df = extremes_df.loc[
-        :, ["year", "month", "tail", "threshold", "exceedance", "event_strength"]
-    ].copy()
-    summary_df = pd.DataFrame(summary_rows, columns=summary_cols)
-    return strengths_df, summary_df
+    return (
+        strengths_df.loc[
+            :, ["year", "month", "tail", "threshold", "exceedance", "event_strength", amplitude_column]
+        ].copy(),
+        pd.DataFrame(rows, columns=summary_cols),
+    )

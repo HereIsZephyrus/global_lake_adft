@@ -16,8 +16,10 @@ from .schema import (
 from .store import (
     ensure_pwm_extreme_tables,
     make_run_status_row,
+    return_levels_to_rows,
     result_to_threshold_rows,
     upsert_pwm_extreme_run_status,
+    upsert_pwm_extreme_return_levels,
     upsert_pwm_extreme_thresholds,
 )
 
@@ -34,7 +36,9 @@ __all__ = [
     "fetch_pwm_convergence_grid_agg",
     "fetch_pwm_converged_grid_agg",
     "make_run_status_row",
+    "return_levels_to_rows",
     "result_to_threshold_rows",
     "upsert_pwm_extreme_run_status",
+    "upsert_pwm_extreme_return_levels",
     "upsert_pwm_extreme_thresholds",
 ]
