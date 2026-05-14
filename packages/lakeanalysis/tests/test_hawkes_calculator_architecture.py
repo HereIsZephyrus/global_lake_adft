@@ -141,6 +141,43 @@ class TestPWMHawkesUsesSTLPath:
         assert "pwm_hawkes_run_status" in rows_by_table
         assert "pwm_hawkes_segments" in rows_by_table
 
+    def test_pwm_hawkes_accepts_phi_method_configuration(self) -> None:
+        from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+
+        series_df = _make_synthetic_series(seed=44)
+        ds = _make_single_dataset(series_df, hylak_id=1)
+
+        calculator = PWMExtremeHawkesCalculator(
+            pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
+            min_event_rate=0.005,
+            max_event_rate=0.50,
+            min_median_severity=0.1,
+            method="stl",
+            phi_method="log1p",
+        )
+
+        rows_by_table, _, _ = calculator.run_dataset(ds)
+        assert "pwm_hawkes_results" in rows_by_table
+
+    def test_pwm_hawkes_route_b_reports_not_implemented(self) -> None:
+        from lakeanalysis.batch.calculator.pwm_hawkes import PWMExtremeHawkesCalculator
+
+        series_df = _make_synthetic_series(seed=45)
+        ds = _make_single_dataset(series_df, hylak_id=1)
+
+        calculator = PWMExtremeHawkesCalculator(
+            pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
+            min_event_rate=0.005,
+            max_event_rate=0.50,
+            min_median_severity=0.1,
+            method="stl",
+            evt_route="B",
+        )
+
+        rows_by_table, _, _ = calculator.run_dataset(ds)
+        summary = rows_by_table["pwm_hawkes_results"][0]
+        assert "not implemented" in str(summary.get("error_message", "")).lower()
+
 
 class TestEOTHawkesDefaults:
     """EOT-Hawkes MUST default to RunsDeclustering."""

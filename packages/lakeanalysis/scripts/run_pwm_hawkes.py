@@ -43,6 +43,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-event-rate", type=float, default=0.30)
     parser.add_argument("--min-relative-amplitude", type=float, default=0.05)
     parser.add_argument("--min-median-severity", type=float, default=1.0)
+    parser.add_argument("--evt-route", choices=["A", "B"], default="A")
+    parser.add_argument(
+        "--phi-method",
+        choices=["identity", "log1p", "normalize"],
+        default="identity",
+    )
     parser.add_argument(
         "--monthly-significance-quantile", type=float, default=0.95,
     )
@@ -73,6 +79,8 @@ def main() -> None:
         min_relative_amplitude=args.min_relative_amplitude,
         min_median_severity=args.min_median_severity,
         monthly_significance_quantile=args.monthly_significance_quantile,
+        evt_route=args.evt_route,
+        phi_method=args.phi_method,
     )
 
     id_start = args.id_start

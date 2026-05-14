@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 import pandas as pd
 
@@ -69,6 +70,8 @@ class PWMExtremeHawkesCalculator(Calculator):
         min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
         method: str = "stl",
+        evt_route: Literal["A", "B"] = "A",
+        phi_method: str = "identity",
     ) -> None:
         self._pwm_config = pwm_config or PWMExtremeConfig()
         self._service_config = PWMExtremeServiceConfig(
@@ -82,6 +85,18 @@ class PWMExtremeHawkesCalculator(Calculator):
         self._min_relative_amplitude = min_relative_amplitude
         self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
+        self._evt_route = evt_route
+        self._phi_method = phi_method
+
+    def _compute_strengths(self, labeled_df: pd.DataFrame) -> pd.DataFrame:
+        if self._evt_route == "A":
+            strengths_df, _ = compute_evt_index_strengths(labeled_df)
+            return strengths_df
+        if self._evt_route == "B":
+            raise NotImplementedError(
+                "evt_route='B' is not implemented yet; use evt_route='A'"
+            )
+        raise ValueError(f"Unknown evt_route: {self._evt_route!r}")
 
     def _compute_lake(self, task: LakeTask) -> PWMHawkesPipelineResult:
         hylak_id = task.hylak_id
@@ -95,8 +110,11 @@ class PWMExtremeHawkesCalculator(Calculator):
                 config=self._service_config,
                 frozen_year_months=frozen or None,
             )
-            strengths_df, _ = compute_evt_index_strengths(pwm_result.labels_df)
-            phi_df = map_strength_df_to_phi(strengths_df, method="identity")
+            strengths_df = self._compute_strengths(pwm_result.labels_df)
+            phi_df = map_strength_df_to_phi(
+                strengths_df,
+                method=self._phi_method,
+            )
 
             decay_df = compute_decay_index(
                 pwm_result.labels_df,
