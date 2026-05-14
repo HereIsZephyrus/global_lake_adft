@@ -33,18 +33,6 @@ def _cached_or_compute(
     return df
 
 
-def _crossent_threshold_sql(p: float, direction: str) -> str:
-    u = 1.0 - p if direction == "high" else p
-    ln_arg = 1.0 - u
-    return f"""t.mean_area * (
-           (t.epsilon - (1 - t.epsilon) * LN({ln_arg}))
-           * EXP(-(t.lambda_0
-                 + t.lambda_1 * {u}
-                 + t.lambda_2 * {u} * {u}
-                 + t.lambda_3 * {u} * {u} * {u}
-                 + t.lambda_4 * {u} * {u} * {u} * {u}))
-       )"""
-
 
 class _PWMConvergenceQuery:
     name = "pwm.convergence"
@@ -151,30 +139,14 @@ class _PWMExceedanceQuery:
     ) -> pd.DataFrame:
         p_tag = f"p{p_high:.4f}"
         cache = cache_dir / "pwm_extreme" / f"exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
-        th_high = _crossent_threshold_sql(p_high, "high")
-        th_low = _crossent_threshold_sql(p_low, "low")
         return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
             client.query_df(f"""
-            WITH deduped_area AS (
-                SELECT DISTINCT hylak_id, year_month, water_area
-                FROM lake_area
-            ),
-            quantile_thresholds AS (
-                SELECT t.hylak_id, t.month,
-                       {th_high} AS threshold_high,
-                       {th_low}  AS threshold_low
-                FROM   pwm_extreme_thresholds t
-                WHERE  t.converged = true
-            ),
-            exceedance AS (
-                SELECT la.hylak_id,
-                       SUM(CASE WHEN la.water_area >= qt.threshold_high THEN 1 ELSE 0 END) AS high_count,
-                       SUM(CASE WHEN la.water_area <= qt.threshold_low  THEN 1 ELSE 0 END) AS low_count
-                FROM   deduped_area la
-                JOIN   quantile_thresholds qt
-                  ON   qt.hylak_id = la.hylak_id
-                  AND  qt.month = MONTH(la.year_month)
-                GROUP BY la.hylak_id
+            WITH exceedance AS (
+                SELECT hylak_id,
+                       SUM(CASE WHEN extreme_label = 'extreme_high' THEN 1 ELSE 0 END) AS high_count,
+                       SUM(CASE WHEN extreme_label = 'extreme_low'  THEN 1 ELSE 0 END) AS low_count
+                FROM   pwm_extreme_labels
+                GROUP BY hylak_id
             )
             SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
@@ -213,32 +185,23 @@ class _PWMMonthlyExceedanceQuery:
     ) -> pd.DataFrame:
         p_tag = f"p{p_high:.4f}"
         cache = cache_dir / "pwm_extreme" / f"monthly_exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
-        th_high = _crossent_threshold_sql(p_high, "high")
-        th_low = _crossent_threshold_sql(p_low, "low")
         df = _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
             client.query_df(f"""
-            WITH deduped_area AS (
-                SELECT DISTINCT hylak_id, year_month, water_area
-                FROM lake_area
-            ),
-            quantile_thresholds AS (
-                SELECT t.hylak_id, t.month,
-                       {th_high} AS threshold_high,
-                       {th_low}  AS threshold_low
-                FROM   pwm_extreme_thresholds t
-                WHERE  t.converged = true
+            WITH exceedance AS (
+                SELECT hylak_id, month,
+                       SUM(CASE WHEN extreme_label = 'extreme_high' THEN 1 ELSE 0 END) AS high_count,
+                       SUM(CASE WHEN extreme_label = 'extreme_low'  THEN 1 ELSE 0 END) AS low_count
+                FROM   pwm_extreme_labels
+                GROUP BY hylak_id, month
             )
-            SELECT qt.month,
+            SELECT e.month,
                    FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
-                   COUNT(DISTINCT la.hylak_id)                AS lake_count,
-                   AVG(CASE WHEN la.water_area >= qt.threshold_high THEN 1.0 ELSE 0.0 END) AS high_exceedance_rate,
-                   AVG(CASE WHEN la.water_area <= qt.threshold_low  THEN 1.0 ELSE 0.0 END) AS low_exceedance_rate
-            FROM   deduped_area la
-            JOIN   quantile_thresholds qt
-              ON   qt.hylak_id = la.hylak_id
-              AND  qt.month = MONTH(la.year_month)
-            JOIN   lake_info l ON l.hylak_id = la.hylak_id
+                   COUNT(DISTINCT e.hylak_id)                AS lake_count,
+                   AVG(e.high_count)                          AS high_exceedance_rate,
+                   AVG(e.low_count)                           AS low_exceedance_rate
+            FROM   exceedance e
+            JOIN   lake_info l ON l.hylak_id = e.hylak_id
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """)

@@ -323,11 +323,11 @@ def compute_pooled_pwm_thresholds(
     month_results: list[PWMExtremeMonthResult] = []
     thresholds: dict[int, tuple[float, float]] = {}
 
-    mean_area = float(np.mean(index_values))
-    if mean_area <= 0.0:
-        raise ValueError(f"Mean index_value must be positive; got {mean_area}")
+    index_mean = float(np.mean(index_values))
+    if index_mean <= 0.0:
+        raise ValueError(f"Mean index_value must be positive; got {index_mean}")
 
-    z = index_values / mean_area
+    z = index_values / index_mean
     z_sorted = np.sort(z)
     epsilon = float(z_sorted[0])
     K = config.n_pwm
@@ -340,14 +340,14 @@ def compute_pooled_pwm_thresholds(
     x_high = float(crossent_quantile(np.array([u_high]), lam_opt, epsilon)[0])
     x_low = float(crossent_quantile(np.array([u_low]), lam_opt, epsilon)[0])
 
-    threshold_high = mean_area * x_high
-    threshold_low = mean_area * x_low
+    threshold_high = index_mean * x_high
+    threshold_low = index_mean * x_low
 
     for month in range(1, 13):
         mr = PWMExtremeMonthResult(
             hylak_id=hylak_id,
             month=month,
-            mean_area=mean_area,
+            mean_area=0.0,
             epsilon=epsilon,
             lambda_opt=lam_opt,
             pwm_coefficients=b,

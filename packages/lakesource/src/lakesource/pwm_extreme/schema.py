@@ -16,7 +16,20 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class PWMExtremeMonthResult:
-    """PWM extreme quantile result for one lake-month."""
+    """PWM extreme quantile result for one lake-month.
+
+    .. note::
+        ``mean_area`` stores different values depending on the computation path:
+
+        * Legacy ``compute_monthly_thresholds`` (raw water_area):
+          ``mean_area`` = mean of water_area for the given month (km²).
+
+        * New ``compute_pooled_pwm_thresholds`` (STL decomposition):
+          ``mean_area`` is set to 0.0 — the threshold scale factor is
+          mean(index_value), which is already embedded in the stored
+          ``threshold_high`` / ``threshold_low`` columns.
+          Downstream consumers should use those columns directly.
+    """
 
     hylak_id: int | None
     month: int
