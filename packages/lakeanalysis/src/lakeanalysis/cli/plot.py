@@ -94,9 +94,8 @@ def pwm_global(
     from lakesource.provider import create_provider
     from lakeviz.config import GlobalGridConfig
     from lakeviz.pwm import (
-        plot_pwm_convergence_map, plot_pwm_exceedance_maps,
+        plot_pwm_exceedance_maps, plot_pwm_global_maps,
         plot_pwm_monthly_exceedance_maps, plot_pwm_monthly_threshold_maps,
-        plot_pwm_threshold_high_map, plot_pwm_threshold_low_map,
     )
     from lakeviz.style.presets import Theme
     Theme.apply()
@@ -110,9 +109,7 @@ def pwm_global(
     grid_config = GlobalGridConfig(provider=provider, resolution=resolution, output_dir=output_dir)
 
     if not exceedance_only:
-        plot_pwm_convergence_map(grid_config, refresh=refresh)
-        plot_pwm_threshold_high_map(grid_config, refresh=refresh)
-        plot_pwm_threshold_low_map(grid_config, refresh=refresh)
+        plot_pwm_global_maps(grid_config, refresh=refresh)
         plot_pwm_monthly_threshold_maps(grid_config, refresh=refresh)
     if not monthly_only:
         plot_pwm_exceedance_maps(grid_config, p_values=p_values, refresh=refresh)

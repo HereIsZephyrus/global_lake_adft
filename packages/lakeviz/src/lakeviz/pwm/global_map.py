@@ -79,22 +79,62 @@ plot_pwm_threshold_low_map = make_grid_map(
 plot_pwm_high_exceedance_density_map = make_density_map(
     _fetch_pwm_exceedance_grid_agg,
     "mean_high_exceedance",
-    title="PWM 高值超越密度",
+    title="PWM 超高阈值（湿事件）平滑密度分布",
+    cmap="sequential_cool",
     cbar_label="每湖超越月数",
     sub_dir="pwm_extreme/density",
-    filename="high_exceedance_density.png",
+    filename="wet_kde.png",
     extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
 )
 
 plot_pwm_low_exceedance_density_map = make_density_map(
     _fetch_pwm_exceedance_grid_agg,
     "mean_low_exceedance",
-    title="PWM 低值超越密度",
+    title="PWM 超低阈值（干事件）平滑密度分布",
+    cmap="sequential_warm",
     cbar_label="每湖超越月数",
     sub_dir="pwm_extreme/density",
-    filename="low_exceedance_density.png",
+    filename="dry_kde.png",
     extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
 )
+
+plot_pwm_wet_grid_map = make_grid_map(
+    _fetch_pwm_exceedance_grid_agg,
+    "mean_high_exceedance",
+    title="PWM 超高阈值（湿事件）全球分布",
+    cmap="sequential_cool",
+    cbar_label="每湖超越月数",
+    sub_dir="pwm_extreme/exceedance",
+    filename="wet_grid.png",
+    extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
+)
+
+plot_pwm_dry_grid_map = make_grid_map(
+    _fetch_pwm_exceedance_grid_agg,
+    "mean_low_exceedance",
+    title="PWM 超低阈值（干事件）全球分布",
+    cmap="sequential_warm",
+    cbar_label="每湖超越月数",
+    sub_dir="pwm_extreme/exceedance",
+    filename="dry_grid.png",
+    extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
+)
+
+
+def plot_pwm_global_maps(
+    config: GlobalGridConfig,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 1,
+) -> list[Path]:
+    """Generate the standard batch of PWM global maps."""
+    outputs = [
+        plot_pwm_wet_grid_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_pwm_dry_grid_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_pwm_high_exceedance_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_pwm_low_exceedance_density_map(config, refresh=refresh, min_lakes=min_lakes),
+    ]
+    return [path for path in outputs if path != Path()]
 
 
 _MONTH_NAMES = [

@@ -47,7 +47,6 @@ def test_plot_quantile_global_maps_calls_standard_renderers(monkeypatch) -> None
         return Path(f"/tmp/transition_{transition_type}.png")
 
     monkeypatch.setattr(global_map, "plot_extremes_density_map", _record("extremes_density"))
-    monkeypatch.setattr(global_map, "plot_extremes_event_density_map", _record("extremes_event_density"))
     monkeypatch.setattr(global_map, "plot_transition_density_map", _record("transition_density"))
     monkeypatch.setattr(global_map, "plot_transition_event_density_map", _record("transition_event_density"))
     monkeypatch.setattr(global_map, "plot_extremes_by_type_map", _record_extreme)
@@ -60,26 +59,22 @@ def test_plot_quantile_global_maps_calls_standard_renderers(monkeypatch) -> None
     )
 
     assert calls == [
-        ("extremes_density", None),
-        ("extremes_event_density", None),
+        ("extreme", "wet"),
+        ("extreme", "dry"),
         ("transition_density", None),
         ("transition_event_density", None),
-        ("extreme", "high"),
-        ("extreme", "low"),
-        ("transition", "low_to_high"),
-        ("transition", "high_to_low"),
+        ("transition", "dry_to_wet"),
+        ("transition", "wet_to_dry"),
     ]
-    assert len(outputs) == 8
+    assert len(outputs) == 6
 
 
 def test_plot_quantile_global_maps_filters_empty_outputs(monkeypatch) -> None:
-    monkeypatch.setattr(global_map, "plot_extremes_density_map", lambda *args, **kwargs: Path())
-    monkeypatch.setattr(global_map, "plot_extremes_event_density_map", lambda *args, **kwargs: Path("/tmp/a.png"))
+    monkeypatch.setattr(global_map, "plot_extremes_by_type_map", lambda *args, **kwargs: Path())
     monkeypatch.setattr(global_map, "plot_transition_density_map", lambda *args, **kwargs: Path())
     monkeypatch.setattr(global_map, "plot_transition_event_density_map", lambda *args, **kwargs: Path("/tmp/b.png"))
-    monkeypatch.setattr(global_map, "plot_extremes_by_type_map", lambda *args, **kwargs: Path())
     monkeypatch.setattr(global_map, "plot_transition_by_type_map", lambda *args, **kwargs: Path("/tmp/c.png"))
 
     outputs = global_map.plot_quantile_global_maps(DummyConfig)
 
-    assert outputs == [Path("/tmp/a.png"), Path("/tmp/b.png"), Path("/tmp/c.png"), Path("/tmp/c.png")]
+    assert outputs == [Path("/tmp/b.png"), Path("/tmp/c.png"), Path("/tmp/c.png")]
