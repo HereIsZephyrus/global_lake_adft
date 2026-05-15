@@ -116,3 +116,78 @@ def benchmark_algorithms(
         plot_cli.quantile_global(refresh=refresh, resolution=resolution, data_dir=source.data_dir.parent / "parquet_gt10")
         plot_cli.pwm_global(refresh=refresh, resolution=resolution, data_dir=source.data_dir.parent / "parquet_gt10")
         plot_cli.eot_global(refresh=refresh, resolution=resolution, data_dir=source.data_dir.parent / "parquet_gt10")
+
+
+@app.command("interpolation")
+def interpolation(
+    limit_id: int | None = typer.Option(None, "--limit-id", help="Limit lake id"),
+    chunk_size: int = typer.Option(10_000, "--chunk-size", help="Chunk size"),
+    id_start: int = typer.Option(0, "--id-start"),
+    id_end: int | None = typer.Option(None, "--id-end"),
+    min_collinear: int = typer.Option(4, "--min-collinear", help="Minimum consecutive collinear points"),
+    no_db: bool = typer.Option(False, "--no-db", help="Skip DB write, parquet only"),
+) -> None:
+    """Detect linear interpolation in lake area time series."""
+    setup_logging("experiment-interpolation")
+    from lakeanalysis.quality.interpolation_runner import InterpolationRunConfig, run_interpolation_detect
+    from lakesource.config import SourceConfig
+
+    config = InterpolationRunConfig(
+        data_dir=SourceConfig().data_dir.parent / "experiments" / "interpolation",
+        chunk_size=chunk_size,
+        limit_id=limit_id,
+        id_start=id_start,
+        id_end=id_end,
+        min_collinear_points=min_collinear,
+        no_db=no_db,
+    )
+    run_interpolation_detect(config)
+
+
+@app.command("area-vs-atlas")
+def area_vs_atlas(
+    data_dir: str | None = typer.Option(None, help="Parquet data directory"),
+    good_threshold: float = typer.Option(2.0, help="Good agreement: ratio in [1/G, G]"),
+    moderate_threshold: float = typer.Option(5.0, help="Moderate agreement threshold"),
+    poor_threshold: float = typer.Option(10.0, help="Poor agreement threshold"),
+    sample: int = typer.Option(120, help="Number of extreme-ratio lakes to sample for plotting"),
+) -> None:
+    """Compare rs_area vs atlas_area from area_quality."""
+    setup_logging("experiment-area-vs-atlas")
+    from . import comparison as comparison_cli
+    from lakesource.config import SourceConfig
+
+    output_dir = SourceConfig().data_dir.parent / "comparison" / "benchmarks" / "area_vs_atlas"
+    comparison_cli.area(
+        data_dir=data_dir,
+        output_dir=str(output_dir),
+        good_threshold=good_threshold,
+        moderate_threshold=moderate_threshold,
+        poor_threshold=poor_threshold,
+        sample=sample,
+    )
+
+
+@app.command("hawkes-mining")
+def hawkes_mining(
+    input_summary: str | None = typer.Option(None, "--input-summary", help="Path to summary CSV"),
+    p_threshold: float = typer.Option(0.05, help="LRT p-value threshold"),
+    alpha_min: float = typer.Option(1e-3, "--alpha-min", help="Minimum cross-alpha magnitude"),
+    min_events: int = typer.Option(12, "--min-events", help="Minimum events"),
+    quarter_window: float = typer.Option(0.25, "--quarter-window", help="Window length in years"),
+    quarterly_min_mass: float = typer.Option(0.50, "--quarterly-min-mass", help="Min excitation mass in window"),
+    max_case_plots: int = typer.Option(500, "--max-case-plots", help="Max case plot count"),
+) -> None:
+    """Mine batch outputs for short-memory transition lakes."""
+    setup_logging("experiment-hawkes-mining")
+    from . import hawkes as hawkes_cli
+
+    hawkes_cli.mining(
+        input_summary=input_summary,
+        p_threshold=p_threshold,
+        alpha_min=alpha_min,
+        min_events=min_events,
+        quarter_window=quarter_window,
+        quarterly_min_mass=quarterly_min_mass,
+        max_case_plots=max_case_plots,
+    )
