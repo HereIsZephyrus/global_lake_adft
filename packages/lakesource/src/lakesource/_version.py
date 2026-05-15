@@ -1,41 +1,32 @@
-"""Version information for all packages in the lake analysis workspace.
-
-Reads the installed version via ``importlib.metadata`` so that the version
-reported at runtime reflects the installed package, not a hard-coded string.
-"""
+"""Runtime version helpers sourced from the workspace commitizen version."""
 
 from __future__ import annotations
 
+from pathlib import Path
 
-def get_version(package: str = "lakesource") -> str:
-    """Return the installed version of a lake workspace package.
 
-    Args:
-        package: Package name (lakesource, lakeanalysis, or lakeviz).
+def get_workspace_version() -> str:
+    """Return the single workspace version managed by commitizen.
 
-    Returns:
-        Version string or "unknown" if the package is not installed.
+    Falls back to ``unknown`` when the workspace ``pyproject.toml`` cannot be
+    resolved or does not expose ``tool.commitizen.version``.
     """
     try:
-        from importlib.metadata import version
-    except ImportError:
+        import tomllib
+    except ModuleNotFoundError:
         return "unknown"
+
+    pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
     try:
-        return version(package)
+        with pyproject.open("rb") as fh:
+            data = tomllib.load(fh)
     except Exception:
         return "unknown"
 
+    return str(data.get("tool", {}).get("commitizen", {}).get("version", "unknown"))
 
-def log_versions(logger_fn=None) -> None:
-    """Log all workspace package versions via *logger_fn*.
 
-    If *logger_fn* is None, prints to stdout.
-    """
+def log_runtime_version(logger_fn=None) -> None:
+    """Emit the single runtime version line using the commitizen version."""
     emit = logger_fn or print
-    emit("=== Lake Analysis Workspace Versions ===")
-    emit(f"  lakesource    v{get_version('lakesource')}")
-    emit(f"  lakeanalysis  v{get_version('lakeanalysis')}")
-    try:
-        emit(f"  lakeviz       v{get_version('lakeviz')}")
-    except Exception:
-        pass
+    emit(f"Lake Analysis Runtime Version: v{get_workspace_version()}")

@@ -11,10 +11,17 @@
 #   --filter <name>          仅同步 output/<name>/ 子树（仅 output 命令支持）
 set -euo pipefail
 
-REMOTE_USER="guxh01"
-REMOTE_HOST="111.172.12.146"
-REMOTE_PORT="4351"
-REMOTE_PASS="${HPC_PASSWORD:-Guxh_Extreme2024_01}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/../.env"
+    set +a
+fi
+
+REMOTE_USER="${HPC_USER:-guxh01}"
+REMOTE_HOST="${HPC_HOST:?HPC_HOST is required. Set it in .env or export it.}"
+REMOTE_PORT="${HPC_PORT:-4351}"
+REMOTE_PASS="${HPC_PASSWORD:?HPC_PASSWORD is required. Set it in .env or export it.}"
 REMOTE_ROOT="/data/users/guxh01/2026_tcb/lake"
 LOCAL_REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_DATA="$LOCAL_REPO/data"

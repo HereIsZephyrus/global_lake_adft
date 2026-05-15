@@ -6,10 +6,12 @@ import typer
 
 from lakeanalysis.batch import (  # pylint: disable=no-name-in-module
     Engine,
+    IdSetFilter,
     RangeFilter,
     build_provider_batch_reader,
     build_provider_batch_writer,
 )
+from lakeanalysis.filters import build_lake_filter
 from lakeanalysis.logger import Logger
 from lakesource.config import SourceConfig
 
@@ -20,7 +22,14 @@ def setup_logging(name: str) -> None:
     Replaces the per-script ``Logger("script_name")`` side-effect pattern
     with a single call point.
     """
-    Logger(name)
+    log_version = True
+    try:
+        from mpi4py import MPI
+
+        log_version = MPI.COMM_WORLD.Get_rank() == 0
+    except ImportError:
+        log_version = True
+    Logger(name, log_version=log_version)
 
 
 def run_batch_engine(
@@ -46,23 +55,63 @@ def run_batch_engine(
     setup_logging(name)
     source_config = SourceConfig()
 
+    try:
+        from mpi4py import MPI
+
+        comm = MPI.COMM_WORLD
+        size = comm.Get_size()
+        rank = comm.Get_rank()
+        has_mpi = True
+    except ImportError:
+        size = 1
+        rank = 0
+        has_mpi = False
+
     from lakeanalysis.batch.calculator.factory import CalculatorFactory
     calculator = CalculatorFactory.create(algorithm, **(calculator_kwargs or {}))
 
-    from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
-    dataset_factory = LakeDatasetFactory.from_config(source_config)
+    dataset_factory = None
+    reader = None
+    writer = None
 
-    reader = build_provider_batch_reader(
-        source_config,
-        done_table=done_table,
-        done_requires_status=done_requires_status,
-    )
-    writer = build_provider_batch_writer(
-        source_config,
-        ensure_tables=list(ensure_tables),
-    )
+    if not has_mpi or size <= 1:
+        from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
 
-    lake_filter = RangeFilter(start=id_start, end=limit_id if limit_id else id_end) if (id_start > 0 or limit_id or id_end) else None
+        dataset_factory = LakeDatasetFactory.from_config(source_config)
+        reader = build_provider_batch_reader(
+            source_config,
+            done_table=done_table,
+            done_requires_status=done_requires_status,
+        )
+        writer = build_provider_batch_writer(
+            source_config,
+            ensure_tables=list(ensure_tables),
+        )
+    elif rank == 0:
+        reader = build_provider_batch_reader(
+            source_config,
+            done_table=done_table,
+            done_requires_status=done_requires_status,
+        )
+        writer = build_provider_batch_writer(
+            source_config,
+            ensure_tables=list(ensure_tables),
+        )
+    else:
+        from lakeanalysis.batch.lake_dataset_factory import LakeDatasetFactory
+
+        dataset_factory = LakeDatasetFactory.from_config(source_config)
+
+    range_filter = RangeFilter(start=id_start, end=limit_id if limit_id else id_end) if (id_start > 0 or limit_id or id_end) else None
+    filter_spec = build_lake_filter(source_config)
+    if range_filter is None:
+        lake_filter = filter_spec
+    elif filter_spec is None:
+        lake_filter = range_filter
+    elif isinstance(filter_spec, IdSetFilter):
+        lake_filter = IdSetFilter(range_filter(filter_spec.ids))
+    else:
+        lake_filter = range_filter
 
     engine = Engine(
         reader=reader,
