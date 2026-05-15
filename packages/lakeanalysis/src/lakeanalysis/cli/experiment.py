@@ -6,8 +6,6 @@ top-level entry points.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import typer
 
 from ._common import setup_logging
