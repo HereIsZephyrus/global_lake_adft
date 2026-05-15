@@ -23,7 +23,7 @@ __all__ = [
 
 def __getattr__(name: str):
     if name in ("DBClient", "atlas_db", "series_db"):
-        from .postgres import DBClient, atlas_db, series_db
+        from .postgres import DBClient, atlas_db, series_db  # pylint: disable=no-name-in-module
         return {"DBClient": DBClient, "atlas_db": atlas_db, "series_db": series_db}[name]
     if name in ("DuckDBClient", "create_client"):
         from .parquet import DuckDBClient, create_client

@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from lakesource.config import SourceConfig
 from lakesource.provider.factory import create_provider
 
-from .lookup import lookup_pfaf_chunk
-
 log = logging.getLogger(__name__)
 
 

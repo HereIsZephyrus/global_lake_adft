@@ -10,8 +10,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
-
 from .config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from .grid import agg_to_grid_matrix
 from .map_plot import draw_global_density, draw_global_grid

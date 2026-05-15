@@ -19,7 +19,11 @@ def run(
 ) -> None:
     """Fit bivariate Hawkes model for a single lake."""
     setup_logging("hawkes")
-    from lakesource.postgres import fetch_lake_area_by_ids, fetch_frozen_year_months_by_ids, series_db
+    from lakesource.postgres import (  # pylint: disable=no-name-in-module
+        fetch_lake_area_by_ids,
+        fetch_frozen_year_months_by_ids,
+        series_db,
+    )
     from lakeanalysis.hawkes import (
         LikelihoodRatioTest, TYPE_DRY, TYPE_WET,
         build_events_from_eot, evaluate_intensity_decomposition,
@@ -62,7 +66,7 @@ def run(
     if plot:
         from lakeanalysis.hawkes import (
             plot_event_timeline, plot_intensity_decomposition,
-            plot_kernel_matrix, plot_lrt_summary,
+            plot_kernel_matrix,
         )
         import matplotlib.pyplot as plt
 
@@ -128,7 +132,7 @@ def qc(
     setup_logging("hawkes-qc")
     from pathlib import Path
     from lakesource.config import SourceConfig
-    from lakesource.postgres import (
+    from lakesource.postgres import (  # pylint: disable=no-name-in-module
         fetch_hawkes_qc_summary_by_quantile, fetch_hawkes_error_message_counts,
         fetch_hawkes_lrt_summary_by_test, fetch_hawkes_results, series_db,
     )
@@ -178,10 +182,10 @@ def mining(
         output_dir = str(source.data_dir.parent / "experiments" / "hawkes" / "mining")
 
     from lakeanalysis.hawkes.mining import (
-        load_summary, safe_series_divide,
+        load_summary,
         select_transition_lakes, build_overall_stats, load_events_from_case,
     )
-    from lakesource.postgres import fetch_lake_area_by_ids, series_db
+    from lakesource.postgres import fetch_lake_area_by_ids, series_db  # pylint: disable=no-name-in-module
     from lakeanalysis.eot import plot_eot_extremes
 
     summary_path = Path(input_summary)

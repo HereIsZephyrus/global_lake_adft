@@ -54,7 +54,7 @@ def basemodel(
     selector = BasisSelector(criterion=criterion, include_trend=not no_trend, max_relative_rmse=max_rmse)
 
     if hylak_id is not None:
-        from lakesource.postgres import fetch_lake_area, series_db
+        from lakesource.postgres import fetch_lake_area, series_db  # pylint: disable=no-name-in-module
         from lakeanalysis.eot import MonthlyTimeSeries
 
         with series_db.connection_context() as conn:
@@ -71,7 +71,7 @@ def basemodel(
             plot_basis_fit(fit, base_name, result.criterion, result.relative_rmse)
             plot_residuals(fit)
     elif all_lakes or limit_id is not None:
-        from lakesource.postgres import fetch_lake_area_by_ids, series_db
+        from lakesource.postgres import fetch_lake_area_by_ids, series_db  # pylint: disable=no-name-in-module
 
         with series_db.connection_context() as conn:
             lake_map = fetch_lake_area_by_ids(conn, list(range(1, limit_id or 100)))

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.eot import EOTEstimator, NoDeclustering, RunsDeclustering
+from lakeanalysis.eot import EOTEstimator, RunsDeclustering
 
 from .types import HawkesEventSeries, TYPE_DRY, TYPE_LABELS, TYPE_WET
 
@@ -180,4 +180,3 @@ def build_events_from_pwm(
         events_table=events_table,
     )
     return event_series, events_table
-

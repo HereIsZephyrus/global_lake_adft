@@ -14,9 +14,9 @@ import logging
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.stl._stl import STL
+from statsmodels.tsa.seasonal import STL
 
-from .base import DecompositionMethod, DecompositionResult
+from .base import DecompositionResult
 
 log = logging.getLogger(__name__)
 

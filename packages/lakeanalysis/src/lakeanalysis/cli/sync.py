@@ -462,7 +462,6 @@ def pull(
 ) -> None:
     """Pull PostgreSQL tables to parquet (full overwrite)."""
     setup_logging("sync-pull")
-    import pandas as pd
 
     from lakesource.postgres.client import series_db
 
@@ -497,8 +496,6 @@ def _pull_table(
     chunk_size: int,
 ) -> int:
     """Export a single postgres table to parquet."""
-    import pandas as pd
-
     # Determine max hylak_id
     with db_client.connect() as conn:
         with conn.cursor() as cur:

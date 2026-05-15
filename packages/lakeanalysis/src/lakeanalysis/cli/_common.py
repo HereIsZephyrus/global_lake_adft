@@ -1,11 +1,15 @@
 """Shared typer CLI helpers: common parameters, logging init, data dir."""
 
-from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
-from lakeanalysis.batch import Engine, RangeFilter, build_provider_batch_reader, build_provider_batch_writer
+from lakeanalysis.batch import (  # pylint: disable=no-name-in-module
+    Engine,
+    RangeFilter,
+    build_provider_batch_reader,
+    build_provider_batch_writer,
+)
 from lakeanalysis.logger import Logger
 from lakesource.config import SourceConfig
 

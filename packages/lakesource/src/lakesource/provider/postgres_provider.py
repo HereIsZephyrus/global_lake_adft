@@ -133,7 +133,7 @@ class PostgresLakeProvider(LakeProvider):
         return self._backend
 
     def _conn(self):
-        from lakesource.postgres import series_db
+        from lakesource.postgres import series_db  # pylint: disable=no-name-in-module
         return series_db.connection_context()
 
     # ------------------------------------------------------------------

@@ -13,11 +13,9 @@ from __future__ import annotations
 
 import warnings
 
-import numpy as np
 import pandas as pd
 
-from lakeanalysis.quality.frozen import filter_frozen_rows
-from .base import DecompositionMethod, DecompositionResult
+from .base import DecompositionResult
 
 REQUIRED_COLUMNS = ("year", "month", "water_area")
 
