@@ -38,8 +38,8 @@ def artificial(
         run_pfaf(PfafRunConfig())
         run_nearest(NearestRunConfig(max_area_ratio=max_area_ratio))
 
-    data_dir = source.data_dir.parent / "similarity"
-    impact_dir = source.data_dir.parent / "impact"
+    data_dir = source.data_dir.parent / "experiments" / "artificial" / "similarity"
+    impact_dir = source.data_dir.parent / "experiments" / "artificial" / "impact"
 
     if plot_only:
         show_similarity_plots(data_dir)
@@ -66,7 +66,7 @@ def entropy(
     from lakeanalysis.entropy.service import EntropyRunConfig, run_entropy, run_update_amplitude_only
     from lakesource.config import SourceConfig
 
-    data_dir = SourceConfig().data_dir.parent / "entropy"
+    data_dir = SourceConfig().data_dir.parent / "experiments" / "entropy"
     if plot_only:
         show_entropy_plots(data_dir, limit_id=None)
         return
@@ -92,7 +92,7 @@ def benchmark_algorithms(
     from . import plot as plot_cli
 
     source = SourceConfig()
-    sample_dir = source.data_dir.parent / "comparison"
+    sample_dir = source.data_dir.parent / "comparison" / "benchmarks" / "algorithms" / "full"
     sample_file = sample_dir / "sample_lakes.parquet"
 
     comparison_cli.sample_lakes(n_samples=n_samples, output_dir=str(sample_dir), seed=42)

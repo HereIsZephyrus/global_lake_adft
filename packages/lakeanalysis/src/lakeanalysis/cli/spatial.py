@@ -44,7 +44,7 @@ def similarity(
     from lakesource.config import SourceConfig
     from lakeanalysis.artificial.similarity.runner import SimilarityRunConfig, run_similarity
 
-    data_dir = SourceConfig().data_dir.parent / "similarity"
+    data_dir = SourceConfig().data_dir.parent / "experiments" / "artificial" / "similarity"
     if plot_only:
         from lakeanalysis.artificial.similarity.runner import show_similarity_plots
         show_similarity_plots(data_dir)
@@ -64,7 +64,7 @@ def impact(
     from lakesource.config import SourceConfig
     from lakeanalysis.artificial.impact.runner import ImpactRunConfig, run_impact
 
-    data_dir = SourceConfig().data_dir.parent / "impact"
+    data_dir = SourceConfig().data_dir.parent / "experiments" / "artificial" / "impact"
     if plot_only:
         from lakeanalysis.artificial.impact.runner import load_impact_csv, show_impact_plots
         rows = load_impact_csv(data_dir)

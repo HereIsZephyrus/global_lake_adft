@@ -22,7 +22,7 @@ def run(
 
     run_entropy(
         EntropyRunConfig(
-            data_dir=SourceConfig().data_dir.parent / "entropy",
+            data_dir=SourceConfig().data_dir.parent / "experiments" / "entropy",
             limit_id=limit_id,
             chunk_size=chunk_size,
             show_plot=plot,
@@ -39,7 +39,7 @@ def update_amplitude(
     from lakeanalysis.entropy.service import run_update_amplitude_only
     from lakesource.config import SourceConfig
 
-    run_update_amplitude_only(SourceConfig().data_dir.parent / "entropy", show_plot=plot)
+    run_update_amplitude_only(SourceConfig().data_dir.parent / "experiments" / "entropy", show_plot=plot)
 
 
 @app.command()
@@ -49,4 +49,4 @@ def plot_only() -> None:
     from lakeanalysis.entropy.runner import show_entropy_plots
     from lakesource.config import SourceConfig
 
-    show_entropy_plots(SourceConfig().data_dir.parent / "entropy", limit_id=None)
+    show_entropy_plots(SourceConfig().data_dir.parent / "experiments" / "entropy", limit_id=None)

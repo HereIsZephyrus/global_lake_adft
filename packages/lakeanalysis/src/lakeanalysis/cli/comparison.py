@@ -45,7 +45,7 @@ def run(
 @app.command()
 def area(
     data_dir: str | None = typer.Option(None, help="Parquet data directory"),
-    output_dir: str = typer.Option("data/area_comparison", help="Output directory"),
+    output_dir: str = typer.Option("data/comparison/benchmarks/area_vs_atlas", help="Output directory"),
     good_threshold: float = typer.Option(2.0, help="Good agreement: ratio in [1/G, G]"),
     moderate_threshold: float = typer.Option(5.0, help="Moderate agreement threshold"),
     poor_threshold: float = typer.Option(10.0, help="Poor agreement threshold"),
@@ -120,7 +120,7 @@ def sample_lakes(
     setup_logging("sample-lakes")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = str(SourceConfig().data_dir.parent / "comparison")
+        output_dir = str(SourceConfig().data_dir.parent / "comparison" / "benchmarks" / "algorithms" / "full" / "sample")
     from pathlib import Path
     from lakesource.postgres import series_db
     import pandas as pd
