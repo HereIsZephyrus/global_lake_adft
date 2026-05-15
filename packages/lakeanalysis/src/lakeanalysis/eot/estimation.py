@@ -5,12 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import warnings
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
 from lakeanalysis.extreme.evt import fit_gpd_exceedances
+from lakeanalysis.quality.frozen import apply_frozen_plateau, build_frozen_plateau_schedule
+
 from .basis import BaseBasis, BasisSelector, HarmonicBasis
 from .likelihood import NHPPLogLikelihood
 from .models import FitResult, LocationModel, PreparedExtremes
@@ -21,7 +24,6 @@ from .preprocess import (
     RunsDeclustering,
 )
 from .series import MIN_OBSERVATIONS, MonthlyTimeSeries, TailDirection
-from lakeanalysis.quality.frozen import apply_frozen_plateau, build_frozen_plateau_schedule
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +103,70 @@ class NHPPFitter:
             unique_candidates.append(candidate)
         return unique_candidates
 
+    def _run_optimization(
+        self,
+        objective: NHPPLogLikelihood,
+        theta0: np.ndarray,
+        bounds: list[tuple[float | None, float | None]],
+    ) -> list:
+        """Run L-BFGS-B optimisation with optional Powell fallback for one candidate."""
+        results: list = []
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"scipy\.optimize")
+            result = minimize(
+                objective,
+                theta0,
+                method="L-BFGS-B",
+                bounds=bounds,
+                options={"maxiter": self.maxiter},
+            )
+        results.append(result)
+        if not (result.success and np.isfinite(result.fun)) and self.enable_powell_fallback:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=RuntimeWarning, module=r"scipy\.optimize",
+                )
+                fallback_result = minimize(
+                    objective,
+                    theta0,
+                    method="Powell",
+                    bounds=bounds,
+                    options={"maxiter": self.maxiter},
+                )
+            results.append(fallback_result)
+        return results
+
+    @staticmethod
+    def _select_best_result(results: list) -> Any:
+        """Select the best converged result, the best finite result, or the first."""
+        successful = [r for r in results if r.success and np.isfinite(r.fun)]
+        finite = [r for r in results if np.isfinite(r.fun)]
+        if successful:
+            return min(successful, key=lambda item: float(item.fun))
+        if finite:
+            return min(finite, key=lambda item: float(item.fun))
+        return results[0]
+
+    @staticmethod
+    def _extract_covariance(result: Any, param_count: int) -> np.ndarray:
+        """Extract covariance matrix from optimisation result."""
+        covariance = np.full((param_count, param_count), np.nan, dtype=float)
+        if hasattr(result, "hess_inv") and result.hess_inv is not None:
+            try:
+                covariance = np.asarray(result.hess_inv.todense(), dtype=float)
+            except AttributeError:
+                hess_inv = np.asarray(result.hess_inv, dtype=float)
+                if hess_inv.ndim == 2:
+                    covariance = hess_inv
+        return covariance
+
+    def _build_bounds(self, n_location_params: int) -> list[tuple[float | None, float | None]]:
+        """Build optimisation bounds for location + scale/shape parameters."""
+        return [(None, None)] * n_location_params + [
+            (EPSILON, None),
+            (-0.95, 0.95),
+        ]
+
     def fit(
         self,
         series: MonthlyTimeSeries,
@@ -142,65 +208,20 @@ class NHPPFitter:
             frozen_year_months=frozen_year_months,
             full_series=full_series,
         )
+
         candidate_thetas = self.candidate_initial_thetas(series, extremes, threshold)
         if self.max_restarts < 1:
             raise ValueError("max_restarts must be >= 1")
         candidate_thetas = candidate_thetas[: self.max_restarts]
-        bounds = [(None, None)] * self.location_model.n_params + [
-            (EPSILON, None),
-            (-0.95, 0.95),
-        ]
-        results = []
+
+        bounds = self._build_bounds(self.location_model.n_params)
+        all_results: list = []
         for theta0 in candidate_thetas:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    category=RuntimeWarning,
-                    module=r"scipy\.optimize",
-                )
-                result = minimize(
-                    objective,
-                    theta0,
-                    method="L-BFGS-B",
-                    bounds=bounds,
-                    options={"maxiter": self.maxiter},
-                )
-            results.append(result)
-            if result.success and np.isfinite(result.fun):
-                continue
-            if self.enable_powell_fallback:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        category=RuntimeWarning,
-                        module=r"scipy\.optimize",
-                    )
-                    fallback_result = minimize(
-                        objective,
-                        theta0,
-                        method="Powell",
-                        bounds=bounds,
-                        options={"maxiter": self.maxiter},
-                    )
-                results.append(fallback_result)
+            all_results.extend(self._run_optimization(objective, theta0, bounds))
 
-        successful = [result for result in results if result.success and np.isfinite(result.fun)]
-        finite = [result for result in results if np.isfinite(result.fun)]
-        if successful:
-            result = min(successful, key=lambda item: float(item.fun))
-        elif finite:
-            result = min(finite, key=lambda item: float(item.fun))
-        else:
-            result = results[0]
-
-        covariance = np.full((len(candidate_thetas[0]), len(candidate_thetas[0])), np.nan, dtype=float)
-        if hasattr(result, "hess_inv") and result.hess_inv is not None:
-            try:
-                covariance = np.asarray(result.hess_inv.todense(), dtype=float)
-            except AttributeError:
-                hess_inv = np.asarray(result.hess_inv, dtype=float)
-                if hess_inv.ndim == 2:
-                    covariance = hess_inv
+        param_count = len(candidate_thetas[0])
+        result = self._select_best_result(all_results)
+        covariance = self._extract_covariance(result, param_count)
 
         log_likelihood = -float(result.fun) if np.isfinite(result.fun) else float("nan")
         return FitResult(
@@ -324,15 +345,102 @@ class EOTEstimator:
             ),
         }
 
-    def prepare_extremes(
+    def _resolve_series_context(
+        self,
+        data: pd.DataFrame | MonthlyTimeSeries,
+        tail: TailDirection,
+        frozen_year_months: set[int] | None = None,
+    ) -> tuple[MonthlyTimeSeries, MonthlyTimeSeries]:
+        """Coerce, defrozen, validate and tail-transform into (series, full_series)."""
+        raw = self._coerce_series(data)
+        series = (
+            raw.defrozen(frozen_year_months)
+            .validate_min_observations(self.min_observations)
+            .for_tail(tail)
+        )
+        full = raw.for_tail(tail)
+        return series, full
+
+    def _resolve_series_context_shared(
+        self,
+        raw_series: MonthlyTimeSeries,
+        defrozen_series: MonthlyTimeSeries,
+        tail: TailDirection,
+    ) -> tuple[MonthlyTimeSeries, MonthlyTimeSeries]:
+        """Resolve (series, full_series) from pre-computed shared artefacts."""
+        series = defrozen_series.validate_min_observations(self.min_observations).for_tail(tail)
+        full = raw_series.for_tail(tail)
+        return series, full
+
+    def _build_threshold_context(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        series: MonthlyTimeSeries,
+        basis_model: BaseBasis,
+        threshold: float | None,
+        threshold_quantile: float,
+        frozen_year_months: set[int] | None,
+        full_series: MonthlyTimeSeries,
+    ) -> tuple[
+        np.ndarray, float, QuantileThresholdModel | None, np.ndarray | None, np.ndarray | None
+    ]:
+        """Fit or construct the threshold vector and produce u_obs, u_grid, and metadata.
+
+        Returns (u_obs, rep_threshold, threshold_model, threshold_params, u_grid).
+        """
+        if threshold is not None:
+            u_obs = np.full(series.n_obs, float(threshold))
+            return u_obs, float(threshold), None, None, None
+
+        threshold_model = self._build_threshold_model(basis_model)
+        times = series.data["time"].to_numpy(dtype=float)
+        threshold_params = threshold_model.fit(times, series.values, quantile=threshold_quantile)
+        u_obs = threshold_model.evaluate(times, threshold_params)
+        rep_threshold = float(np.median(u_obs))
+
+        if self.fitter is None:
+            raise ValueError("fitter must be available before threshold grid evaluation")
+        integration_grid = np.linspace(0.0, series.duration_years, self.fitter.integration_points)
+        u_grid = threshold_model.evaluate(integration_grid, threshold_params)
+        u_grid = self._apply_frozen_plateau_to_grid(
+            integration_grid, u_grid, threshold_model, threshold_params,
+            frozen_year_months, full_series,
+        )
+        return u_obs, rep_threshold, threshold_model, threshold_params, u_grid
+
+    def _apply_frozen_plateau_to_grid(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        integration_grid: np.ndarray,
+        u_grid: np.ndarray,
+        threshold_model: QuantileThresholdModel,
+        threshold_params: np.ndarray,
+        frozen_year_months: set[int] | None,
+        full_series: MonthlyTimeSeries,
+    ) -> np.ndarray:
+        """Apply frozen-plateau scheduling to the integration grid u(t) values."""
+        plateau_schedule = build_frozen_plateau_schedule(
+            frozen_year_months,
+            int(full_series.data["year"].min()),
+        )
+        if plateau_schedule is None:
+            return u_grid
+        anchor_values = threshold_model.evaluate(
+            plateau_schedule.anchor_times,
+            threshold_params,
+        )
+        return apply_frozen_plateau(
+            integration_grid,
+            u_grid,
+            plateau_schedule,
+            anchor_values,
+        )
+
+    def prepare_extremes(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         data: pd.DataFrame | MonthlyTimeSeries,
         tail: TailDirection = "high",
         threshold: float | None = None,
         threshold_quantile: float = 0.90,
         frozen_year_months: set[int] | None = None,
-        shared_raw_series: MonthlyTimeSeries | None = None,
-        shared_defrozen_series: MonthlyTimeSeries | None = None,
     ) -> PreparedExtremes:
         """Transform the series, fit the threshold and decluster exceedances.
 
@@ -353,56 +461,15 @@ class EOTEstimator:
             A ``PreparedExtremes`` object with selected basis model, threshold fit
             artefacts and declustered exceedances.
         """
-        raw_series = self._coerce_series(data) if shared_raw_series is None else shared_raw_series
-        if shared_defrozen_series is None:
-            shared = raw_series.defrozen(frozen_year_months).validate_min_observations(self.min_observations)
-        else:
-            shared = shared_defrozen_series.validate_min_observations(self.min_observations)
-        series = shared.for_tail(tail)
-        full_series = raw_series.for_tail(tail)
+        series, full_series = self._resolve_series_context(data, tail, frozen_year_months)
         basis_model = self._select_basis_model(series)
 
-        if threshold is not None:
-            u_obs = np.full(series.n_obs, float(threshold))
-            rep_threshold = float(threshold)
-            threshold_model: QuantileThresholdModel | None = None
-            threshold_params: np.ndarray | None = None
-            u_grid: np.ndarray | None = None
-        else:
-            threshold_model = self._build_threshold_model(basis_model)
-            times = series.data["time"].to_numpy(dtype=float)
-            threshold_params = threshold_model.fit(
-                times,
-                series.values,
-                quantile=threshold_quantile,
+        u_obs, rep_threshold, threshold_model, threshold_params, u_grid = (
+            self._build_threshold_context(
+                series, basis_model, threshold, threshold_quantile,
+                frozen_year_months, full_series,
             )
-            u_obs = threshold_model.evaluate(times, threshold_params)
-            rep_threshold = float(np.median(u_obs))
-            # Pre-compute threshold on the NHPP integration grid
-            if self.fitter is None:
-                raise ValueError("fitter must be available before threshold grid evaluation")
-            integration_grid = np.linspace(
-                0.0, series.duration_years, self.fitter.integration_points
-            )
-            u_grid = threshold_model.evaluate(
-                integration_grid,
-                threshold_params,
-            )
-            plateau_schedule = build_frozen_plateau_schedule(
-                frozen_year_months,
-                int(full_series.data["year"].min()),
-            )
-            if plateau_schedule is not None:
-                anchor_values = threshold_model.evaluate(
-                    plateau_schedule.anchor_times,
-                    threshold_params,
-                )
-                u_grid = apply_frozen_plateau(
-                    integration_grid,
-                    u_grid,
-                    plateau_schedule,
-                    anchor_values,
-                )
+        )
 
         extremes = self.declustering_strategy.decluster(series, u_obs)
         return PreparedExtremes(
@@ -447,7 +514,7 @@ class EOTEstimator:
             frozen_year_months=tuple(sorted(frozen_year_months or set())),
         )
 
-    def fit(
+    def fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         data: pd.DataFrame | MonthlyTimeSeries,
         tail: TailDirection = "high",
@@ -479,38 +546,57 @@ class EOTEstimator:
     ) -> tuple[FitResult, FitResult]:
         """Fit high and low tails with shared preprocessing artifacts."""
         raw_series = self._coerce_series(data)
-        shared = raw_series.defrozen(frozen_year_months).validate_min_observations(self.min_observations)
-        prepared_high = self.prepare_extremes(
-            data=data,
-            tail="high",
-            threshold=threshold,
-            threshold_quantile=threshold_quantile,
+        shared = raw_series.defrozen(frozen_year_months)
+        shared = shared.validate_min_observations(self.min_observations)
+
+        fit_high = self._fit_tail_from_shared(
+            raw_series, shared, tail="high",
+            threshold=threshold, threshold_quantile=threshold_quantile,
             frozen_year_months=frozen_year_months,
-            shared_raw_series=raw_series,
-            shared_defrozen_series=shared,
         )
-        prepared_low = self.prepare_extremes(
-            data=data,
-            tail="low",
-            threshold=threshold,
-            threshold_quantile=threshold_quantile,
+        fit_low = self._fit_tail_from_shared(
+            raw_series, shared, tail="low",
+            threshold=threshold, threshold_quantile=threshold_quantile,
             frozen_year_months=frozen_year_months,
-            shared_raw_series=raw_series,
-            shared_defrozen_series=shared,
         )
-        return (
-            self._fit_from_prepared(
-                prepared=prepared_high,
-                tail="high",
-                source_data=raw_series,
-                frozen_year_months=frozen_year_months,
-            ),
-            self._fit_from_prepared(
-                prepared=prepared_low,
-                tail="low",
-                source_data=raw_series,
-                frozen_year_months=frozen_year_months,
-            ),
+        return (fit_high, fit_low)
+
+    def _fit_tail_from_shared(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+        self,
+        raw_series: MonthlyTimeSeries,
+        shared_series: MonthlyTimeSeries,
+        *,
+        tail: TailDirection,
+        threshold: float | None,
+        threshold_quantile: float,
+        frozen_year_months: set[int] | None,
+    ) -> FitResult:
+        """Fit one tail reusing pre-computed shared artefacts."""
+        series, full_series = self._resolve_series_context_shared(
+            raw_series, shared_series, tail,
+        )
+        basis_model = self._select_basis_model(series)
+        u_obs, rep_threshold, threshold_model, threshold_params, u_grid = (
+            self._build_threshold_context(
+                series, basis_model, threshold, threshold_quantile,
+                frozen_year_months, full_series,
+            )
+        )
+        extremes = self.declustering_strategy.decluster(series, u_obs)
+        prepared = PreparedExtremes(
+            series=series,
+            representative_threshold=rep_threshold,
+            extremes=extremes,
+            basis_model=basis_model,
+            threshold_model=threshold_model,
+            threshold_params=threshold_params,
+            u_grid=u_grid,
+        )
+        return self._fit_from_prepared(
+            prepared=prepared,
+            tail=tail,
+            source_data=raw_series,
+            frozen_year_months=frozen_year_months,
         )
 
 
