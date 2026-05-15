@@ -134,7 +134,7 @@ def qc(
     )
 
     if output_dir is None:
-        output_dir = str(SourceConfig().data_dir.parent / "hawkes" / "qc")
+        output_dir = str(SourceConfig().data_dir.parent / "visualize" / "qr")
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -175,7 +175,7 @@ def mining(
     if input_summary is None:
         input_summary = str(source.data_dir.parent / "hawkes" / "batch" / "summary.csv")
     if output_dir is None:
-        output_dir = str(source.data_dir.parent / "hawkes" / "batch" / "mining")
+        output_dir = str(source.data_dir.parent / "experiments" / "hawkes" / "mining")
 
     from lakeanalysis.hawkes.mining import (
         load_summary, safe_series_divide,

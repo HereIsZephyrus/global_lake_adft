@@ -60,7 +60,7 @@ def interpolation(
     from lakesource.config import SourceConfig
 
     config = InterpolationRunConfig(
-        data_dir=SourceConfig().data_dir.parent,
+        data_dir=SourceConfig().data_dir.parent / "experiments" / "interpolation",
         chunk_size=chunk_size,
         limit_id=limit_id,
         id_start=id_start,

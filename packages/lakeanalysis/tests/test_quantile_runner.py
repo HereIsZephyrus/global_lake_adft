@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 
 
-RUNNER_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_quantile.py"
+RUNNER_PATH = Path(__file__).resolve().parents[1] / "scripts" / "_archived" / "run_quantile.py"
 SPEC = importlib.util.spec_from_file_location("run_quantile", RUNNER_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC is not None and SPEC.loader is not None

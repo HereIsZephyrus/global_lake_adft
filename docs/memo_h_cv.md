@@ -198,9 +198,9 @@ def main():
 #### 3.4 输出
 
 1. **DB 表** `area_entropy_cv`：全量 ~140 万行
-2. **CDF 图**：`data/figures/quality/h_cv_cdf.png` — H×CV 累积分布 + 阈值线
-3. **分布面板**：`data/figures/quality/h_cv_distributions.png` — 2×3：H, CV, H×CV, n_distinct, dominant_ratio, n_frozen
-4. **散点图**：`data/figures/quality/h_vs_cv_scatter.png` — H vs CV，颜色=H×CV
+2. **CDF 图**：`figure/h_cv_cdf.png` — H×CV 累积分布 + 阈值线
+3. **分布面板**：`figure/h_cv_distributions.png` — 2×3：H, CV, H×CV, n_distinct, dominant_ratio, n_frozen
+4. **散点图**：`figure/h_vs_cv_scatter.png` — H vs CV，颜色=H×CV
 5. **终端**：各指标 summary + H×CV 阈值分析
 
 ### Phase 4: 更新 PV Filter（待 CDF 确定阈值后）

@@ -2,9 +2,18 @@
 
 from .domain import Calculator, LakeFilter
 from .core import LakeTask
+from .filter import IdSetFilter, RangeFilter
 from .lake_dataset import LakeDataset
 from .lake_dataset_factory import LakeDatasetFactory
 from .lake_dataset_query import LakeDatasetQuery
+from .manager import Manager
+from .protocol import (
+    TAG_STATUS,
+    TAG_TRIGGER,
+    TRIGGER_READ,
+    RunReport,
+    WorkerState,
+)
 
 __all__ = [
     "Calculator",
@@ -38,10 +47,6 @@ def __getattr__(name: str):
         from .engine import Engine
 
         return Engine
-    if name in {"IdSetFilter", "RangeFilter"}:
-        from .filter import IdSetFilter, RangeFilter
-
-        return {"IdSetFilter": IdSetFilter, "RangeFilter": RangeFilter}[name]
     if name in {
         "BatchReader",
         "BatchWriter",
@@ -67,38 +72,10 @@ def __getattr__(name: str):
             "build_provider_batch_writer": build_provider_batch_writer,
             "build_batch_writer": build_batch_writer,
         }[name]
-    if name == "Manager":
-        from .manager import Manager
+    if name in {"_iter_chunk_ranges", "_iter_id_batches"}:
+        from .protocol import _iter_chunk_ranges, _iter_id_batches
 
-        return Manager
-    if name in {
-        "TAG_STATUS",
-        "TAG_TRIGGER",
-        "TRIGGER_READ",
-        "RunReport",
-        "WorkerState",
-        "_iter_chunk_ranges",
-        "_iter_id_batches",
-    }:
-        from .protocol import (
-            TAG_STATUS,
-            TAG_TRIGGER,
-            TRIGGER_READ,
-            RunReport,
-            WorkerState,
-            _iter_chunk_ranges,
-            _iter_id_batches,
-        )
-
-        return {
-            "TAG_STATUS": TAG_STATUS,
-            "TAG_TRIGGER": TAG_TRIGGER,
-            "TRIGGER_READ": TRIGGER_READ,
-            "RunReport": RunReport,
-            "WorkerState": WorkerState,
-            "_iter_chunk_ranges": _iter_chunk_ranges,
-            "_iter_id_batches": _iter_id_batches,
-        }[name]
+        return {"_iter_chunk_ranges": _iter_chunk_ranges, "_iter_id_batches": _iter_id_batches}[name]
     if name == "Worker":
         from .worker import Worker
 

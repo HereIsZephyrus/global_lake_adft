@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
         description="KDE of lake area distribution: lake_info vs area_quality."
     )
     parser.add_argument("--limit", type=int, default=None, metavar="N")
-    parser.add_argument("--output-dir", type=str, default="data/figures/histogram")
+    parser.add_argument("--output-dir", type=str, default="figure")
     return parser.parse_args()
 
 

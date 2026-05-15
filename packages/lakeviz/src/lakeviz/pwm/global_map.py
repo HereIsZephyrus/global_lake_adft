@@ -152,9 +152,8 @@ def plot_pwm_monthly_threshold_maps(
                 month_agg, value_col, config.resolution
             )
 
-            out_dir = config.output_dir / "pwm_extreme" / "monthly" / sub_prefix
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / f"month_{month:02d}.png"
+            out_path = config.output_dir / f"pwm_extreme_monthly_{sub_prefix}_month_{month:02d}.png"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
 
             fig, ax = plt.subplots(
                 figsize=(14, 7),
@@ -223,9 +222,8 @@ def plot_pwm_exceedance_maps(
         ]:
             lons, lats, values = agg_to_grid_matrix(agg, value_col, config.resolution)
 
-            out_dir = config.output_dir / "pwm_extreme" / "exceedance" / p_tag
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / filename
+            out_path = config.output_dir / f"pwm_extreme_exceedance_{p_tag}_{filename}"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
 
             fig, ax = plt.subplots(
                 figsize=(14, 7),
@@ -299,9 +297,8 @@ def plot_pwm_monthly_exceedance_maps(
                     month_agg, value_col, config.resolution
                 )
 
-                out_dir = config.output_dir / "pwm_extreme" / "monthly" / p_tag / sub_prefix
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_path = out_dir / f"month_{month:02d}.png"
+                out_path = config.output_dir / f"pwm_extreme_monthly_{p_tag}_{sub_prefix}_month_{month:02d}.png"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
 
                 fig, ax = plt.subplots(
                     figsize=(14, 7),

@@ -1,7 +1,7 @@
 """Visual regression tests — generate test images to validate the draw architecture.
 
 Each test creates a figure with synthetic data and saves it to
-``data/figures/test_viz/``.  Run with ``pytest tests/test_viz_images.py -v``.
+``figure/test_viz/``.  Run with ``pytest tests/test_viz_images.py -v``.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ from lakeviz.layout import create_figure, save
 from lakeviz.map_plot import draw_global_grid, plot_global_grid
 from lakeviz.grid import agg_to_grid_matrix
 
-OUT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "figure_test"
+OUT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "figure" / "test_viz"
 
 rng = np.random.default_rng(42)
 

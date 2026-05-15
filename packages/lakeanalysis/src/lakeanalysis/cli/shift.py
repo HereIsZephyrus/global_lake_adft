@@ -101,7 +101,7 @@ def sample(
 @app.command()
 def inspect(
     hylak_ids: list[int] = typer.Option([170137, 170009], "--hylak-id", help="Lake IDs to inspect"),
-    output_dir: str = typer.Option(None, help="Output directory for plots (default: data/figures/quality)"),
+    output_dir: str = typer.Option(None, help="Output directory for plots (default: figure)"),
     p_value_thresh: float = typer.Option(0.05, "--p-thresh"),
     smooth_window: int = typer.Option(12, "--smooth-window"),
 ) -> None:

@@ -241,8 +241,6 @@ def plot_anomaly_upset(
     show_counts: bool = True,
     title: str = "异常集合交集",
 ) -> plt.Figure:
-    import upsetplot
-
     set_cols = list(_SET_DISPLAY_NAMES.keys())
     for col in set_cols:
         if col not in flags_df.columns:
@@ -251,102 +249,37 @@ def plot_anomaly_upset(
     plot_df = flags_df.copy()
     for col in set_cols:
         plot_df[col] = plot_df[col].astype(bool)
-    rename_map = {col: _SET_DISPLAY_NAMES[col] for col in set_cols}
-    plot_df = plot_df.rename(columns=rename_map)
-    counts = upsetplot.from_indicators(list(rename_map.values()), data=plot_df)
+    display_names = [_SET_DISPLAY_NAMES[col] for col in set_cols]
+
+    def _combo_label(row: pd.Series) -> str:
+        active = [disp for col, disp in zip(set_cols, display_names, strict=True) if bool(row[col])]
+        return " + ".join(active) if active else "正常"
+
+    counts = plot_df.apply(_combo_label, axis=1).value_counts().sort_values(ascending=False)
     counts = counts[counts >= min_size]
-    fig = plt.figure(figsize=(10, 6))
+    if counts.empty:
+        counts = pd.Series({"无组合达到阈值": 0})
 
-    # Workaround: upsetplot 0.9.0 uses fillna(..., inplace=True) which is a
-    # no-op under pandas >= 3.0 Copy-on-Write, leaving NaN in edgecolor arrays
-    # and crashing matplotlib.  Monkeypatch UpSet.plot_matrix to use the
-    # equivalent non-inplace fillna assignments.
-    # pylint: disable=protected-access
-    _original_plot_matrix = upsetplot.UpSet.plot_matrix
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(range(len(counts)), counts.to_numpy(), color="#5B8FF9", alpha=0.9)
+    ax.set_xticks(range(len(counts)))
+    ax.set_xticklabels(counts.index.tolist(), rotation=30, ha="right")
+    ax.set_ylabel("湖泊数量")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.2)
 
-    def _patched_plot_matrix(self, ax):
-        ax = self._reorient(ax)
-        data = self.intersections
-        n_cats = data.index.nlevels
-        inclusion = data.index.to_frame().values
-        styles = [
-            [
-                self.subset_styles[i]
-                if inclusion[i, j]
-                else {"facecolor": self._other_dots_color, "linewidth": 0}
-                for j in range(n_cats)
-            ]
-            for i in range(len(data))
-        ]
-        styles = sum(styles, [])
-        style_columns = {
-            "facecolor": "facecolors",
-            "edgecolor": "edgecolors",
-            "linewidth": "linewidths",
-            "linestyle": "linestyles",
-            "hatch": "hatch",
-        }
-        styles = (
-            pd.DataFrame(styles)
-            .reindex(columns=style_columns.keys())
-            .astype(
-                {
-                    "facecolor": "O",
-                    "edgecolor": "O",
-                    "linewidth": float,
-                    "linestyle": "O",
-                    "hatch": "O",
-                }
-            )
-        )
-        styles["linewidth"] = styles["linewidth"].fillna(1)
-        styles["facecolor"] = styles["facecolor"].fillna(self._facecolor)
-        styles["edgecolor"] = styles["edgecolor"].fillna(styles["facecolor"])
-        styles["linestyle"] = styles["linestyle"].fillna("solid")
-        del styles["hatch"]
-
-        x = np.repeat(np.arange(len(data)), n_cats)
-        y = np.tile(np.arange(n_cats), len(data))
-        if self._element_size is not None:
-            s = (self._element_size * 0.35) ** 2
-        else:
-            s = 200
-        ax.scatter(
-            *self._swapaxes(x, y),
-            s=s,
-            zorder=10,
-            **styles.rename(columns=style_columns),
-        )
-        if self._with_lines:
-            idx = np.flatnonzero(inclusion)
-            line_data = (
-                pd.Series(y[idx], index=x[idx])
-                .groupby(level=0)
-                .aggregate(["min", "max"])
-            )
-            colors = pd.Series(
-                [
-                    style.get("edgecolor", style.get("facecolor", self._facecolor))
-                    for style in self.subset_styles
-                ],
-                name="color",
-            )
-            line_data = line_data.join(colors)
-            ax.vlines(
-                line_data.index.values,
-                line_data["min"],
-                line_data["max"],
-                colors=line_data["color"],
+    if show_counts:
+        for bar, value in zip(bars, counts.to_numpy(), strict=True):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                str(int(value)),
+                ha="center",
+                va="bottom",
+                fontsize=9,
             )
 
-    upsetplot.UpSet.plot_matrix = _patched_plot_matrix
-    try:
-        upsetplot.plot(counts, fig=fig, show_counts=show_counts, sort_by="cardinality")
-    finally:
-        upsetplot.UpSet.plot_matrix = _original_plot_matrix
-    # pylint: enable=protected-access
-    fig.suptitle(title, fontsize=13)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout()
     return fig
 
 

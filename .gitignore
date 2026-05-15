@@ -217,7 +217,7 @@ __marimo__/
 
 # Temporary data
 .cursor/
-data/
+data/*
 results/
 logs/
 sampled/

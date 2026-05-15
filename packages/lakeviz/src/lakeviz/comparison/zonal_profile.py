@@ -87,7 +87,7 @@ def plot_comparison_zonal_profile(
         log.warning("Zonal aggregation produced no data")
         return []
 
-    out_dir = config.output_dir / "comparison"
+    out_dir = config.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 5.5), sharey=True)
@@ -131,7 +131,7 @@ def plot_comparison_zonal_profile(
     )
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-    out_path = out_dir / "zonal_profile_combined.png"
+    out_path = out_dir / "comparison_zonal_profile_combined.png"
     fig.savefig(out_path, dpi=DEFAULT_VIZ_CONFIG.default_dpi, bbox_inches="tight")
     plt.close(fig)
     log.info("Saved: %s", out_path)

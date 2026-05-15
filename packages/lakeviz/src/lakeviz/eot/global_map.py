@@ -33,6 +33,7 @@ def plot_eot_convergence_map(
     min_lakes: int = 1,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_grid_map(
         _fetch_eot_convergence_grid_agg,
         "convergence_rate",
@@ -42,7 +43,7 @@ def plot_eot_convergence_map(
         vmin=0,
         vmax=1,
         cbar_label="收敛率",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="convergence_rate.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
@@ -58,6 +59,7 @@ def plot_eot_xi_map(
     min_lakes: int = 3,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_grid_map(
         _fetch_eot_converged_grid_agg,
         "median_xi",
@@ -65,7 +67,7 @@ def plot_eot_xi_map(
         cmap="sequential_cool",
         log_scale=False,
         cbar_label="中位数 ξ",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="median_xi.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
@@ -81,12 +83,13 @@ def plot_eot_sigma_map(
     min_lakes: int = 3,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_grid_map(
         _fetch_eot_converged_grid_agg,
         "median_sigma",
         title=f"EOT 中位数 σ — {tail} tail, {q_tag}",
         cbar_label="中位数 σ",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="median_sigma.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
@@ -102,12 +105,13 @@ def plot_eot_extremes_frequency_map(
     min_lakes: int = 3,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_grid_map(
         _fetch_eot_converged_grid_agg,
         "mean_extremes_freq",
         title=f"EOT 极端事件频率 — {tail} tail, {q_tag}",
         cbar_label="极端事件频率",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="extremes_frequency.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
@@ -123,12 +127,13 @@ def plot_eot_threshold_map(
     min_lakes: int = 3,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_grid_map(
         _fetch_eot_converged_grid_agg,
         "median_threshold",
         title=f"EOT 中位数阈值 — {tail} tail, {q_tag}",
         cbar_label="中位数阈值",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="median_threshold.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )
@@ -144,12 +149,13 @@ def plot_eot_extremes_density_map(
     min_lakes: int = 3,
 ) -> Path:
     q_tag = f"q{threshold_quantile:.2f}"
+    prefix = f"eot_{tail}_{q_tag}"
     fn = make_density_map(
         _fetch_eot_converged_grid_agg,
         "mean_extremes_freq",
         title=f"EOT 极端事件密度 — {tail} tail, {q_tag}",
         cbar_label="极端事件频率",
-        sub_dir=f"eot/{tail}/q{threshold_quantile:.4f}",
+        sub_dir=prefix,
         filename="extremes_density.png",
         extra_fetch_kwargs={"tail": tail, "threshold_quantile": threshold_quantile},
     )

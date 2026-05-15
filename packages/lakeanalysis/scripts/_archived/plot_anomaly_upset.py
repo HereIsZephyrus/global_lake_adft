@@ -5,7 +5,7 @@ decodes into boolean columns, and produces a combined UpSet + donut figure.
 
 Usage:
     uv run python scripts/plot_anomaly_upset.py
-    uv run python scripts/plot_anomaly_upset.py --output-dir data/figures/upset
+    uv run python scripts/plot_anomaly_upset.py --output-dir figure
     uv run python scripts/plot_anomaly_upset.py --min-size 5
     uv run python scripts/plot_anomaly_upset.py --limit 5000
 """
@@ -65,9 +65,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="data/figures/upset",
+        default="figure",
         metavar="DIR",
-        help="Output directory (default: data/figures/upset).",
+        help="Output directory (default: figure).",
     )
     parser.add_argument(
         "--min-size",

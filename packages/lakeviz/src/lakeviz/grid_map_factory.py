@@ -95,9 +95,9 @@ def make_grid_map(
 
         lons, lats, values = agg_to_grid_matrix(agg, value_col, config.resolution)
 
-        out_dir = config.output_dir / sub_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename
+        prefix = sub_dir.replace("/", "_").strip("_")
+        out_path = config.output_dir / f"{prefix}_{filename}" if prefix else config.output_dir / filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         import matplotlib.pyplot as plt
         import cartopy.crs as ccrs
@@ -171,9 +171,9 @@ def make_density_map(
 
         lons, lats, values = agg_to_grid_matrix(agg, value_col, config.resolution)
 
-        out_dir = config.output_dir / sub_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename
+        prefix = sub_dir.replace("/", "_").strip("_")
+        out_path = config.output_dir / f"{prefix}_{filename}" if prefix else config.output_dir / filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         import matplotlib.pyplot as plt
         import cartopy.crs as ccrs
