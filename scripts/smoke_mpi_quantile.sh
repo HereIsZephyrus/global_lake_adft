@@ -17,6 +17,6 @@ smoke_cleanup_tables \
   quantile_abrupt_transitions \
   quantile_run_status
 
-run_mpi uv run lake_adft eot quantile \
+run_mpi python -m lakeanalysis.cli eot quantile \
   "${RANGE_ARGS[@]}" \
   --method stl

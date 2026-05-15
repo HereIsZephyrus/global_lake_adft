@@ -18,6 +18,6 @@ smoke_cleanup_tables \
   pwm_extreme_abrupt_transitions \
   pwm_extreme_run_status
 
-run_mpi uv run lake_adft pwm run \
+run_mpi python -m lakeanalysis.cli pwm run \
   "${RANGE_ARGS[@]}" \
   --method stl
