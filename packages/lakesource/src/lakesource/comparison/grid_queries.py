@@ -12,19 +12,14 @@ from typing import Any
 import pandas as pd
 
 from lakesource.grid_cache import cached_or_compute
+from lakesource.grid_dtypes import coerce_grid_columns
 from lakesource.provider.grid_query import register_grid_query
 
 log = logging.getLogger(__name__)
 
 
 def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    for col in ("cell_lat", "cell_lon"):
-        if col in df.columns:
-            df[col] = df[col].astype(float)
-    for col in ("lake_count",):
-        if col in df.columns:
-            df[col] = df[col].astype(int)
-    return df
+    return coerce_grid_columns(df, int_columns=("lake_count",))
 
 
 class _ComparisonExceedanceQuery:
