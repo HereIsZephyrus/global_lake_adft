@@ -19,7 +19,7 @@ from lakeviz.eot import (
     plot_location_model as _plot_location_model,
     plot_eot_extremes as _plot_eot_extremes,
 )
-from lakeviz.eot._basemodel import (
+from lakeviz.domain.eot_basis import (
     plot_candidate_scores as _plot_candidate_scores,
     plot_basis_fit as _plot_basis_fit,
     plot_residuals as _plot_residuals,

@@ -15,7 +15,7 @@ from lakeviz.style.line import LineStyle
 from lakeviz.style.bar import BarStyle
 from lakeviz.style.histogram import HistogramStyle
 from lakeviz.style.reference import ReferenceLineStyle
-from lakeviz.style.presets import BASEMODEL_ORIGINAL, BASEMODEL_FITTED, BASEMODEL_RESIDUAL
+from lakeviz.style.presets import BASEMODEL_ORIGINAL, BASEMODEL_FITTED, BASEMODEL_RESIDUAL, Theme
 
 
 def draw_candidate_scores(
@@ -95,18 +95,21 @@ def draw_residuals(
 # ---------------------------------------------------------------------------
 
 def plot_candidate_scores(scores_df, criterion, selected_basis_name) -> plt.Figure:
+    Theme.apply()
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(12, 4), constrained_layout=True)
     draw_candidate_scores(ax_left, ax_right, scores_df, criterion, selected_basis_name)
     return fig
 
 
 def plot_basis_fit(fit_frame, selected_basis_name, criterion, relative_rmse) -> plt.Figure:
+    Theme.apply()
     fig, ax = plt.subplots(figsize=(12, 4))
     draw_basis_fit(ax, fit_frame, selected_basis_name, criterion, relative_rmse)
     return fig
 
 
 def plot_residuals(fit_frame) -> plt.Figure:
+    Theme.apply()
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(12, 4), constrained_layout=True)
     draw_residuals(ax_left, ax_right, fit_frame)
     return fig

@@ -15,6 +15,25 @@ log = logging.getLogger(__name__)
 
 _default_table_config = TableConfig.default()
 
+EOT_RESULT_COLUMNS = (
+    "hylak_id",
+    "tail",
+    "threshold_quantile",
+    "converged",
+    "log_likelihood",
+    "threshold",
+    "n_extremes",
+    "n_observations",
+    "n_frozen_months",
+    "beta0",
+    "beta1",
+    "sin_1",
+    "cos_1",
+    "sigma",
+    "xi",
+    "error_message",
+)
+
 
 def _fetch_eot_extremes_by_id_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""

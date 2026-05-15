@@ -1,12 +1,5 @@
 """Quantile-based identification data access layer."""
 
-from .reader import (
-    fetch_extremes_by_type_grid_agg,
-    fetch_extremes_grid_agg,
-    fetch_per_lake_stats_grid_agg,
-    fetch_transitions_by_type_grid_agg,
-    fetch_transitions_grid_agg,
-)
 from .writer import upsert_extremes, upsert_transitions, upsert_labels, upsert_run_status, ensure_tables
 from .schema import (
     QuantileResult,
@@ -34,11 +27,6 @@ from .store import (
 )
 
 __all__ = [
-    "fetch_extremes_grid_agg",
-    "fetch_extremes_by_type_grid_agg",
-    "fetch_per_lake_stats_grid_agg",
-    "fetch_transitions_grid_agg",
-    "fetch_transitions_by_type_grid_agg",
     "upsert_extremes",
     "upsert_transitions",
     "upsert_labels",
