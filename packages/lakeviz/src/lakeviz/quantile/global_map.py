@@ -39,10 +39,10 @@ plot_extremes_density_map = make_grid_map(
 plot_transition_density_map = make_grid_map(
     _fetch_transitions_grid_agg,
     "mean_per_lake",
-    title="分位数识别旱涝突变密度 (每湖事件数)",
+    title="分位数识别旱涝急转转换数量全球分布 (每湖事件数)",
     cbar_label="每湖事件数",
     sub_dir="quantile/transitions",
-    filename="density.png",
+    filename="count_grid.png",
 )
 
 
@@ -53,19 +53,28 @@ def plot_extremes_by_type_map(
     refresh: bool = False,
     min_lakes: int = 1,
 ) -> Path:
-    labels = {"high": "高值", "low": "低值", "dry": "干旱", "wet": "湿润"}
+    canonical_type = {"wet": "high", "dry": "low"}.get(event_type, event_type)
+    labels = {
+        "high": "超高阈值（湿事件）",
+        "low": "超低阈值（干事件）",
+        "dry": "超低阈值（干事件）",
+        "wet": "超高阈值（湿事件）",
+    }
+    cmap = "sequential_cool" if canonical_type == "high" else "sequential_warm"
+    filename = "wet_grid.png" if canonical_type == "high" else "dry_grid.png"
     label = labels.get(event_type, event_type)
 
     def _filter_by_type(agg):
-        return agg[agg["event_type"] == event_type].reset_index(drop=True)
+        return agg[agg["event_type"] == canonical_type].reset_index(drop=True)
 
     fn = make_grid_map(
         _fetch_extremes_by_type_grid_agg,
         "mean_per_lake",
-        title=f"分位数识别{label}极端事件密度 (每湖事件数)",
+        title=f"分位数识别{label}全球分布 (每湖事件数)",
+        cmap=cmap,
         cbar_label="每湖事件数",
         sub_dir="quantile/extremes",
-        filename=f"density_{event_type}.png",
+        filename=filename,
         pre_filter_fn=_filter_by_type,
     )
     return fn(config, refresh=refresh, min_lakes=min_lakes)
@@ -78,19 +87,30 @@ def plot_transition_by_type_map(
     refresh: bool = False,
     min_lakes: int = 1,
 ) -> Path:
-    labels = {"low_to_high": "低转高", "high_to_low": "高转低", "dry_to_wet": "旱转涝", "wet_to_dry": "涝转旱"}
+    canonical_type = {
+        "low_to_high": "dry_to_wet",
+        "high_to_low": "wet_to_dry",
+    }.get(transition_type, transition_type)
+    labels = {
+        "low_to_high": "旱转涝",
+        "high_to_low": "涝转旱",
+        "dry_to_wet": "旱转涝",
+        "wet_to_dry": "涝转旱",
+    }
+    cmap = "sequential_cool" if canonical_type == "dry_to_wet" else "sequential_warm"
     label = labels.get(transition_type, transition_type)
 
     def _filter_by_type(agg):
-        return agg[agg["transition_type"] == transition_type].reset_index(drop=True)
+        return agg[agg["transition_type"] == canonical_type].reset_index(drop=True)
 
     fn = make_grid_map(
         _fetch_transitions_by_type_grid_agg,
         "mean_per_lake",
-        title=f"分位数识别{label}突变密度 (每湖事件数)",
+        title=f"分位数识别{label}事件全球分布 (每湖事件数)",
+        cmap=cmap,
         cbar_label="每湖事件数",
         sub_dir="quantile/transitions",
-        filename=f"density_{transition_type}.png",
+        filename=f"{canonical_type}_grid.png",
         pre_filter_fn=_filter_by_type,
     )
     return fn(config, refresh=refresh, min_lakes=min_lakes)
@@ -108,10 +128,10 @@ plot_extremes_event_density_map = make_density_map(
 plot_transition_event_density_map = make_density_map(
     _fetch_transitions_grid_agg,
     "event_count",
-    title="分位数识别旱涝突变密度 (事件总数)",
+    title="分位数识别旱涝急转转换数量平滑密度分布 (事件总数)",
     cbar_label="事件数",
     sub_dir="quantile/transitions",
-    filename="event_density.png",
+    filename="count_kde.png",
 )
 
 
@@ -123,24 +143,12 @@ def plot_quantile_global_maps(
 ) -> list[Path]:
     """Generate the standard batch of quantile global maps."""
     outputs = [
-        plot_extremes_density_map(config, refresh=refresh, min_lakes=min_lakes),
-        plot_extremes_event_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_extremes_by_type_map(config, "wet", refresh=refresh, min_lakes=min_lakes),
+        plot_extremes_by_type_map(config, "dry", refresh=refresh, min_lakes=min_lakes),
         plot_transition_density_map(config, refresh=refresh, min_lakes=min_lakes),
         plot_transition_event_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_transition_by_type_map(config, "dry_to_wet", refresh=refresh, min_lakes=min_lakes),
+        plot_transition_by_type_map(config, "wet_to_dry", refresh=refresh, min_lakes=min_lakes),
     ]
-
-    outputs.extend(
-        plot_extremes_by_type_map(config, event_type, refresh=refresh, min_lakes=min_lakes)
-        for event_type in ("high", "low")
-    )
-    outputs.extend(
-        plot_transition_by_type_map(
-            config,
-            transition_type,
-            refresh=refresh,
-            min_lakes=min_lakes,
-        )
-        for transition_type in ("low_to_high", "high_to_low")
-    )
 
     return [path for path in outputs if path != Path()]

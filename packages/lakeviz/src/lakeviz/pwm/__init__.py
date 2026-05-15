@@ -5,25 +5,31 @@ from .plot import (
     plot_pwm_extreme_threshold_summary,
 )
 from .global_map import (
+    plot_pwm_dry_grid_map,
     plot_pwm_convergence_map,
     plot_pwm_exceedance_maps,
+    plot_pwm_global_maps,
     plot_pwm_high_exceedance_density_map,
     plot_pwm_low_exceedance_density_map,
     plot_pwm_monthly_exceedance_maps,
     plot_pwm_monthly_threshold_maps,
     plot_pwm_threshold_high_map,
     plot_pwm_threshold_low_map,
+    plot_pwm_wet_grid_map,
 )
 
 __all__ = [
     "plot_pwm_extreme_quantile_functions",
     "plot_pwm_extreme_threshold_summary",
+    "plot_pwm_dry_grid_map",
     "plot_pwm_convergence_map",
     "plot_pwm_exceedance_maps",
+    "plot_pwm_global_maps",
     "plot_pwm_high_exceedance_density_map",
     "plot_pwm_low_exceedance_density_map",
     "plot_pwm_monthly_exceedance_maps",
     "plot_pwm_monthly_threshold_maps",
     "plot_pwm_threshold_high_map",
     "plot_pwm_threshold_low_map",
+    "plot_pwm_wet_grid_map",
 ]
