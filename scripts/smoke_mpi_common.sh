@@ -42,7 +42,14 @@ smoke_range_args() {
 }
 
 run_mpi() {
-  "$MPI_LAUNCHER" --oversubscribe -np "$NP" "$@"
+  case "$MPI_LAUNCHER" in
+    mpiexec)
+      "$MPI_LAUNCHER" --oversubscribe -np "$NP" "$@"
+      ;;
+    *)
+      "$MPI_LAUNCHER" -np "$NP" "$@"
+      ;;
+  esac
 }
 
 smoke_cleanup_tables() {
