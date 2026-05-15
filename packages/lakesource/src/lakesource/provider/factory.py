@@ -1,4 +1,8 @@
-"""Factory: create LakeProvider based on SourceConfig.backend."""
+"""Factory: create LakeProvider based on SourceConfig.backend.
+
+Returns ParquetLakeProvider (implements LakeProvider ABC) for Parquet backend,
+or PostgresLakeProvider (standalone, not a LakeProvider) for Postgres backend.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ from .parquet_provider import ParquetLakeProvider
 from .postgres_provider import PostgresLakeProvider
 
 
-def create_provider(config: SourceConfig | None = None) -> LakeProvider:
+def create_provider(config: SourceConfig | None = None) -> LakeProvider | PostgresLakeProvider:
     ensure_env_loaded()
     config = config or SourceConfig()
     if config.backend == Backend.POSTGRES:

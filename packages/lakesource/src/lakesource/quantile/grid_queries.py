@@ -52,14 +52,6 @@ class _QuantileExtremesQuery:
             """)
         ), log=log)
 
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_extremes_grid_agg
-        return fetch_extremes_grid_agg(config, resolution, refresh=refresh)
-
-
 class _QuantileExtremesByTypeQuery:
     name = "quantile.extremes_by_type"
 
@@ -82,14 +74,6 @@ class _QuantileExtremesByTypeQuery:
             """)
         ), log=log)
 
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_extremes_by_type_grid_agg
-        return fetch_extremes_by_type_grid_agg(config, resolution, refresh=refresh)
-
-
 class _QuantileTransitionsQuery:
     name = "quantile.transitions"
 
@@ -110,14 +94,6 @@ class _QuantileTransitionsQuery:
             ORDER BY 1, 2
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_transitions_grid_agg
-        return fetch_transitions_grid_agg(config, resolution, refresh=refresh)
-
 
 class _QuantileTransitionsByTypeQuery:
     name = "quantile.transitions_by_type"
@@ -140,14 +116,6 @@ class _QuantileTransitionsByTypeQuery:
             ORDER BY 1, 2, 3
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_transitions_by_type_grid_agg
-        return fetch_transitions_by_type_grid_agg(config, resolution, refresh=refresh)
-
 
 class _QuantilePerLakeStatsQuery:
     name = "quantile.per_lake_stats"
@@ -181,14 +149,6 @@ class _QuantilePerLakeStatsQuery:
             ORDER BY 1, 2
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.quantile.reader import fetch_per_lake_stats_grid_agg
-        return fetch_per_lake_stats_grid_agg(config, resolution, refresh=refresh)
-
 
 register_grid_query(_QuantileExtremesQuery())
 register_grid_query(_QuantileExtremesByTypeQuery())

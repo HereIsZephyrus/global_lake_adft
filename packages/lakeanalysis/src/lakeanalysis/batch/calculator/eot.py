@@ -10,10 +10,22 @@ from typing import Any
 
 
 from lakeanalysis.eot import EOTEstimator
+from lakesource.postgres.lake_eot import EOT_RESULT_COLUMNS  # canonical column order reference
 
 from .. import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
+
+_KNOWN_BASIS_PARAMS = frozenset({"beta0", "beta1", "sin_1", "cos_1"})
+
+
+def _warn_dropped_params(hylak_id: int, tail: str, q: float, params: dict) -> None:
+    extra = set(params) - _KNOWN_BASIS_PARAMS - {"sigma", "xi"}
+    if extra:
+        log.warning(
+            "hylak_id=%d tail=%s q=%.4f: dropping basis params %s (DB schema only stores n_harmonics=1)",
+            hylak_id, tail, q, sorted(extra),
+        )
 
 
 @dataclass(frozen=True)
@@ -69,6 +81,7 @@ class EOTCalculator(Calculator):
             has_success = True
             p = fit.params
             ll = fit.log_likelihood
+            # column keys must match EOT_RESULT_COLUMNS from lakesource.postgres.lake_eot
             result_rows.append({
                 "hylak_id": result.hylak_id,
                 "tail": tail,
@@ -87,6 +100,7 @@ class EOTCalculator(Calculator):
                 "xi": p.get("xi"),
                 "error_message": None,
             })
+            _warn_dropped_params(result.hylak_id, tail, q, p)
             extreme_rows.extend([
                 {
                     "hylak_id": result.hylak_id,

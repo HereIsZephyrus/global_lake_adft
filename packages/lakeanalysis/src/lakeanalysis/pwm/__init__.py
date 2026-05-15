@@ -16,7 +16,7 @@ from .compute import (
     shifted_exponential_prior,
     solve_lagrange_multipliers,
 )
-from .config import (
+from lakesource.pwm.schema import (
     PWMExtremeBatchConfig,
     PWMExtremeServiceConfig,
 )
@@ -33,7 +33,7 @@ from .plot_adapter import (
     plot_threshold_summary,
 )
 from .service import run_single_lake_service
-from .store import (
+from lakesource.pwm.store import (
     ensure_pwm_extreme_tables,
     make_run_status_row,
     result_to_threshold_rows,

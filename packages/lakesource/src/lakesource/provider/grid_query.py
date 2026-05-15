@@ -27,7 +27,6 @@ class GridAggQuery(Protocol):
     Each query must provide:
       - ``name``: unique identifier (e.g. "quantile.extremes")
       - ``fetch_parquet``: DuckDB-based implementation
-      - ``fetch_postgres``: PostgreSQL-based implementation (optional)
     """
 
     name: str
@@ -36,15 +35,6 @@ class GridAggQuery(Protocol):
         self,
         client: Any,
         cache_dir: Path,
-        resolution: float,
-        *,
-        refresh: bool = False,
-        **kwargs: Any,
-    ) -> pd.DataFrame: ...
-
-    def fetch_postgres(
-        self,
-        config: Any,
         resolution: float,
         *,
         refresh: bool = False,

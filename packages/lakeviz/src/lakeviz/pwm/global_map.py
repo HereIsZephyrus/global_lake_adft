@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from lakesource.pwm.schema import PWMExtremeConfig
+
 from ..config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from ..grid import agg_to_grid_matrix
 from ..grid_map_factory import make_density_map, make_grid_map
 from ..map_plot import draw_global_grid
 
 log = logging.getLogger(__name__)
+
+_DEFAULT_PWM_CFG = PWMExtremeConfig()
 
 
 def _fetch_pwm_convergence_grid_agg(provider, resolution, *, refresh=False):
@@ -26,7 +30,7 @@ def _fetch_pwm_monthly_threshold_grid_agg(provider, resolution, *, refresh=False
 
 
 def _fetch_pwm_exceedance_grid_agg(
-    provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False,
+    provider, resolution, *, p_high=_DEFAULT_PWM_CFG.p_high, p_low=_DEFAULT_PWM_CFG.p_low, refresh=False,
 ):
     return provider.fetch_pwm_exceedance_grid_agg(
         resolution, p_high=p_high, p_low=p_low, refresh=refresh,
@@ -34,7 +38,7 @@ def _fetch_pwm_exceedance_grid_agg(
 
 
 def _fetch_pwm_monthly_exceedance_grid_agg(
-    provider, resolution, *, p_high=0.05, p_low=0.05, refresh=False,
+    provider, resolution, *, p_high=_DEFAULT_PWM_CFG.p_high, p_low=_DEFAULT_PWM_CFG.p_low, refresh=False,
 ):
     return provider.fetch_pwm_monthly_exceedance_grid_agg(
         resolution, p_high=p_high, p_low=p_low, refresh=refresh,
@@ -79,7 +83,7 @@ plot_pwm_high_exceedance_density_map = make_density_map(
     cbar_label="每湖超越月数",
     sub_dir="pwm_extreme/density",
     filename="high_exceedance_density.png",
-    extra_fetch_kwargs={"p_high": 0.05, "p_low": 0.05},
+    extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
 )
 
 plot_pwm_low_exceedance_density_map = make_density_map(
@@ -89,7 +93,7 @@ plot_pwm_low_exceedance_density_map = make_density_map(
     cbar_label="每湖超越月数",
     sub_dir="pwm_extreme/density",
     filename="low_exceedance_density.png",
-    extra_fetch_kwargs={"p_high": 0.05, "p_low": 0.05},
+    extra_fetch_kwargs={"p_high": _DEFAULT_PWM_CFG.p_high, "p_low": _DEFAULT_PWM_CFG.p_low},
 )
 
 

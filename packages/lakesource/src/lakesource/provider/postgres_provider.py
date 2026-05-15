@@ -1,8 +1,8 @@
-"""PostgresLakeProvider: backend reads and grid aggregations via psycopg.
+"""PostgresLakeProvider: direct PostgreSQL access (reads + writes).
 
-Refactored to use PostgresBackend internally, eliminating if/elif table_name
-dispatch.  The old ensure_table / upsert_rows / fetch_rows API is preserved
-for backward compatibility but delegates to typed domain repositories.
+Provides direct access to PostgreSQL for data persistence, spatial queries,
+and maintenance operations.  No longer implements the LakeProvider ABC —
+grid aggregation reads should use ParquetLakeProvider instead.
 """
 
 from __future__ import annotations
@@ -16,8 +16,6 @@ from psycopg import sql as psql
 
 from lakesource.config import SourceConfig
 
-from .base import LakeProvider
-
 _SAFE_TABLE_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
@@ -26,15 +24,6 @@ def _table_ident(table_name: str) -> psql.Identifier:
     if not _SAFE_TABLE_NAME.match(table_name):
         raise ValueError(f"Invalid table name: {table_name!r}")
     return psql.Identifier(table_name)
-
-
-def _ensure_queries_registered() -> None:
-    from lakesource.provider.grid_query import list_grid_queries
-    if not list_grid_queries():
-        import lakesource.quantile.grid_queries  # noqa: F401  # pylint: disable=unused-import
-        import lakesource.pwm.grid_queries  # noqa: F401
-        import lakesource.eot.grid_queries  # noqa: F401
-        import lakesource.comparison.grid_queries  # noqa: F401
 
 
 # ------------------------------------------------------------------
@@ -118,8 +107,8 @@ _UPSERT_DISPATCH = {
 }
 
 
-class PostgresLakeProvider(LakeProvider):
-    """Postgres provider backed by typed domain repositories."""
+class PostgresLakeProvider:
+    """Direct PostgreSQL access for data persistence and spatial queries."""
 
     def __init__(self, config: SourceConfig | None = None) -> None:
         self._config = config or SourceConfig()
@@ -425,10 +414,9 @@ class PostgresLakeProvider(LakeProvider):
         refresh: bool = False,
         **kwargs,
     ) -> pd.DataFrame:
-        from lakesource.provider.grid_query import get_grid_query
-        _ensure_queries_registered()
-        query = get_grid_query(query_name)
-        return query.fetch_postgres(self._config, resolution, refresh=refresh, **kwargs)
+        raise NotImplementedError(
+            "Grid aggregation queries are only supported via the Parquet/DuckDB backend."
+        )
 
     # ------------------------------------------------------------------
     # Utility

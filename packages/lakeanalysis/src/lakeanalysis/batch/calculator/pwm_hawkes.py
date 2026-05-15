@@ -29,7 +29,7 @@ from lakeanalysis.pwm.events import (
 )
 from lakeanalysis.pwm.evt import compute_pwm_evt_strengths
 from lakeanalysis.pwm.phi import map_strength_df_to_phi
-from lakeanalysis.pwm.store import return_levels_to_rows
+from lakesource.pwm.store import return_levels_to_rows
 from lakeanalysis.pwm.service import run_single_lake_service
 from lakesource.pwm.schema import (
     PWMExtremeConfig,

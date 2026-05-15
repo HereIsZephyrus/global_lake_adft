@@ -1,11 +1,9 @@
-"""LakeProvider: unified data access strategy for PostgreSQL and Parquet backends.
+"""LakeProvider: unified data access strategy.
 
-LakeProvider combines read and write capabilities behind a single ABC.
-Consumers (lakeanalysis batch, lakeviz) receive a LakeProvider instance
-from the factory and call methods without knowing the backend.
-
-PostGIS-dependent aggregation queries (grid maps) use pre-computed
-lat/lon columns when running against Parquet/DuckDB.
+ParquetLakeProvider implements the LakeProvider ABC and handles all read
+operations via DuckDB.  PostgresLakeProvider is a standalone class for
+PostgreSQL write/persistence and spatial queries — it does NOT implement
+the LakeProvider ABC.
 """
 
 from .base import LakeProvider

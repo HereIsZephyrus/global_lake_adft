@@ -57,16 +57,6 @@ class _EOTConvergenceQuery:
             """)
         ), log=log)
 
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, tail: str = "high", threshold_quantile: float = 0.95,
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.eot.reader import fetch_eot_convergence_grid_agg
-        return fetch_eot_convergence_grid_agg(
-            config, tail, threshold_quantile, resolution, refresh=refresh
-        )
-
 
 class _EOTConvergedQuery:
     name = "eot.converged"
@@ -97,16 +87,6 @@ class _EOTConvergedQuery:
             ORDER BY 1, 2
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, tail: str = "high", threshold_quantile: float = 0.95,
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.eot.reader import fetch_eot_converged_grid_agg
-        return fetch_eot_converged_grid_agg(
-            config, tail, threshold_quantile, resolution, refresh=refresh
-        )
 
 
 class _EOTConvergedAllQuery:
@@ -146,16 +126,6 @@ class _EOTConvergedAllQuery:
             ORDER BY 1, 2
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, threshold_quantile: float = 0.95,
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.eot.reader import fetch_eot_converged_all_grid_agg
-        return fetch_eot_converged_all_grid_agg(
-            config, threshold_quantile, resolution, refresh=refresh
-        )
 
 
 register_grid_query(_EOTConvergenceQuery())

@@ -8,7 +8,7 @@ from .global_map import (
     plot_eot_threshold_map,
     plot_eot_xi_map,
 )
-from .plot import (
+from lakeviz.domain.eot import (
     plot_eot_extremes,
     plot_extremes_timeline,
     plot_extremes_with_hawkes,

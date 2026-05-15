@@ -12,12 +12,8 @@ import pandas as pd
 class LakeProvider(ABC):
     """Strategy interface for lake data access.
 
-    Implementations:
-        - PostgresLakeProvider: psycopg-based, full read/write
-        - ParquetLakeProvider: DuckDB-based, read-only
-
-    The interface covers shared backend reads plus visualization/export access.
-    Batch-specific workflow semantics live in lakeanalysis.batch.io.
+    Implementation:
+        - ParquetLakeProvider: DuckDB-based, full read
     """
 
     # ------------------------------------------------------------------

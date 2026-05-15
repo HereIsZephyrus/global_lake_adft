@@ -43,14 +43,6 @@ class _PWMConvergenceQuery:
             """)
         ), log=log)
 
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.pwm.reader import fetch_pwm_convergence_grid_agg
-        return fetch_pwm_convergence_grid_agg(config, resolution, refresh=refresh)
-
-
 class _PWMConvergedQuery:
     name = "pwm.converged"
 
@@ -73,14 +65,6 @@ class _PWMConvergedQuery:
             ORDER BY 1, 2
             """)
         ), log=log)
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.pwm.reader import fetch_pwm_converged_grid_agg
-        return fetch_pwm_converged_grid_agg(config, resolution, refresh=refresh)
-
 
 class _PWMMonthlyThresholdQuery:
     name = "pwm.monthly_threshold"
@@ -107,14 +91,6 @@ class _PWMMonthlyThresholdQuery:
         ), log=log)
         df["month"] = df["month"].astype(int)
         return df
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.pwm.reader import fetch_pwm_monthly_threshold_grid_agg
-        return fetch_pwm_monthly_threshold_grid_agg(config, resolution, refresh=refresh)
-
 
 class _PWMExceedanceQuery:
     name = "pwm.exceedance"
@@ -151,17 +127,6 @@ class _PWMExceedanceQuery:
             """)
         ), log=log)
 
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, p_high: float = 0.05, p_low: float = 0.05,
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.pwm.reader import fetch_pwm_exceedance_grid_agg
-        return fetch_pwm_exceedance_grid_agg(
-            config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
-        )
-
-
 class _PWMMonthlyExceedanceQuery:
     name = "pwm.monthly_exceedance"
 
@@ -195,17 +160,6 @@ class _PWMMonthlyExceedanceQuery:
         ), log=log)
         df["month"] = df["month"].astype(int)
         return df
-
-    def fetch_postgres(
-        self, config: Any, resolution: float,
-        *, refresh: bool = False, p_high: float = 0.05, p_low: float = 0.05,
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        from lakesource.pwm.reader import fetch_pwm_monthly_exceedance_grid_agg
-        return fetch_pwm_monthly_exceedance_grid_agg(
-            config, resolution, p_high=p_high, p_low=p_low, refresh=refresh
-        )
-
 
 register_grid_query(_PWMConvergenceQuery())
 register_grid_query(_PWMConvergedQuery())

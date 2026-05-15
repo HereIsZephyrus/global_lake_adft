@@ -661,10 +661,7 @@ def plot_gt10_vs_full_panels(
     draw_hatch: bool = False,
     domains: tuple[str, ...] = ("quantile", "pwm", "eot"),
 ) -> list[Path]:
-<<<<<<< HEAD
-=======
     """Plot gt10 vs full panels for given algorithm domains."""
->>>>>>> 7c9cd9b (feat: comparison expansion — 3 dimension comparison (gt10 vs full, quantile vs pwm, pwm vs eot hawkes) + CSV convergence + migration)
     outputs: list[Path] = []
     int_bounds_map = {"quantile": True, "pwm": True, "eot": False}
     for domain in domains:
