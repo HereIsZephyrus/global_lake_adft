@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING
 from .line import LineStyle
 from .scatter import ScatterStyle
 from .bar import BarStyle
-from .histogram import HistogramStyle
-from .fill import FillStyle
 from .reference import ReferenceLineStyle
-from .base import AxisStyle
 
 if TYPE_CHECKING:
     from lakeviz.config import VizConfig

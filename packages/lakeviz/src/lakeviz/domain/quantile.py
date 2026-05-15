@@ -9,7 +9,6 @@ from lakeviz.draw.line import draw_line
 from lakeviz.draw.scatter import draw_scatter
 from lakeviz.draw.bar import draw_bar
 from lakeviz.draw.reference import draw_axhline, draw_axvline
-from lakeviz.draw.annotate import draw_annotate_point
 from lakeviz.style.base import AxisStyle, apply_axis_style
 from lakeviz.style.line import LineStyle
 from lakeviz.style.scatter import ScatterStyle
@@ -23,8 +22,6 @@ from lakeviz.style.presets import (
     QUANTILE_TRANSITION_L2H,
     QUANTILE_TRANSITION_H2L,
     ADFT_LINE,
-    ADFT_D_TO_W,
-    ADFT_W_TO_D,
 )
 
 
