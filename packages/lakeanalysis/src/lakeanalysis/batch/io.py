@@ -141,6 +141,7 @@ class ProviderBatchWriter(BatchWriter):
         "eot_hawkes": "eot_hawkes_run_status",
         "eot": "eot_run_status",
         "comparison": "comparison_run_status",
+        "hawkes_comparison": "hawkes_comparison",
         "area_quality": "quality_run_status",
     }
 

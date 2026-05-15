@@ -9,7 +9,10 @@ from lakesource.comparison.schema import (
     RUN_STATUS_DONE,
     RUN_STATUS_ERROR,
 )
-from lakesource.comparison.store import make_run_status_row
+from lakesource.comparison.store import (
+    make_comparison_agreement_row,
+    make_run_status_row,
+)
 from lakesource.pwm.schema import (
     PWMExtremeResult,
     RUN_STATUS_DONE as PWM_DONE,
@@ -170,6 +173,16 @@ class ComparisonCalculator(Calculator):
                 error_message="; ".join(error_parts) if error_parts else None,
             )
         ]
+
+        if isinstance(result.quantile_result, QuantileResult) and isinstance(result.pwm_result, PWMExtremeResult):
+            rows["comparison_agreement"] = [
+                make_comparison_agreement_row(
+                    hylak_id=result.hylak_id,
+                    quantile_labels_df=result.quantile_result.labels_df,
+                    pwm_labels_df=result.pwm_result.labels_df,
+                )
+            ]
+
         return rows
 
     def error_to_rows(

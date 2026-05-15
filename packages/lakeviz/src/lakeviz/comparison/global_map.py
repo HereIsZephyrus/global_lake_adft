@@ -243,6 +243,79 @@ def _standardize_pwm_vs_eot(
     return merged
 
 
+def _standardize_gt10_vs_full(
+    resolution: float,
+    *,
+    domain: str,
+    refresh: bool = False,
+    gt10_dir: Path,
+    full_dir: Path,
+) -> pd.DataFrame:
+    """Standardize gt10 vs full comparison for a given algorithm domain."""
+    gt10_provider = _build_provider_for_parquet(gt10_dir)
+    full_provider = _build_provider_for_parquet(full_dir)
+
+    if domain == "quantile":
+        gt10 = _fetch_quantile_per_lake_stats(gt10_provider, resolution, refresh=refresh)
+        full = _fetch_quantile_per_lake_stats(full_provider, resolution, refresh=refresh)
+        q_metrics = ["mean_high", "median_high", "mean_low", "median_low", "mean_all", "median_all"]
+        left_map = {m: f"left_{m}" for m in q_metrics}
+        right_map = {m: f"right_{m}" for m in q_metrics}
+        return _merge_two(gt10, full, left_map=left_map, right_map=right_map)
+
+    elif domain == "pwm":
+        gt10 = _fetch_pwm_exceedance(gt10_provider, resolution, p=0.05, refresh=refresh)
+        full = _fetch_pwm_exceedance(full_provider, resolution, p=0.05, refresh=refresh)
+        mapping = {
+            "mean_high_exceedance": "high_mean",
+            "median_high_exceedance": "high_median",
+            "mean_low_exceedance": "low_mean",
+            "median_low_exceedance": "low_median",
+            "mean_all_exceedance": "all_mean",
+            "median_all_exceedance": "all_median",
+        }
+        left_map = {k: f"left_{v}" for k, v in mapping.items()}
+        right_map = {k: f"right_{v}" for k, v in mapping.items()}
+        return _merge_two(gt10, full, left_map=left_map, right_map=right_map)
+
+    elif domain == "eot":
+        gt10_high = _fetch_eot_tail(gt10_provider, resolution, tail="high", q=0.95, refresh=refresh)
+        gt10_low = _fetch_eot_tail(gt10_provider, resolution, tail="low", q=0.95, refresh=refresh)
+        gt10_all = _fetch_eot_all(gt10_provider, resolution, q=0.95, refresh=refresh)
+        full_high = _fetch_eot_tail(full_provider, resolution, tail="high", q=0.95, refresh=refresh)
+        full_low = _fetch_eot_tail(full_provider, resolution, tail="low", q=0.95, refresh=refresh)
+        full_all = _fetch_eot_all(full_provider, resolution, q=0.95, refresh=refresh)
+
+        merged = _merge_two(
+            gt10_high, full_high,
+            left_map={"mean_extremes_freq": "left_high_mean", "median_extremes_freq": "left_high_median"},
+            right_map={"mean_extremes_freq": "right_high_mean", "median_extremes_freq": "right_high_median"},
+        )
+        merged = merged.merge(
+            _merge_two(
+                gt10_low, full_low,
+                left_map={"mean_extremes_freq": "left_low_mean", "median_extremes_freq": "left_low_median"},
+                right_map={"mean_extremes_freq": "right_low_mean", "median_extremes_freq": "right_low_median"},
+            )[["cell_lat", "cell_lon", "left_low_mean", "left_low_median", "right_low_mean", "right_low_median"]],
+            on=["cell_lat", "cell_lon"], how="outer",
+        )
+        merged = merged.merge(
+            _merge_two(
+                gt10_all, full_all,
+                left_map={"mean_all_extremes_freq": "left_all_mean", "median_all_extremes_freq": "left_all_median"},
+                right_map={"mean_all_extremes_freq": "right_all_mean", "median_all_extremes_freq": "right_all_median"},
+            )[["cell_lat", "cell_lon", "left_all_mean", "left_all_median", "right_all_mean", "right_all_median"]],
+            on=["cell_lat", "cell_lon"], how="outer",
+        )
+        for col in merged.columns:
+            if col.startswith("left_") or col.startswith("right_"):
+                merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(0.0)
+        return merged
+
+    else:
+        raise ValueError(f"Unknown domain for gt10 vs full comparison: {domain}")
+
+
 def _build_provider_for_parquet(data_dir: Path):
     provider = create_provider(SourceConfig(backend=Backend.PARQUET, data_dir=data_dir))
     # `data/parquet` and `data/parquet_gt10` would otherwise both use `data/cache`.
@@ -586,10 +659,15 @@ def plot_gt10_vs_full_panels(
     gt10_dir: Path,
     full_dir: Path,
     draw_hatch: bool = False,
+    domains: tuple[str, ...] = ("quantile", "pwm", "eot"),
 ) -> list[Path]:
+<<<<<<< HEAD
+=======
+    """Plot gt10 vs full panels for given algorithm domains."""
+>>>>>>> 7c9cd9b (feat: comparison expansion — 3 dimension comparison (gt10 vs full, quantile vs pwm, pwm vs eot hawkes) + CSV convergence + migration)
     outputs: list[Path] = []
     int_bounds_map = {"quantile": True, "pwm": True, "eot": False}
-    for domain in ("quantile", "pwm", "eot"):
+    for domain in domains:
         df = _standardize_gt10_vs_full(
             config.resolution,
             domain=domain,

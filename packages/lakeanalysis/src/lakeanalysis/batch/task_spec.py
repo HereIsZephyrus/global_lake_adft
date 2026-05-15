@@ -50,6 +50,7 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         done_requires_status=True,
         ensure_tables=(
             "comparison_run_status",
+            "comparison_agreement",
             "quantile_labels",
             "quantile_extremes",
             "quantile_abrupt_transitions",
@@ -74,6 +75,21 @@ _TASK_SPECS: dict[str, BatchTaskSpec] = {
         ensure_tables=(
             "eot_return_levels",
             "eot_hawkes_run_status",
+        ),
+    ),
+    "hawkes_comparison": BatchTaskSpec(
+        done_table="hawkes_comparison",
+        done_requires_status=True,
+        ensure_tables=(
+            "hawkes_comparison",
+            "pwm_hawkes_run_status",
+            "pwm_hawkes_results",
+            "pwm_hawkes_lrt",
+            "pwm_hawkes_transition_monthly",
+            "eot_hawkes_run_status",
+            "eot_hawkes_results",
+            "eot_hawkes_lrt",
+            "eot_hawkes_transition_monthly",
         ),
     ),
     "shift_labels": BatchTaskSpec(

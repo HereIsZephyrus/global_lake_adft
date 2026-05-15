@@ -99,6 +99,7 @@ def grid_agg(
     if sample_file is None:
         sample_file = str(SourceConfig().data_dir.parent / "comparison" / "sample_lakes.parquet")
     import pandas as pd
+    from lakesource.config import SourceConfig
     from lakesource.provider.factory import create_provider
 
     sample = pd.read_parquet(sample_file)
@@ -136,3 +137,76 @@ def sample_lakes(
     out.mkdir(parents=True, exist_ok=True)
     sampled.to_parquet(out / "sample_lakes.parquet", index=False)
     typer.echo(f"Sampled {len(sampled)} lakes → {out / 'sample_lakes.parquet'}")
+
+
+@app.command()
+def dataset(
+    gt10_dir: str = typer.Option(None, help="Parquet data dir for gt10 dataset"),
+    full_dir: str = typer.Option(None, help="Parquet data dir for full dataset"),
+    resolution: float = typer.Option(0.5, help="Grid resolution in degrees"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force recompute cache"),
+    output_dir: str = typer.Option(None, help="Output directory for figures"),
+    min_lakes: int = typer.Option(1, help="Min lake count per grid cell"),
+    draw_hatch: bool = typer.Option(False, "--hatch", help="Hatch cells with no data"),
+) -> None:
+    """Compare gt10 vs full dataset across quantile, pwm, eot domains."""
+    setup_logging("comparison-dataset")
+    from pathlib import Path
+    from lakesource.config import SourceConfig
+    from lakeviz.comparison.global_map import GlobalGridConfig, plot_gt10_vs_full_panels
+
+    if gt10_dir is None:
+        gt10_dir = str(SourceConfig(filter_name="gt10").data_dir)
+    if full_dir is None:
+        full_dir = str(SourceConfig(filter_name="full").data_dir)
+    if output_dir is None:
+        output_dir = str(output_path("comparison", "benchmarks", "algorithms", "full", "figures", "global"))
+
+    from lakesource.provider.factory import create_provider
+    provider = create_provider(SourceConfig())
+    config = GlobalGridConfig(
+        provider=provider,
+        resolution=resolution,
+        output_dir=Path(output_dir) / "comparison_dataset",
+    )
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    outputs = plot_gt10_vs_full_panels(
+        config,
+        refresh=refresh,
+        min_lakes=min_lakes,
+        gt10_dir=Path(gt10_dir),
+        full_dir=Path(full_dir),
+        draw_hatch=draw_hatch,
+    )
+    typer.echo(f"Dataset comparison complete: {len(outputs)} figures → {config.output_dir}")
+
+
+@app.command()
+def hawkes(
+    sample_file: str = typer.Option(..., "--sample-file", help="Path to sample_lakes.parquet"),
+    chunk_size: ChunkSizeOpt = 500,
+    io_budget: IoBudgetOpt = 4,
+    output_dir: str = typer.Option(None, help="Output directory"),
+) -> None:
+    """Compare PWM-Hawkes vs EOT-Hawkes on sampled lakes."""
+    setup_logging("hawkes-comparison")
+    import pandas as pd
+    from lakeanalysis.batch import Engine, IdSetFilter, build_provider_batch_reader, build_provider_batch_writer
+    from lakesource.config import SourceConfig
+
+    sample = pd.read_parquet(sample_file)
+    sample_ids = set(int(v) for v in sample["hylak_id"].dropna().tolist())
+
+    config = SourceConfig()
+    if output_dir is None:
+        output_dir = str(output_path("comparison", "benchmarks", "hawkes"))
+    reader = build_provider_batch_reader(config, done_table="hawkes_comparison", done_requires_status=True)
+    writer = build_provider_batch_writer(config, ensure_tables=["hawkes_comparison"])
+    calculator = CalculatorFactory.create("hawkes_comparison")
+    engine = Engine(
+        reader=reader, writer=writer, calculator=calculator,
+        algorithm="hawkes_comparison", lake_filter=IdSetFilter(sample_ids),
+        chunk_size=chunk_size, io_budget=io_budget,
+    )
+    engine.run()
+    typer.echo(f"Hawkes comparison complete. Output: {output_dir}")

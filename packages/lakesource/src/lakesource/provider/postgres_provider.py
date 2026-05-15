@@ -81,6 +81,7 @@ _ENSURE_DISPATCH = {
     "eot_return_levels": ("eot", "ensure_eot_results_table"),
     "eot_run_status": ("eot", "ensure_eot_results_table"),
     "comparison_run_status": ("comparison", "ensure_comparison_tables"),
+    "comparison_agreement": ("comparison", "ensure_comparison_tables"),
 }
 
 _UPSERT_DISPATCH = {
@@ -113,6 +114,7 @@ _UPSERT_DISPATCH = {
     "eot_return_levels": ("eot", "upsert_eot_return_levels"),
     "eot_run_status": ("eot", "upsert_eot_run_status"),
     "comparison_run_status": ("comparison", "upsert_comparison_run_status"),
+    "comparison_agreement": ("comparison", "upsert_comparison_agreement"),
 }
 
 
