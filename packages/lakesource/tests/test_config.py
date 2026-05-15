@@ -20,7 +20,8 @@ def test_default_backend_from_adapter_yaml():
     assert config.backend == Backend.PARQUET
 
 
-def test_parquet_backend_requires_data_dir():
+def test_parquet_backend_requires_data_dir(monkeypatch):
+    monkeypatch.delenv("PARQUET_DATA_DIR", raising=False)
     with pytest.raises(ValueError, match="data_dir is required"):
         SourceConfig(backend=Backend.PARQUET)
 

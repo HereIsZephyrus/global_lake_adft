@@ -256,7 +256,89 @@ def plot_anomaly_upset(
     counts = upsetplot.from_indicators(list(rename_map.values()), data=plot_df)
     counts = counts[counts >= min_size]
     fig = plt.figure(figsize=(10, 6))
-    upsetplot.plot(counts, fig=fig, show_counts=show_counts, sort_by="cardinality")
+
+    _original_plot_matrix = upsetplot.UpSet.plot_matrix
+
+    def _patched_plot_matrix(self, ax):
+        ax = self._reorient(ax)
+        data = self.intersections
+        n_cats = data.index.nlevels
+        inclusion = data.index.to_frame().values
+        styles = [
+            [
+                self.subset_styles[i]
+                if inclusion[i, j]
+                else {"facecolor": self._other_dots_color, "linewidth": 0}
+                for j in range(n_cats)
+            ]
+            for i in range(len(data))
+        ]
+        styles = sum(styles, [])
+        style_columns = {
+            "facecolor": "facecolors",
+            "edgecolor": "edgecolors",
+            "linewidth": "linewidths",
+            "linestyle": "linestyles",
+            "hatch": "hatch",
+        }
+        styles = (
+            pd.DataFrame(styles)
+            .reindex(columns=style_columns.keys())
+            .astype(
+                {
+                    "facecolor": "O",
+                    "edgecolor": "O",
+                    "linewidth": float,
+                    "linestyle": "O",
+                    "hatch": "O",
+                }
+            )
+        )
+        styles["linewidth"] = styles["linewidth"].fillna(1)
+        styles["facecolor"] = styles["facecolor"].fillna(self._facecolor)
+        styles["edgecolor"] = styles["edgecolor"].fillna(styles["facecolor"])
+        styles["linestyle"] = styles["linestyle"].fillna("solid")
+        del styles["hatch"]
+
+        x = np.repeat(np.arange(len(data)), n_cats)
+        y = np.tile(np.arange(n_cats), len(data))
+        if self._element_size is not None:
+            s = (self._element_size * 0.35) ** 2
+        else:
+            s = 200
+        ax.scatter(
+            *self._swapaxes(x, y),
+            s=s,
+            zorder=10,
+            **styles.rename(columns=style_columns),
+        )
+        if self._with_lines:
+            idx = np.flatnonzero(inclusion)
+            line_data = (
+                pd.Series(y[idx], index=x[idx])
+                .groupby(level=0)
+                .aggregate(["min", "max"])
+            )
+            colors = pd.Series(
+                [
+                    style.get("edgecolor", style.get("facecolor", self._facecolor))
+                    for style in self.subset_styles
+                ],
+                name="color",
+            )
+            line_data = line_data.join(colors)
+            ax.vlines(
+                line_data.index.values,
+                line_data["min"],
+                line_data["max"],
+                colors=line_data["color"],
+            )
+
+    upsetplot.UpSet.plot_matrix = _patched_plot_matrix
+    try:
+        upsetplot.plot(counts, fig=fig, show_counts=show_counts, sort_by="cardinality")
+    finally:
+        upsetplot.UpSet.plot_matrix = _original_plot_matrix
     fig.suptitle(title, fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     return fig

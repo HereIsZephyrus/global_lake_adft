@@ -19,7 +19,7 @@ from lakesource.config import Backend, SourceConfig
 from lakesource.env import load_env
 from lakeanalysis.batch import build_batch_reader
 from lakeanalysis.batch.calculator import CalculatorFactory
-from lakeanalysis.batch.domain import LakeTask
+from lakeanalysis.batch import LakeTask
 
 
 # ------------------------------------------------------------------
