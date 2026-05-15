@@ -30,7 +30,7 @@ SMOKE_MPI_LOG_FILE="${SMOKE_MPI_LOG_FILE:-}"
 
 smoke_require_commands() {
   command -v "$MPI_LAUNCHER" >/dev/null
-  command -v uv >/dev/null
+  command -v python >/dev/null
 }
 
 smoke_range_args() {
