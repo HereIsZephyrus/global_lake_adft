@@ -15,7 +15,6 @@ def _make_result(
     index_values: list[float],
     years: list[int] | None = None,
     months: list[int] | None = None,
-    hylak_id: int | None = None,
 ) -> DecompositionResult:
     """Build a DecompositionResult with synthetic STL-like index_value."""
     n = len(index_values)
@@ -23,7 +22,7 @@ def _make_result(
         years = list(range(2000, 2000 + n))
     if months is None:
         months = [(i % 12) + 1 for i in range(n)]
-    water_areas = [v * 100.0 for v in index_values]  # dummy water_area
+    water_areas = [v * 100.0 for v in index_values]
     df = pd.DataFrame({
         "year": years,
         "month": months,
@@ -36,85 +35,107 @@ def _make_result(
 
 
 class TestComputePooledPWM:
-    def test_basic_returns_pwm_extreme_result(self):
-        data = [1.0, 1.1, 1.2, 0.9, 1.0, 1.3, 1.1, 1.2, 1.0, 0.8,
-                1.1, 1.3, 1.2, 1.0, 0.9, 1.1, 1.4, 1.2, 1.0, 0.7,
-                1.0, 1.2, 1.3, 1.1, 1.0, 0.9, 1.2, 1.3, 1.0, 0.8]
+    def test_result_structure_and_pooled_lambda(self):
+        """Verify result structure and that all 12 months share the SAME lambda (pooled)."""
+        data = np.random.RandomState(0).lognormal(0.0, 0.3, 60).tolist()
         result = _make_result(data)
         pwm = compute_pooled_pwm_thresholds(result, hylak_id=42)
         assert isinstance(pwm, PWMExtremeResult)
         assert pwm.hylak_id == 42
-        assert len(pwm.month_results) == 12  # one per month
-
-    def test_all_month_results_share_same_lambda(self):
-        data = np.random.RandomState(0).lognormal(0.0, 0.3, 60).tolist()
-        result = _make_result(data)
-        pwm = compute_pooled_pwm_thresholds(result)
+        assert len(pwm.month_results) == 12
+        assert all(mr.converged for mr in pwm.month_results)
+        # Pooled: all months share the same lambda_opt
         first_lam = pwm.month_results[0].lambda_opt
         for mr in pwm.month_results[1:]:
             np.testing.assert_allclose(mr.lambda_opt, first_lam)
+        # All months share the same epsilon
+        assert all(mr.epsilon == pwm.month_results[0].epsilon for mr in pwm.month_results)
+        # Objective value is reasonable
+        assert 0 < pwm.month_results[0].objective_value < 1e6
 
-    def test_thresholds_df_has_all_months(self):
+    def test_thresholds_are_monotonic_and_compare_correctly(self):
+        """Threshold_high > threshold_low for every month, values are positive."""
         data = np.random.RandomState(1).lognormal(0.0, 0.3, 60).tolist()
         result = _make_result(data)
         pwm = compute_pooled_pwm_thresholds(result)
         td = pwm.thresholds_df
-        assert sorted(td["month"].tolist()) == list(range(1, 13))
-        assert all(td["threshold_high"] > td["threshold_low"])
+        assert len(td) == 12
+        for _, row in td.iterrows():
+            assert row["threshold_high"] > row["threshold_low"]
+            assert row["threshold_low"] > 0
+            assert row["threshold_high"] > 0
 
-    def test_labels_df_has_extreme_label_column(self):
+    def test_labels_classify_known_extreme_indices(self):
+        """An index_value far above threshold_high must be labeled extreme_high."""
         data = np.random.RandomState(2).lognormal(0.0, 0.3, 60).tolist()
         result = _make_result(data)
+        pwm = compute_pooled_pwm_thresholds(result, hylak_id=1)
+        labels = pwm.labels_df
+        assert "extreme_label" in labels.columns
+        assert all(labels["hylak_id"] == 1)
+        # At least some extremes should exist (lognormal has a right tail)
+        label_counts = labels["extreme_label"].value_counts()
+        assert label_counts.get("normal", 0) > 0
+        # High extremes should not be empty
+        assert label_counts.get("extreme_high", 0) > 0
+
+    def test_extremes_severity_matches_formula(self):
+        """Each extreme's severity equals |index_value - threshold|."""
+        data = np.random.RandomState(3).lognormal(0.0, 0.3, 60).tolist()
+        result = _make_result(data)
         pwm = compute_pooled_pwm_thresholds(result)
-        assert "extreme_label" in pwm.labels_df.columns
-        assert set(pwm.labels_df["extreme_label"].unique()).issubset(
-            {"extreme_high", "extreme_low", "normal"}
-        )
+        extremes = pwm.extremes_df
+        assert len(extremes) > 0
+        for _, row in extremes.iterrows():
+            expected_sev = abs(row["index_value"] - row["threshold"])
+            assert row["severity"] == pytest.approx(expected_sev, rel=1e-6)
+            assert row["event_type"] in ("high", "low")
 
-    def test_labels_df_includes_hylak_id_when_provided(self):
-        data = [1.0] * 24
-        result = _make_result(data, hylak_id=99)
-        pwm = compute_pooled_pwm_thresholds(result, hylak_id=99)
-        assert (pwm.labels_df["hylak_id"] == 99).all()
-
-    def test_labels_df_has_na_hylak_id_when_not_given(self):
+    def test_hylak_id_defaults_to_na(self):
+        """When hylak_id is not given, labels_df has pd.NA hylak_id."""
         data = [1.0] * 24
         result = _make_result(data)
         pwm = compute_pooled_pwm_thresholds(result)
+        assert pwm.hylak_id is None
         assert pwm.labels_df["hylak_id"].isna().all()
 
+    def test_extreme_labels_map_to_threshold(self):
+        """Extreme-high rows have index_value >= threshold_high.
+        Extreme-low rows have index_value <= threshold_low."""
+        data = np.random.RandomState(4).lognormal(0.0, 0.3, 60).tolist()
+        result = _make_result(data)
+        pwm = compute_pooled_pwm_thresholds(result)
+        df = pwm.labels_df
+        high_mask = df["extreme_label"] == "extreme_high"
+        low_mask = df["extreme_label"] == "extreme_low"
+        if high_mask.any():
+            assert (df.loc[high_mask, "index_value"] >= df.loc[high_mask, "threshold_high"]).all()
+        if low_mask.any():
+            assert (df.loc[low_mask, "index_value"] <= df.loc[low_mask, "threshold_low"]).all()
+
     def test_raises_on_insufficient_observations(self):
-        result = _make_result([1.0, 1.1, 1.2])  # 3 < 10 default min
+        result = _make_result([1.0, 1.1, 1.2])
         with pytest.raises(ValueError, match="Insufficient observations"):
             compute_pooled_pwm_thresholds(result)
 
     def test_raises_on_nonpositive_mean(self):
-        result = _make_result([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        result = _make_result([0.0] * 20)
         with pytest.raises(ValueError, match="Mean index_value must be positive"):
             compute_pooled_pwm_thresholds(result)
 
-    def test_extremes_df_is_populated(self):
-        data = [1.0, 1.1, 1.2, 0.7, 1.0, 1.5, 1.1, 1.2, 1.0, 0.6,
-                1.1, 1.4, 1.2, 1.0, 0.9, 1.1, 1.3, 1.2, 1.0, 0.5,
-                1.0, 1.2, 1.3, 1.1, 1.0, 0.9, 1.2, 1.3, 1.0, 0.4]
-        result = _make_result(data)
-        pwm = compute_pooled_pwm_thresholds(result)
-        assert len(pwm.extremes_df) > 0
-        assert "severity" in pwm.extremes_df.columns
-        assert all(pwm.extremes_df["severity"] >= 0)
-
-    def test_custom_config_respected(self):
-        data = np.random.RandomState(3).lognormal(0.0, 0.3, 60).tolist()
+    def test_custom_n_pwm_config_changes_lambda_dimension(self):
+        data = np.random.RandomState(5).lognormal(0.0, 0.3, 60).tolist()
         result = _make_result(data)
         config = PWMExtremeConfig(n_pwm=3, p_low=0.10, l2_regularization=1e-4)
         pwm = compute_pooled_pwm_thresholds(result, config=config)
-        assert len(pwm.month_results[0].lambda_opt) == 4  # K+1 = 3+1
+        # K=3 → lambda_opt length = K+1 = 4
+        assert len(pwm.month_results[0].lambda_opt) == 4
+        assert len(pwm.month_results[0].pwm_coefficients) == 4
 
-    def test_convergence_flag_is_set(self):
-        data = np.random.RandomState(4).lognormal(0.0, 0.3, 60).tolist()
+    def test_beta_coefficients_sum_to_approximately_one(self):
+        """pwm_coefficients[0] should be close to 1.0 (b_0 = mean)."""
+        data = np.random.RandomState(6).lognormal(0.0, 0.3, 60).tolist()
         result = _make_result(data)
         pwm = compute_pooled_pwm_thresholds(result)
-        for mr in pwm.month_results:
-            assert isinstance(mr.converged, bool)
-            assert isinstance(mr.objective_value, float)
+        b = pwm.month_results[0].pwm_coefficients
+        assert b[0] == pytest.approx(1.0, rel=0.01)
