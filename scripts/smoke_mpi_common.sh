@@ -21,6 +21,7 @@ export OUTPUT_DIR="${OUTPUT_DIR:-$SMOKE_MPI_OUTPUT_ROOT/$SMOKE_MPI_FILTER}"
 export LAKE_FILTER="$SMOKE_MPI_FILTER"
 
 NP="${NP:-4}"
+MPI_LAUNCHER="${MPI_LAUNCHER:-mpiexec}"
 CHUNK_SIZE="${CHUNK_SIZE:-3}"
 ID_START="${ID_START:-0}"
 ID_END="${ID_END:-2000}"
@@ -28,7 +29,7 @@ SMOKE_MPI_TIMESTAMP="${SMOKE_MPI_TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
 SMOKE_MPI_LOG_FILE="${SMOKE_MPI_LOG_FILE:-}"
 
 smoke_require_commands() {
-  command -v mpiexec >/dev/null
+  command -v "$MPI_LAUNCHER" >/dev/null
   command -v uv >/dev/null
 }
 
@@ -41,7 +42,7 @@ smoke_range_args() {
 }
 
 run_mpi() {
-  mpiexec --oversubscribe -np "$NP" "$@"
+  "$MPI_LAUNCHER" --oversubscribe -np "$NP" "$@"
 }
 
 smoke_cleanup_tables() {
@@ -62,6 +63,7 @@ data_backend=$DATA_BACKEND
 parquet_data_dir=$PARQUET_DATA_DIR
 output_dir=$OUTPUT_DIR
 np=$NP
+mpi_launcher=$MPI_LAUNCHER
 chunk_size=$CHUNK_SIZE
 id_start=$ID_START
 id_end=$ID_END
