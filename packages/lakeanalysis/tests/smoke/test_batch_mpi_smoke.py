@@ -149,6 +149,15 @@ def _parse_success_count(stdout: str) -> int:
     return int(match.group(1)) if match else -1
 
 
+def _read_parquet_table(parquet_output_dir: Path, table_name: str):
+    import pandas as pd
+
+    table_path = parquet_output_dir / f"{table_name}.parquet"
+    if not table_path.exists():
+        return None
+    return pd.read_parquet(table_path)
+
+
 @pytest.mark.usefixtures("mpi_available")
 def test_mpi_quantile_smoke(backend, id_range, source_config, parquet_data_dir, parquet_output_dir, cleanup):
     id_start, id_end = id_range
@@ -260,3 +269,71 @@ def test_mpi_no_deadlock_on_write(backend, id_range, source_config, parquet_data
         "quantile_labels",
     )
     assert result_hids >= done_count, f"Result table has fewer lakes ({result_hids}) than done status ({done_count})"
+
+
+@pytest.mark.usefixtures("mpi_available")
+def test_mpi_pwm_hawkes_smoke(
+    backend,
+    pwm_hawkes_id_range,
+    source_config,
+    parquet_data_dir,
+    parquet_output_dir,
+    cleanup_pwm_hawkes,
+):
+    id_start, id_end = pwm_hawkes_id_range
+    cleanup_pwm_hawkes.register("pwm_hawkes")
+
+    result = _run_mpi_batch(
+        ["pwm", "hawkes"],
+        id_start,
+        id_end,
+        backend=backend,
+        parquet_data_dir=parquet_data_dir,
+        parquet_output_dir=parquet_output_dir,
+        np=4,
+        chunk_size=1,
+    )
+
+    assert result.returncode == 0, (
+        f"mpiexec failed (rc={result.returncode}):\n"
+        f"stdout: {result.stdout[-3000:]}\n"
+        f"stderr: {result.stderr[-3000:]}"
+    )
+
+    done_count = _verify_done_count(
+        backend,
+        source_config,
+        parquet_output_dir,
+        id_start,
+        id_end,
+        algorithm="pwm_hawkes",
+    )
+    assert done_count >= 1, f"Expected at least one done PWM-Hawkes row, got {done_count}"
+
+    result_hids = _verify_result_table_count(
+        backend,
+        source_config,
+        parquet_output_dir,
+        id_start,
+        id_end,
+        "pwm_hawkes_results",
+    )
+    assert result_hids >= 1, "Expected at least one PWM-Hawkes result row"
+
+    if backend == "parquet":
+        assert parquet_output_dir is not None
+        results_df = _read_parquet_table(parquet_output_dir, "pwm_hawkes_results")
+        segments_df = _read_parquet_table(parquet_output_dir, "pwm_hawkes_segments")
+        assert results_df is not None, "Missing pwm_hawkes_results parquet output"
+        assert segments_df is not None, "Missing pwm_hawkes_segments parquet output"
+
+        lake_results = results_df[
+            (results_df["hylak_id"] >= id_start) & (results_df["hylak_id"] < id_end)
+        ]
+        lake_segments = segments_df[
+            (segments_df["hylak_id"] >= id_start) & (segments_df["hylak_id"] < id_end)
+        ]
+        assert not lake_results.empty, "No PWM-Hawkes results for smoke lake"
+        assert bool(lake_results["qc_pass"].iloc[0]), "Smoke lake should pass PWM-Hawkes QC"
+        assert not lake_segments.empty, "Expected bidirectional bridge segments to be materialized"
+        assert set(lake_segments["segment_type"]).issubset({"transition", "unilateral"})

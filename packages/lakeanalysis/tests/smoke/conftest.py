@@ -76,10 +76,26 @@ _CLEANUP_TABLES: dict[str, list[str]] = {
         "eot_extremes",
         "eot_run_status",
     ],
+    "pwm_hawkes": [
+        "pwm_hawkes_results",
+        "pwm_hawkes_lrt",
+        "pwm_hawkes_transition_monthly",
+        "pwm_hawkes_run_status",
+        "pwm_hawkes_segments",
+        "pwm_hawkes_route_summary",
+        "pwm_extreme_return_levels",
+    ],
 }
 
 _PWM_CANDIDATE_STARTS = [2, 6, 14, 35, 63, 68, 483363]
 _PWM_CANDIDATE_WINDOW = 10
+_PWM_HAWKES_CANDIDATE_IDS = [9, 12, 4, 10, 82, 81, 17, 31, 85, 126]
+
+
+def _task_result_rows(calculator, task: LakeTask) -> dict[str, list[dict]]:
+    """Execute one lake through the calculator's batch-facing row contract."""
+    result = calculator.compute(task)
+    return calculator.result_to_rows(result)
 
 
 # ------------------------------------------------------------------
@@ -191,13 +207,57 @@ def pwm_id_range(backend, source_config):
                 extra=None,
             )
             try:
-                calculator.run(task)
-                success_ids.append(hylak_id)
+                rows_by_table = _task_result_rows(calculator, task)
+                run_status_rows = rows_by_table.get("pwm_extreme_run_status", [])
+                if run_status_rows and run_status_rows[0].get("status") == "done":
+                    success_ids.append(hylak_id)
             except Exception:
                 continue
         if success_ids:
             return min(success_ids), max(success_ids) + 1
     pytest.skip(f"No lakes satisfy PWM smoke requirements on {backend} backend")
+
+
+@pytest.fixture(scope="session")
+def pwm_hawkes_id_range(backend, source_config):
+    """Discover a tiny id range that succeeds with default PWM-Hawkes settings.
+
+    We probe curated candidate lakes from the bridge experiment and return the
+    first one that passes the current production defaults. Keeping this to a
+    single-lake range makes the MPI smoke deterministic and cheap.
+    """
+    reader = build_batch_reader(source_config)
+    calculator = CalculatorFactory.create("pwm_hawkes")
+
+    for hylak_id in _PWM_HAWKES_CANDIDATE_IDS:
+        lake_map = reader.fetch_lake_area_chunk(hylak_id, hylak_id + 1)
+        frozen_map = reader.fetch_frozen_year_months_chunk(hylak_id, hylak_id + 1)
+        series_df = lake_map.get(hylak_id)
+        if series_df is None:
+            continue
+
+        task = LakeTask(
+            hylak_id=hylak_id,
+            series_df=series_df,
+            frozen_year_months=frozenset(frozen_map.get(hylak_id, set())),
+            extra=None,
+        )
+        try:
+            rows_by_table = _task_result_rows(calculator, task)
+        except Exception:
+            continue
+
+        run_status_rows = rows_by_table.get("pwm_hawkes_run_status", [])
+        result_rows = rows_by_table.get("pwm_hawkes_results", [])
+        if not run_status_rows or not result_rows:
+            continue
+
+        run_status = run_status_rows[0]
+        result_row = result_rows[0]
+        if run_status.get("status") == "done" and bool(result_row.get("qc_pass", False)):
+            return hylak_id, hylak_id + 1
+
+    pytest.skip(f"No lakes satisfy PWM-Hawkes smoke requirements on {backend} backend")
 
 
 # ------------------------------------------------------------------
@@ -261,6 +321,44 @@ def cleanup_pwm(backend, source_config, pwm_id_range, parquet_output_dir):
     yield _Cleanup()
 
     id_start, id_end = pwm_id_range
+    for algo in registered:
+        tables = _CLEANUP_TABLES.get(algo, [])
+        if backend == "parquet":
+            for table in tables:
+                table_path = parquet_output_dir / f"{table}.parquet"
+                table_path.unlink(missing_ok=True)
+        else:
+            import psycopg
+
+            params = source_config.connection_params(
+                source_config.series_db_name or "lakecentroid"
+            )
+            conn = psycopg.connect(**params)
+            try:
+                for table in tables:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"DELETE FROM {table} "
+                            f"WHERE hylak_id >= %s AND hylak_id < %s",
+                            (id_start, id_end),
+                        )
+                    conn.commit()
+            finally:
+                conn.close()
+
+
+@pytest.fixture()
+def cleanup_pwm_hawkes(backend, source_config, pwm_hawkes_id_range, parquet_output_dir):
+    """Post-test cleanup for PWM-Hawkes tests (uses pwm_hawkes_id_range)."""
+    registered: list[str] = []
+
+    class _Cleanup:
+        def register(self, algorithm: str) -> None:
+            registered.append(algorithm)
+
+    yield _Cleanup()
+
+    id_start, id_end = pwm_hawkes_id_range
     for algo in registered:
         tables = _CLEANUP_TABLES.get(algo, [])
         if backend == "parquet":

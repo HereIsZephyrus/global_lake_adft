@@ -46,7 +46,7 @@ def hawkes(
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    decay_rate: float = typer.Option(1.0, help="Exponential decay rate λ for S_k strength"),
+    decay_rate: float = typer.Option(0.8, help="Exponential decay rate λ for S_k strength"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.30, help="Maximum event rate"),
@@ -100,7 +100,7 @@ def diag(
             filter_name=filter_name,
             limit_id=limit_id,
             calculator_kwargs=dict(
-                decay_rate=1.0, hawkes_window_months=4.0,
+                decay_rate=0.8, hawkes_window_months=4.0,
                 min_event_rate=min_event_rate,
                 max_event_rate=max_event_rate, min_relative_amplitude=0.05,
                 min_median_severity=1.0, monthly_significance_quantile=0.95,
