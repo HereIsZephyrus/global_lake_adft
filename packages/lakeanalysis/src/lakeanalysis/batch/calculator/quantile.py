@@ -14,13 +14,15 @@ from lakesource.quantile.store import (
     result_to_label_rows,
     result_to_transition_rows,
 )
-from lakeanalysis.quantile.service import run_single_lake_service
 from lakesource.quantile.schema import QuantileServiceConfig
+from lakeanalysis.quantile.service import run_single_lake_service
 
 from .extreme_base import ExtremeBatchCalculator
 
 
 class QuantileCalculator(ExtremeBatchCalculator):
+    """Batch wrapper for quantile anomaly transition results."""
+
     _run_status_table = "quantile_run_status"
     _run_status_done = RUN_STATUS_DONE
     _run_status_error = RUN_STATUS_ERROR
@@ -35,11 +37,22 @@ class QuantileCalculator(ExtremeBatchCalculator):
         method: str = "stl",
     ) -> None:
         super().__init__(
-            QuantileServiceConfig(
-                min_valid_per_month=min_valid_per_month,
-                min_valid_observations=min_valid_observations,
-                method=method,
-            )
+            min_valid_per_month=min_valid_per_month,
+            min_valid_observations=min_valid_observations,
+            method=method,
+        )
+
+    def build_service_config(
+        self,
+        *,
+        min_valid_per_month: int | None,
+        min_valid_observations: int | None,
+        method: str,
+    ) -> QuantileServiceConfig:
+        return QuantileServiceConfig(
+            min_valid_per_month=min_valid_per_month,
+            min_valid_observations=min_valid_observations,
+            method=method,
         )
 
     def result_to_rows(self, result: Any) -> dict[str, list[dict]]:

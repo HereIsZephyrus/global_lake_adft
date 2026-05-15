@@ -19,8 +19,28 @@ class ExtremeBatchCalculator(Calculator):
     _service_runner: Callable[..., Any]
     _run_status_builder: Callable[..., dict]
 
-    def __init__(self, service_config: Any) -> None:
-        self._service_config = service_config
+    def __init__(
+        self,
+        *,
+        min_valid_per_month: int | None = None,
+        min_valid_observations: int | None = None,
+        method: str = "stl",
+    ) -> None:
+        self._service_config = self.build_service_config(
+            min_valid_per_month=min_valid_per_month,
+            min_valid_observations=min_valid_observations,
+            method=method,
+        )
+
+    @abstractmethod
+    def build_service_config(
+        self,
+        *,
+        min_valid_per_month: int | None,
+        min_valid_observations: int | None,
+        method: str,
+    ) -> Any:
+        """Build the service config for the specific extreme algorithm."""
 
     def compute(self, task: LakeTask) -> Any:
         return self._service_runner(
@@ -56,7 +76,9 @@ class ExtremeBatchCalculator(Calculator):
             ]
         }
 
-    def with_done_status(self, rows: dict[str, list[dict]], result: Any) -> dict[str, list[dict]]:
+    def with_done_status(
+        self, rows: dict[str, list[dict]], result: Any
+    ) -> dict[str, list[dict]]:
         """Attach the standard success run-status row to result rows."""
         rows.update(
             self._run_status_rows(
