@@ -80,7 +80,6 @@ def entropy(
 def benchmark_algorithms(
     n_samples: int = typer.Option(50_000, "--n-samples", help="Number of benchmark sample lakes"),
     chunk_size: int = typer.Option(5_000, "--chunk-size", help="Batch chunk size"),
-    io_budget: int = typer.Option(4, "--io-budget", help="DB IO budget"),
     resolution: float = typer.Option(0.5, "--resolution", help="Grid resolution"),
     refresh: bool = typer.Option(False, "--refresh", help="Force recompute grid cache"),
     compare_gt10: bool = typer.Option(True, "--gt10/--no-gt10", help="Include gt10 comparison plots"),
@@ -99,7 +98,7 @@ def benchmark_algorithms(
     comparison_cli.run(
         sample_file=str(sample_file),
         chunk_size=chunk_size,
-        io_budget=io_budget,
+        filter_name="full",
         output_dir=str(sample_dir),
     )
     comparison_cli.grid_agg(sample_file=str(sample_file), resolution=resolution, refresh=refresh)

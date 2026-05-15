@@ -1,36 +1,13 @@
-"""MPI smoke tests for the batch engine.
-
-Tests the Manager/Worker MPI protocol with small chunk sizes and multiple
-workers to cover:
-- Worker chunk range isolation (no overlap between workers)
-- Manager IO scheduling (no deadlock from double-enqueue)
-- End-to-end persist verification
-
-Tests run against both PostgreSQL and Parquet backends via fixture parametrization.
-
-Run with:
-    uv run pytest tests/smoke/test_batch_mpi_smoke.py -v
-
-Requires:
-- ``mpi4py`` installed
-- ``mpiexec`` available on PATH
-"""
+"""MPI smoke tests for the batch engine using the unified lake_adft CLI."""
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
-
-
-import re
-
-
-def _uv_python() -> str:
-    """Return the uv-managed Python interpreter path for MPI subprocesses."""
-    return str(Path(__file__).resolve().parents[4] / ".venv" / "bin" / "python")
 
 
 @pytest.fixture(scope="session")
@@ -41,54 +18,54 @@ def mpi_available():
     except ImportError:
         pytest.skip("mpi4py not installed")
     try:
-        subprocess.run(
-            ["mpiexec", "--version"],
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
+        subprocess.run(["mpiexec", "--version"], capture_output=True, timeout=10, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pytest.skip("mpiexec not available")
 
 
 def _run_mpi_batch(
-    script_name: str,
+    cli_args: list[str],
     id_start: int,
     id_end: int,
     backend: str,
     parquet_data_dir: Path | None = None,
+    parquet_output_dir: Path | None = None,
     *,
     np: int,
     chunk_size: int,
     timeout: int = 300,
     extra_args: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    script = os.path.join(
-        os.path.dirname(__file__),
-        "..", "..", "scripts", script_name,
-    )
-    script = os.path.abspath(script)
-
+    filter_name = "full"
     cmd = [
         "mpiexec",
         "--oversubscribe",
-        "-np", str(np),
-        _uv_python(),
-        script,
-        "--chunk-size", str(chunk_size),
-        "--limit-id", str(id_end),
-        "--id-start", str(id_start),
-        "--id-end", str(id_end),
+        "-np",
+        str(np),
+        "uv",
+        "run",
+        "lake_adft",
+        *cli_args,
+        "--filter",
+        filter_name,
+        "--chunk-size",
+        str(chunk_size),
+        "--id-start",
+        str(id_start),
+        "--id-end",
+        str(id_end),
     ]
     if extra_args:
         cmd.extend(extra_args)
 
     env = {**os.environ, "LOG_LEVEL": "DEBUG", "DATA_BACKEND": backend}
+    env["LAKE_FILTER"] = filter_name
     if backend == "parquet" and parquet_data_dir is not None:
         env["PARQUET_DATA_DIR"] = str(parquet_data_dir)
-        env["LAKE_DATA_DIR"] = str(parquet_data_dir)
+    if backend == "parquet" and parquet_output_dir is not None:
+        env["OUTPUT_DIR"] = str(parquet_output_dir)
 
-    result = subprocess.run(
+    return subprocess.run(
         cmd,
         capture_output=True,
         text=True,
@@ -96,56 +73,47 @@ def _run_mpi_batch(
         env=env,
         check=False,
     )
-    return result
 
 
 def _verify_done_count(
     backend: str,
     source_config,
-    parquet_data_dir: Path | None,
+    parquet_output_dir: Path | None,
     id_start: int,
     id_end: int,
     algorithm: str = "quantile",
 ) -> int:
-    """Verify done records exist in the appropriate backend."""
     table_name = f"{algorithm}_run_status"
     if backend == "parquet":
         import pandas as pd
 
-        assert parquet_data_dir is not None
-        table_path = parquet_data_dir / f"{table_name}.parquet"
+        assert parquet_output_dir is not None
+        table_path = parquet_output_dir / f"{table_name}.parquet"
         if not table_path.exists():
             return 0
         df = pd.read_parquet(table_path)
-        mask = (
-            (df["hylak_id"] >= id_start)
-            & (df["hylak_id"] < id_end)
-            & (df["status"] == "done")
-        )
+        mask = (df["hylak_id"] >= id_start) & (df["hylak_id"] < id_end) & (df["status"] == "done")
         return int(mask.sum())
-    else:
-        import psycopg
 
-        params = source_config.connection_params(
-            source_config.series_db_name or "lakecentroid"
-        )
-        conn = psycopg.connect(**params)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT COUNT(*) FROM {table_name} "
-                    f"WHERE hylak_id >= %s AND hylak_id < %s AND status = 'done'",
-                    (id_start, id_end),
-                )
-                return int(cur.fetchone()[0])
-        finally:
-            conn.close()
+    import psycopg
+
+    params = source_config.connection_params(source_config.series_db_name or "lakecentroid")
+    conn = psycopg.connect(**params)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s AND status = 'done'",
+                (id_start, id_end),
+            )
+            return int(cur.fetchone()[0])
+    finally:
+        conn.close()
 
 
 def _verify_result_table_count(
     backend: str,
     source_config,
-    parquet_data_dir: Path | None,
+    parquet_output_dir: Path | None,
     id_start: int,
     id_end: int,
     table_name: str,
@@ -153,183 +121,142 @@ def _verify_result_table_count(
     if backend == "parquet":
         import pandas as pd
 
-        assert parquet_data_dir is not None
-        table_path = parquet_data_dir / f"{table_name}.parquet"
+        assert parquet_output_dir is not None
+        table_path = parquet_output_dir / f"{table_name}.parquet"
         if not table_path.exists():
             return 0
         df = pd.read_parquet(table_path)
         mask = (df["hylak_id"] >= id_start) & (df["hylak_id"] < id_end)
         return int(df[mask]["hylak_id"].nunique())
-    else:
-        import psycopg
 
-        params = source_config.connection_params(
-            source_config.series_db_name or "lakecentroid"
-        )
-        conn = psycopg.connect(**params)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT COUNT(DISTINCT hylak_id) FROM {table_name} "
-                    f"WHERE hylak_id >= %s AND hylak_id < %s",
-                    (id_start, id_end),
-                )
-                return int(cur.fetchone()[0])
-        finally:
-            conn.close()
+    import psycopg
+
+    params = source_config.connection_params(source_config.series_db_name or "lakecentroid")
+    conn = psycopg.connect(**params)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(DISTINCT hylak_id) FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s",
+                (id_start, id_end),
+            )
+            return int(cur.fetchone()[0])
+    finally:
+        conn.close()
 
 
 def _parse_success_count(stdout: str) -> int:
-    m = re.search(r"success=(\d+)", stdout)
-    return int(m.group(1)) if m else -1
+    match = re.search(r"success=(\d+)", stdout)
+    return int(match.group(1)) if match else -1
 
-
-# ------------------------------------------------------------------
-# MPI smoke tests
-# ------------------------------------------------------------------
 
 @pytest.mark.usefixtures("mpi_available")
-def test_mpi_quantile_smoke(backend, id_range, source_config, parquet_data_dir, cleanup):
-    """Launch quantile batch via ``mpiexec -np 4`` with small chunks.
-
-    Uses 3 workers + 1 manager to stress-test the IO scheduling protocol.
-    """
+def test_mpi_quantile_smoke(backend, id_range, source_config, parquet_data_dir, parquet_output_dir, cleanup):
     id_start, id_end = id_range
     cleanup.register("quantile")
 
     result = _run_mpi_batch(
-        "run_quantile.py",
-        id_start, id_end,
+        ["eot", "quantile", "--method", "stl"],
+        id_start,
+        id_end,
         backend=backend,
         parquet_data_dir=parquet_data_dir,
-        np=4, chunk_size=3,
+        parquet_output_dir=parquet_output_dir,
+        np=4,
+        chunk_size=3,
     )
 
-    assert result.returncode == 0, (
-        f"mpiexec failed (rc={result.returncode}):\n"
-        f"stdout: {result.stdout[-3000:]}\n"
-        f"stderr: {result.stderr[-3000:]}"
-    )
+    assert result.returncode == 0, f"mpiexec failed (rc={result.returncode}):\nstdout: {result.stdout[-3000:]}\nstderr: {result.stderr[-3000:]}"
 
-    done_count = _verify_done_count(
-        backend, source_config, parquet_data_dir, id_start, id_end
-    )
+    done_count = _verify_done_count(backend, source_config, parquet_output_dir, id_start, id_end)
     n_lakes = id_end - id_start
-    assert done_count >= max(1, n_lakes * 0.5), (
-        f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
-    )
+    assert done_count >= max(1, n_lakes * 0.5), f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
 
     result_hids = _verify_result_table_count(
-        backend, source_config, parquet_data_dir, id_start, id_end,
+        backend,
+        source_config,
+        parquet_output_dir,
+        id_start,
+        id_end,
         "quantile_labels",
     )
-    assert result_hids >= done_count, (
-        f"Result table has fewer lakes ({result_hids}) than done status ({done_count}) "
-        f"— silent data loss likely"
-    )
+    assert result_hids >= done_count, f"Result table has fewer lakes ({result_hids}) than done status ({done_count})"
 
 
 @pytest.mark.usefixtures("mpi_available")
-def test_mpi_chunk_range_isolation(backend, id_range, source_config, parquet_data_dir, cleanup):
-    """Verify each MPI worker only processes its assigned ID range.
-
-    With 3 workers and chunk_size=2, each worker gets a distinct
-    [start, end) assignment. No lake should be processed twice.
-    """
+def test_mpi_chunk_range_isolation(backend, id_range, source_config, parquet_data_dir, parquet_output_dir, cleanup):
     id_start, id_end = id_range
     cleanup.register("quantile")
 
     result = _run_mpi_batch(
-        "run_quantile.py",
-        id_start, id_end,
+        ["eot", "quantile", "--method", "stl"],
+        id_start,
+        id_end,
         backend=backend,
         parquet_data_dir=parquet_data_dir,
-        np=4, chunk_size=2,
+        parquet_output_dir=parquet_output_dir,
+        np=4,
+        chunk_size=2,
     )
 
-    assert result.returncode == 0, (
-        f"mpiexec failed (rc={result.returncode}):\n"
-        f"stdout: {result.stdout[-3000:]}\n"
-        f"stderr: {result.stderr[-3000:]}"
-    )
+    assert result.returncode == 0, f"mpiexec failed (rc={result.returncode}):\nstdout: {result.stdout[-3000:]}\nstderr: {result.stderr[-3000:]}"
 
-    # Verify no duplicate processing
     table_name = "quantile_run_status"
     if backend == "parquet":
         import pandas as pd
 
-        table_path = parquet_data_dir / f"{table_name}.parquet"
+        table_path = parquet_output_dir / f"{table_name}.parquet"
         if table_path.exists():
             df = pd.read_parquet(table_path)
             mask = (df["hylak_id"] >= id_start) & (df["hylak_id"] < id_end)
-            filtered = df[mask]
-            duplicates = filtered[filtered.duplicated(subset=["hylak_id"], keep=False)]
-            assert duplicates.empty, (
-                f"Duplicate run_status rows found (workers overlapped): "
-                f"{duplicates['hylak_id'].tolist()}"
-            )
-    else:
-        import psycopg
+            duplicates = df[mask][df[mask].duplicated(subset=["hylak_id"], keep=False)]
+            assert duplicates.empty, f"Duplicate run_status rows found: {duplicates['hylak_id'].tolist()}"
+        return
 
-        params = source_config.connection_params(
-            source_config.series_db_name or "lakecentroid"
-        )
-        conn = psycopg.connect(**params)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT hylak_id, COUNT(*) as cnt FROM {table_name} "
-                    f"WHERE hylak_id >= %s AND hylak_id < %s "
-                    f"GROUP BY hylak_id HAVING COUNT(*) > 1",
-                    (id_start, id_end),
-                )
-                duplicates = cur.fetchall()
-        finally:
-            conn.close()
-        assert len(duplicates) == 0, (
-            f"Duplicate run_status rows found (workers overlapped): {duplicates}"
-        )
+    import psycopg
+
+    params = source_config.connection_params(source_config.series_db_name or "lakecentroid")
+    conn = psycopg.connect(**params)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT hylak_id, COUNT(*) AS cnt FROM {table_name} WHERE hylak_id >= %s AND hylak_id < %s GROUP BY hylak_id HAVING COUNT(*) > 1",
+                (id_start, id_end),
+            )
+            duplicates = cur.fetchall()
+    finally:
+        conn.close()
+    assert len(duplicates) == 0, f"Duplicate run_status rows found: {duplicates}"
 
 
 @pytest.mark.usefixtures("mpi_available")
-def test_mpi_no_deadlock_on_write(backend, id_range, source_config, parquet_data_dir, cleanup):
-    """Verify Manager does not deadlock when dispatching triggers.
-
-    Uses io_budget=1 to force serialized IO, which maximizes
-    the chance of hitting the double-enqueue path.
-    """
+def test_mpi_no_deadlock_on_write(backend, id_range, source_config, parquet_data_dir, parquet_output_dir, cleanup):
     id_start, id_end = id_range
     cleanup.register("quantile")
 
     result = _run_mpi_batch(
-        "run_quantile.py",
-        id_start, id_end,
+        ["eot", "quantile", "--method", "stl"],
+        id_start,
+        id_end,
         backend=backend,
         parquet_data_dir=parquet_data_dir,
-        np=4, chunk_size=2,
+        parquet_output_dir=parquet_output_dir,
+        np=4,
+        chunk_size=2,
         timeout=120,
-        extra_args=["--io-budget", "1"],
     )
 
-    assert result.returncode == 0, (
-        f"mpiexec failed or timed out (rc={result.returncode}):\n"
-        f"stdout: {result.stdout[-3000:]}\n"
-        f"stderr: {result.stderr[-3000:]}"
-    )
+    assert result.returncode == 0, f"mpiexec failed or timed out (rc={result.returncode}):\nstdout: {result.stdout[-3000:]}\nstderr: {result.stderr[-3000:]}"
 
-    done_count = _verify_done_count(
-        backend, source_config, parquet_data_dir, id_start, id_end
-    )
+    done_count = _verify_done_count(backend, source_config, parquet_output_dir, id_start, id_end)
     n_lakes = id_end - id_start
-    assert done_count >= max(1, n_lakes * 0.5), (
-        f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
-    )
+    assert done_count >= max(1, n_lakes * 0.5), f"Too few done rows: {done_count}/{n_lakes} lakes (expected ≥50%)"
 
     result_hids = _verify_result_table_count(
-        backend, source_config, parquet_data_dir, id_start, id_end,
+        backend,
+        source_config,
+        parquet_output_dir,
+        id_start,
+        id_end,
         "quantile_labels",
     )
-    assert result_hids >= done_count, (
-        f"Result table has fewer lakes ({result_hids}) than done status ({done_count}) "
-        f"— silent data loss likely"
-    )
+    assert result_hids >= done_count, f"Result table has fewer lakes ({result_hids}) than done status ({done_count})"

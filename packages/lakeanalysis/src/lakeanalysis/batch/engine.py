@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from .domain import Calculator, LakeFilter
 from .io import BatchReader, BatchWriter
 from .lake_dataset_factory import LakeDatasetFactory
 from .lake_dataset_query import LakeDatasetQuery
 from .protocol import RunReport, _iter_id_batches
+
+log = logging.getLogger(__name__)
 
 
 class Engine:
@@ -19,7 +24,6 @@ class Engine:
         algorithm: str = "quantile",
         lake_filter: LakeFilter | None = None,
         chunk_size: int = 10_000,
-        io_budget: int = 4,
         dataset_factory: LakeDatasetFactory | None = None,
     ) -> None:
         self._reader = reader
@@ -28,7 +32,6 @@ class Engine:
         self._algorithm = algorithm
         self._lake_filter = lake_filter
         self._chunk_size = chunk_size
-        self._io_budget = io_budget
         self._dataset_factory = dataset_factory
 
     def _maybe_truncate(self) -> None:
@@ -43,6 +46,7 @@ class Engine:
         both applied before chunk construction so that single-process and MPI
         scheduling operate on the same precise ID universe.
         """
+        started = time.perf_counter()
         candidate_ids = self._reader.fetch_quality_ids()
         if self._lake_filter is not None:
             candidate_ids = self._lake_filter(candidate_ids)
@@ -53,7 +57,14 @@ class Engine:
                 max(candidate_ids) + 1,
             )
             candidate_ids -= done_ids
-        return sorted(candidate_ids)
+        resolved = sorted(candidate_ids)
+        log.info(
+            "Resolved %d candidate lakes for algorithm=%s in %.3fs",
+            len(resolved),
+            self._algorithm,
+            time.perf_counter() - started,
+        )
+        return resolved
 
     def run(self) -> RunReport | None:
         try:
@@ -109,23 +120,31 @@ class Engine:
         from .manager import Manager
         from .worker import Worker
         if rank == 0:
+            started = time.perf_counter()
             self._writer.ensure_schema(self._algorithm)
             sorted_ids = self._resolve_candidate_ids()
             manager = Manager(
-                comm, size, self._io_budget, self._lake_filter, self._writer,
+                comm, size, self._lake_filter, self._writer,
             )
             result = manager.run_dataset_id_batch(
                 sorted_ids, self._chunk_size, self._algorithm,
             )
             self._maybe_truncate()
+            log.info(
+                "MPI manager finished algorithm=%s size=%d elapsed=%.3fs",
+                self._algorithm,
+                size,
+                time.perf_counter() - started,
+            )
             return result
 
-        queries = comm.bcast(None, root=0)
+        assignments = comm.bcast(None, root=0)
+        assignment = assignments.get(rank) if assignments is not None else None
         worker = Worker(
-            rank, self._reader, self._algorithm,
+            rank, self._algorithm,
             self._calculator, self._chunk_size,
         )
-        worker.run_dataset_id_batch(comm, self._dataset_factory, queries)
+        worker.run_dataset_id_batch(comm, self._dataset_factory, assignment)
         comm.bcast(None, root=0)
         return None
 

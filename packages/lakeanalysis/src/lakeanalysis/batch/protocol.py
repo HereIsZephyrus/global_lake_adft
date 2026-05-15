@@ -5,17 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 TAG_STATUS = 1
-TAG_TRIGGER = 2
 TAG_DATA = 3
-
-TRIGGER_READ = "trigger_read"
 
 
 class WorkerState:
-    PENDING = "pending"
-    READING = "reading"
+    PRELOADING = "preloading"
     CALCULATING = "calculating"
     DONE = "done"
+
+
+@dataclass(frozen=True)
+class WorkerSliceAssignment:
+    id_subset: frozenset[int]
+    chunk_size: int
+    algorithm: str
 
 
 @dataclass

@@ -35,7 +35,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--id-end", type=int, default=None)
     parser.add_argument("--min-valid-per-month", type=int, default=None)
     parser.add_argument("--min-valid-observations", type=int, default=None)
-    parser.add_argument("--io-budget", type=int, default=4, help="Max concurrent DB IO workers.")
     parser.add_argument("--method", default="stl", choices=["stl", "legacy"],
                        help="Decomposition method.")
     return parser.parse_args()
@@ -115,7 +114,6 @@ def main() -> None:
         algorithm="quantile",
         lake_filter=range_filter,
         chunk_size=args.chunk_size,
-        io_budget=args.io_budget,
         dataset_factory=LakeDatasetFactory.from_config(source_config),
     )
 

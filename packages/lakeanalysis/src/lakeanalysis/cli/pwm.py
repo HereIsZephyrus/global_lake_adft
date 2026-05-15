@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, IdEndOpt, IdStartOpt, IoBudgetOpt, LimitIdOpt, run_batch_engine
+from ._common import ChunkSizeOpt, FilterNameOpt, IdEndOpt, IdStartOpt, LimitIdOpt, run_batch_engine
 
 app = typer.Typer(help="PWM extreme & PWM-Hawkes analysis", no_args_is_help=True)
 
@@ -12,10 +12,10 @@ app = typer.Typer(help="PWM extreme & PWM-Hawkes analysis", no_args_is_help=True
 @app.command()
 def run(
     chunk_size: ChunkSizeOpt = 10_000,
+    filter_name: FilterNameOpt = "full",
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    io_budget: IoBudgetOpt = 4,
     min_valid_per_month: int | None = typer.Option(None, help="Min valid obs per month"),
     min_valid_observations: int | None = typer.Option(None, help="Min total valid obs"),
     method: str = typer.Option("stl", help="Decomposition method: stl | legacy"),
@@ -27,10 +27,10 @@ def run(
         done_table="pwm_extreme_run_status",
         ensure_tables=("pwm_extreme",),
         chunk_size=chunk_size,
+        filter_name=filter_name,
         limit_id=limit_id,
         id_start=id_start,
         id_end=id_end,
-        io_budget=io_budget,
         calculator_kwargs=dict(
             min_valid_per_month=min_valid_per_month,
             min_valid_observations=min_valid_observations,
@@ -42,10 +42,10 @@ def run(
 @app.command()
 def hawkes(
     chunk_size: ChunkSizeOpt = 10_000,
+    filter_name: FilterNameOpt = "full",
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    io_budget: IoBudgetOpt = 4,
     decay_rate: float = typer.Option(1.0, help="Exponential decay rate λ for S_k strength"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
@@ -61,10 +61,10 @@ def hawkes(
         done_table="pwm_hawkes_run_status",
         ensure_tables=("pwm_extreme", "pwm_hawkes"),
         chunk_size=chunk_size,
+        filter_name=filter_name,
         limit_id=limit_id,
         id_start=id_start,
         id_end=id_end,
-        io_budget=io_budget,
         calculator_kwargs=dict(
             decay_rate=decay_rate,
             hawkes_window_months=hawkes_window_months,
@@ -81,7 +81,7 @@ def hawkes(
 def diag(
     limit_id: int = typer.Option(200, "--limit-id", help="Upper hylak_id bound"),
     chunk_size: ChunkSizeOpt = 10_000,
-    io_budget: IoBudgetOpt = 4,
+    filter_name: FilterNameOpt = "full",
     skip_run: bool = typer.Option(False, "--skip-run", help="Skip batch run, only fetch diagnosis"),
     min_event_rate: float = typer.Option(0.005, help="Minimum event rate"),
     max_event_rate: float = typer.Option(0.50, help="Maximum event rate"),
@@ -97,8 +97,8 @@ def diag(
             done_table="pwm_hawkes_run_status",
             ensure_tables=("pwm_extreme", "pwm_hawkes"),
             chunk_size=chunk_size,
+            filter_name=filter_name,
             limit_id=limit_id,
-            io_budget=io_budget,
             calculator_kwargs=dict(
                 decay_rate=1.0, hawkes_window_months=4.0,
                 min_event_rate=min_event_rate,

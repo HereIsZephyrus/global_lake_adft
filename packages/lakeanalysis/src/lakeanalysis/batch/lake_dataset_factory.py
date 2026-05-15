@@ -22,6 +22,17 @@ _ALL_IDS_END = 2 ** 31
 
 
 @dataclass(frozen=True)
+class WorkerDatasetSlice:
+    dataset: LakeDataset
+
+    def build_query(self, id_subset: frozenset[int]) -> LakeDataset:
+        if len(self.dataset) == 0 or not id_subset:
+            return self.dataset.take([])
+        selected = [idx for idx, hid in enumerate(self.dataset.hylak_ids.tolist()) if int(hid) in id_subset]
+        return self.dataset.take(selected)
+
+
+@dataclass(frozen=True)
 class LakeDatasetFactory:
     provider: "LakeProvider"
     raw_source: str = "lake_info"
@@ -56,6 +67,18 @@ class LakeDatasetFactory:
             frozen_mask=frozen_mask,
             extra=extra,
         )
+
+    def preload(self, id_subset: frozenset[int], *, fields: tuple[str, ...] = ("series", "frozen_mask")) -> WorkerDatasetSlice:
+        dataset = self.build(
+            LakeDatasetQuery(
+                algorithm=None,
+                id_subset=id_subset,
+                require_quality=False,
+                exclude_done=False,
+                fields=fields,
+            )
+        )
+        return WorkerDatasetSlice(dataset=dataset)
 
     def _resolve_candidate_ids(self, query: LakeDatasetQuery) -> set[int]:
         ids = self._fetch_id_set(self.raw_source)

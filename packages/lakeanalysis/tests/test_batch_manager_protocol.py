@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from lakeanalysis.batch.manager import Manager
-from lakeanalysis.batch.protocol import TAG_DATA, TAG_STATUS, TRIGGER_READ, WorkerState
+from lakeanalysis.batch.protocol import TAG_DATA, TAG_STATUS, WorkerState
 
 
 class _FakeComm:
     def __init__(self) -> None:
-        self.sent: list[tuple[str, int, int]] = []
+        self.sent: list[tuple[object, int, int]] = []
 
     def send(self, payload, dest: int, tag: int) -> None:
         self.sent.append((payload, dest, tag))
@@ -75,49 +75,11 @@ class _DelayedComm:
         self._data_visible = True
 
 
-def test_schedule_respects_io_budget_one() -> None:
-    comm = _FakeComm()
-    manager = Manager(comm, size=3, io_budget=1, writer=_CollectingProvider())
-
-    manager._on_status(1, WorkerState.PENDING, {})
-    manager._on_status(2, WorkerState.PENDING, {})
-    manager._schedule_io()
-
-    assert comm.sent == [(TRIGGER_READ, 1, 2)]
-    assert manager._io_active == 1
-    assert list(manager._read_queue) == [2]
-
-
-def test_worker_not_enqueued_twice() -> None:
-    comm = _FakeComm()
-    manager = Manager(comm, size=2, io_budget=1, writer=_CollectingProvider())
-
-    manager._on_status(1, WorkerState.PENDING, {})
-    manager._on_status(1, WorkerState.PENDING, {})
-
-    assert list(manager._read_queue) == [1]
-
-
-def test_reading_to_pending_releases_io_slot() -> None:
-    comm = _FakeComm()
-    manager = Manager(comm, size=2, io_budget=1, writer=_CollectingProvider())
-
-    manager._on_status(1, WorkerState.PENDING, {})
-    manager._schedule_io()
-    manager._on_status(1, WorkerState.READING, {})
-    manager._on_status(1, WorkerState.PENDING, {})
-
-    assert manager._io_active == 0
-    assert list(manager._read_queue) == [1]
-
-
 def test_done_does_not_double_count_chunk_stats() -> None:
     comm = _FakeComm()
-    manager = Manager(comm, size=2, io_budget=1, writer=_CollectingProvider())
+    manager = Manager(comm, size=2, writer=_CollectingProvider())
 
-    manager._on_status(1, WorkerState.PENDING, {})
-    manager._schedule_io()
-    manager._on_status(1, WorkerState.READING, {})
+    manager._on_status(1, WorkerState.PRELOADING, {"source": 3, "read_seconds": 0.1})
     manager._on_status(1, WorkerState.CALCULATING, {"source": 3, "skipped": 1, "success": 0, "error": 0})
     manager._on_status(
         1,
@@ -135,7 +97,7 @@ def test_done_does_not_double_count_chunk_stats() -> None:
 def test_flush_happens_at_shutdown() -> None:
     comm = _FakeComm()
     provider = _CollectingProvider()
-    manager = Manager(comm, size=2, io_budget=1, writer=provider)
+    manager = Manager(comm, size=2, writer=provider)
 
     manager._merge_rows({"mock": [{"hylak_id": 1}]})
     manager._flush()
@@ -155,7 +117,7 @@ def test_drain_catches_late_data_after_all_done() -> None:
     """
     comm = _DelayedComm()
     provider = _CollectingProvider()
-    manager = Manager(comm, size=3, io_budget=4, writer=provider)
+    manager = Manager(comm, size=3, writer=provider)
 
     manager._on_status(1, WorkerState.DONE, {
         "source": 3, "skipped": 0, "success": 3, "error": 0, "chunks": 1,
@@ -176,7 +138,7 @@ def test_drain_handles_empty_queue() -> None:
     """_drain_data is a no-op when no late DATA is pending."""
     comm = _DelayedComm()
     provider = _CollectingProvider()
-    manager = Manager(comm, size=3, io_budget=4, writer=provider)
+    manager = Manager(comm, size=3, writer=provider)
 
     manager._on_status(1, WorkerState.DONE, {
         "source": 1, "skipped": 0, "success": 1, "error": 0, "chunks": 1,
@@ -195,7 +157,7 @@ def test_drain_does_not_double_consume() -> None:
     """_drain_data only consumes messages in the MPI queue, not already-merged rows."""
     comm = _DelayedComm()
     provider = _CollectingProvider()
-    manager = Manager(comm, size=2, io_budget=4, writer=provider)
+    manager = Manager(comm, size=2, writer=provider)
 
     manager._on_status(1, WorkerState.DONE, {
         "source": 1, "skipped": 0, "success": 1, "error": 0, "chunks": 1,
@@ -210,18 +172,17 @@ def test_drain_does_not_double_consume() -> None:
     assert provider.persist_calls == [{"mock": [{"hylak_id": 1}, {"hylak_id": 2}]}]
 
 
-def test_assign_dataset_queries_preserves_sparse_id_subsets() -> None:
+def test_assign_worker_slices_preserves_sparse_id_subsets() -> None:
     comm = _FakeComm()
-    manager = Manager(comm, size=3, io_budget=1, writer=_CollectingProvider())
+    manager = Manager(comm, size=3, writer=_CollectingProvider())
 
-    assignments = manager._assign_dataset_queries(
+    assignments = manager._assign_worker_slices(
         sorted_ids=[2, 100, 300],
         batch_size=2,
         algorithm="quantile",
     )
 
-    assert assignments[1][0].id_subset == frozenset({2, 100})
-    assert assignments[1][0].id_range is None
-    assert assignments[1][0].exclude_done is False
-    assert assignments[2][0].id_subset == frozenset({300})
-    assert assignments[2][0].id_range is None
+    assert assignments[1].id_subset == frozenset({2, 100})
+    assert assignments[1].algorithm == "quantile"
+    assert assignments[1].chunk_size == 2
+    assert assignments[2].id_subset == frozenset({300})

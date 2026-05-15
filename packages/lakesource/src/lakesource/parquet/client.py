@@ -31,12 +31,9 @@ class DuckDBClient:
     ) -> None:
         self.data_dir = Path(data_dir) if data_dir else None
         self._table_config = table_config
+        self._registered_views: set[str] = set()
         self.con = duckdb.connect(database=":memory:")
         self.con.execute("SET threads=1")
-
-        if self.data_dir:
-            log.info("Initializing DuckDB client, data_dir: %s", self.data_dir)
-            self.register_dir()
 
     def query(self, sql: str, parameters: dict[str, Any] | None = None) -> list[dict]:
         result = self.con.execute(sql, parameters=parameters).fetchdf()
@@ -47,17 +44,41 @@ class DuckDBClient:
 
     def register_parquet(self, name: str, path: Path) -> None:
         self.con.execute(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
+        self._registered_views.add(name)
         log.debug("Registered view %s: %s", name, path)
 
     def register_or_replace(self, name: str, path: Path) -> None:
         self.con.execute(f"DROP VIEW IF EXISTS {name}")
         self.con.execute(f"CREATE VIEW {name} AS SELECT * FROM '{path}'")
+        self._registered_views.add(name)
         log.debug("Replaced view %s: %s", name, path)
 
     def register_or_replace_glob(self, name: str, glob_pattern: str) -> None:
         self.con.execute(f"DROP VIEW IF EXISTS {name}")
         self.con.execute(f"CREATE VIEW {name} AS SELECT * FROM read_parquet('{glob_pattern}')")
+        self._registered_views.add(name)
         log.debug("Replaced view %s with glob: %s", name, glob_pattern)
+
+    def ensure_registered(self, name: str, *, data_dir: Path | None = None) -> bool:
+        """Register a logical parquet table lazily when it exists."""
+        if name in self._registered_views:
+            return True
+
+        root = Path(data_dir) if data_dir is not None else self.data_dir
+        if root is None:
+            raise ValueError("data_dir is not set")
+
+        file_stem = self._table_config.parquet_file(name)
+        table_file = root / f"{file_stem}.parquet"
+        table_dir = root / file_stem
+
+        if table_file.exists():
+            self.register_parquet(name, table_file)
+            return True
+        if table_dir.is_dir() and any(table_dir.glob("*.parquet")):
+            self.register_or_replace_glob(name, str(table_dir / "*.parquet"))
+            return True
+        return False
 
     def register_dir(self) -> None:
         """Register all Parquet files in data_dir as DuckDB views.

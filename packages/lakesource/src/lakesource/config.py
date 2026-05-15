@@ -17,6 +17,14 @@ class Backend(str, Enum):
     PARQUET = "parquet"
 
 
+class OutputFilter(str, Enum):
+    """Named output filters for shared input data."""
+
+    FULL = "full"
+    GT10 = "gt10"
+    NO_PWM_ERR = "no_pwm_err"
+
+
 def _env(key: str, default: str | None = None) -> str | None:
     """Read an environment variable, stripping whitespace and quotes."""
     value = os.environ.get(key)
@@ -24,6 +32,13 @@ def _env(key: str, default: str | None = None) -> str | None:
         return default
     stripped = value.strip().strip('"')
     return stripped or default
+
+
+def _normalize_data_dir(path: Path) -> Path:
+    """Collapse legacy variant-specific parquet roots to the shared data root."""
+    if path.name in {"parquet", "full", "gt10", "no_pwm_err"} and path.parent.name == "data":
+        return path.parent
+    return path
 
 
 @dataclass(frozen=True)
@@ -53,9 +68,12 @@ class SourceConfig:
     """
 
     backend: Backend | None = None
+    filter_name: OutputFilter | str | None = None
     data_dir: Path | None = None
     data_path: Path | None = None
+    output_dir: Path | None = None
     figures_dir: Path | None = None
+    output_filter: OutputFilter | None = None
     year_start: int | None = None
     year_end: int | None = None
     chunk_size: int = 10_000
@@ -69,6 +87,12 @@ class SourceConfig:
     series_db_name: str | None = None
 
     def __post_init__(self) -> None:
+        if self.filter_name is not None and self.output_filter is None:
+            object.__setattr__(self, "output_filter", OutputFilter(self.filter_name))
+
+        if self.output_filter is not None and not isinstance(self.output_filter, OutputFilter):
+            object.__setattr__(self, "output_filter", OutputFilter(self.output_filter))
+
         if self.backend is None:
             b = _env("DATA_BACKEND")
             if b:
@@ -85,11 +109,18 @@ class SourceConfig:
         if self.backend == Backend.PARQUET and self.data_dir is None:
             d = _env("PARQUET_DATA_DIR")
             if d:
-                object.__setattr__(self, "data_dir", Path(d))
+                object.__setattr__(self, "data_dir", _normalize_data_dir(Path(d)))
             else:
-                raise ValueError(
-                    "data_dir is required when backend=parquet (set PARQUET_DATA_DIR)"
-                )
+                object.__setattr__(self, "data_dir", Path.cwd() / "data")
+        elif self.data_dir is not None:
+            object.__setattr__(self, "data_dir", _normalize_data_dir(self.data_dir))
+
+        if self.output_filter is None:
+            raw_filter = _env("LAKE_FILTER", OutputFilter.FULL.value)
+            try:
+                object.__setattr__(self, "output_filter", OutputFilter(raw_filter))
+            except ValueError:
+                raise ValueError(f"Invalid LAKE_FILTER: {raw_filter!r}") from None
 
         if self.tables is None:
             object.__setattr__(self, "tables", TableConfig.default())
@@ -99,14 +130,19 @@ class SourceConfig:
             if dp:
                 object.__setattr__(self, "data_path", Path(dp))
 
+        if self.output_dir is None:
+            od = _env("OUTPUT_DIR")
+            if od:
+                object.__setattr__(self, "output_dir", Path(od))
+            else:
+                object.__setattr__(self, "output_dir", Path.cwd() / "output" / self.output_filter.value)
+
         if self.figures_dir is None:
             fd = _env("FIGURES_DIR")
             if fd:
                 object.__setattr__(self, "figures_dir", Path(fd))
-            elif self.data_dir is not None:
-                object.__setattr__(self, "figures_dir", self.data_dir.parent / "figure")
             else:
-                object.__setattr__(self, "figures_dir", Path.cwd() / "figure")
+                object.__setattr__(self, "figures_dir", self.output_dir / "visualize")
 
         if self.db_host is None:
             h = _env("DB_HOST")

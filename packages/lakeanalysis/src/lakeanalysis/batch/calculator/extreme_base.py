@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Callable
+import logging
+import time
 from typing import Any
 
 from .base import Calculator
 from .. import LakeTask
+
+log = logging.getLogger(__name__)
 
 
 class ExtremeBatchCalculator(Calculator):
@@ -43,13 +47,31 @@ class ExtremeBatchCalculator(Calculator):
         """Build the service config for the specific extreme algorithm."""
 
     def compute(self, task: LakeTask) -> Any:
-        return self._service_runner(
-            task.series_df,
-            hylak_id=task.hylak_id,
-            config=self._service_config,
-            frozen_year_months=set(task.frozen_year_months) or None,
-            use_frozen_mask=bool(task.frozen_year_months),
+        started = time.perf_counter()
+        try:
+            result = self._service_runner(
+                task.series_df,
+                hylak_id=task.hylak_id,
+                config=self._service_config,
+                frozen_year_months=set(task.frozen_year_months) or None,
+                use_frozen_mask=bool(task.frozen_year_months),
+            )
+        except Exception:
+            log.debug(
+                "%s failed for hylak_id=%d after %.3fs",
+                self.__class__.__name__,
+                task.hylak_id,
+                time.perf_counter() - started,
+                exc_info=True,
+            )
+            raise
+        log.debug(
+            "%s succeeded for hylak_id=%d in %.3fs",
+            self.__class__.__name__,
+            task.hylak_id,
+            time.perf_counter() - started,
         )
+        return result
 
     @abstractmethod
     def result_to_rows(self, result: Any) -> dict[str, list[dict]]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from lakeanalysis.batch import LakeDataset, LakeDatasetQuery
+from lakeanalysis.batch import LakeDataset, WorkerSliceAssignment
 from lakeanalysis.batch.protocol import TAG_DATA, TAG_STATUS, WorkerState
 from lakeanalysis.batch.worker import Worker
 
@@ -18,15 +18,8 @@ def _make_series_df() -> pd.DataFrame:
 
 
 class _FakeComm:
-    def __init__(self, trigger_count: int) -> None:
-        self._remaining_triggers = trigger_count
+    def __init__(self) -> None:
         self.messages: list[tuple[int, tuple | dict]] = []
-
-    def recv(self, source: int, tag: int):
-        assert source == 0
-        assert self._remaining_triggers > 0
-        self._remaining_triggers -= 1
-        return "trigger_read"
 
     def send(self, payload, dest: int, tag: int) -> None:
         assert dest == 0
@@ -71,53 +64,56 @@ class _FakeCalculator:
         return {"mock": [{"hylak_id": hylak_id, "error": str(error)}]}
 
 
+class _FakeResidentSlice:
+    def __init__(self, dataset: LakeDataset) -> None:
+        self.dataset = dataset
+
+    def build_query(self, id_subset: frozenset[int]) -> LakeDataset:
+        indices = [idx for idx, hid in enumerate(self.dataset.hylak_ids.tolist()) if int(hid) in id_subset]
+        return self.dataset.take(indices)
+
+
 class _FakeDatasetFactory:
     def __init__(self) -> None:
-        self._build_count = 0
+        self.preload_calls: list[frozenset[int]] = []
 
-    def build(self, query):
-        self._build_count += 1
-        if query.id_subset is not None:
-            hylak_ids = np.asarray(sorted(query.id_subset), dtype=np.int64)
-        else:
-            lo, hi = query.id_range or (0, 3)
-            hylak_ids = np.arange(lo, hi, dtype=np.int64)
+    def preload(self, id_subset: frozenset[int], *, fields=("series", "frozen_mask")):
+        del fields
+        self.preload_calls.append(id_subset)
+        hylak_ids = np.asarray(sorted(id_subset), dtype=np.int64)
         n = len(hylak_ids)
-        return LakeDataset(
+        return _FakeResidentSlice(LakeDataset(
             hylak_ids=hylak_ids,
             year_months=np.asarray([200001, 200002], dtype=np.int64),
             values=np.ones((n, 2), dtype=float),
-        )
+        ))
 
 
-def test_worker_run_dataset_id_batch_emits_correct_status_sequence() -> None:
-    comm = _FakeComm(trigger_count=2)
+def test_worker_run_dataset_id_batch_emits_preload_then_done_sequence() -> None:
+    comm = _FakeComm()
     worker = Worker(
         rank=1,
-        reader=_FakeProvider(),
         algorithm="pwm_extreme",
         calculator=_FakeCalculator(),
         chunk_size=10,
     )
     factory = _FakeDatasetFactory()
 
-    queries = [
-        LakeDatasetQuery(id_range=(0, 3), algorithm="pwm_extreme"),
-        LakeDatasetQuery(id_range=(5, 8), algorithm="pwm_extreme"),
-    ]
+    assignment = WorkerSliceAssignment(
+        algorithm="pwm_extreme",
+        id_subset=frozenset({0, 1, 2, 5, 6, 7}),
+        chunk_size=3,
+    )
 
-    worker.run_dataset_id_batch(comm, factory, queries)
+    worker.run_dataset_id_batch(comm, factory, assignment)
 
     status_messages = [payload for tag, payload in comm.messages if tag == TAG_STATUS]
     assert [state for state, _ in status_messages] == [
-        WorkerState.PENDING,
-        WorkerState.READING,
-        WorkerState.CALCULATING,
-        WorkerState.PENDING,
-        WorkerState.READING,
+        WorkerState.PRELOADING,
         WorkerState.CALCULATING,
         WorkerState.DONE,
     ]
+    assert factory.preload_calls == [frozenset({0, 1, 2, 5, 6, 7})]
 
     data_messages = [payload for tag, payload in comm.messages if tag == TAG_DATA]
     assert len(data_messages) == 2

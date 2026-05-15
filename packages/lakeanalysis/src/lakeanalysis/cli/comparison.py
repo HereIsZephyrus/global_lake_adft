@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, IoBudgetOpt, setup_logging
+from ._common import ChunkSizeOpt, FilterNameOpt, setup_logging
 
 app = typer.Typer(help="Algorithm comparison pipelines", no_args_is_help=True)
 
@@ -13,7 +13,7 @@ app = typer.Typer(help="Algorithm comparison pipelines", no_args_is_help=True)
 def run(
     sample_file: str = typer.Option(..., "--sample-file", help="Path to sample_lakes.parquet"),
     chunk_size: ChunkSizeOpt = 5_000,
-    io_budget: IoBudgetOpt = 4,
+    filter_name: FilterNameOpt = "full",
     min_valid_per_month: int | None = typer.Option(None, help="Min valid obs per month"),
     min_valid_observations: int | None = typer.Option(None, help="Min total valid obs"),
     output_dir: str = typer.Option("data/comparison", help="Post-processing output dir"),
@@ -28,7 +28,7 @@ def run(
     sample = pd.read_parquet(sample_file)
     sample_ids = set(int(v) for v in sample["hylak_id"].dropna().tolist())
 
-    config = SourceConfig()
+    config = SourceConfig(output_filter=filter_name)
     reader = build_provider_batch_reader(config, done_table="comparison_run_status", done_requires_status=True)
     writer = build_provider_batch_writer(config, ensure_tables=["comparison"])
     calculator = CalculatorFactory.create("comparison",
@@ -36,7 +36,7 @@ def run(
         min_valid_observations=min_valid_observations)
     engine = Engine(reader=reader, writer=writer, calculator=calculator,
                     algorithm="comparison", lake_filter=IdSetFilter(sample_ids),
-                    chunk_size=chunk_size, io_budget=io_budget)
+                    chunk_size=chunk_size)
     engine.run()
     typer.echo(f"Comparison complete. Output: {output_dir}")
 
@@ -156,9 +156,9 @@ def dataset(
     from lakeviz.comparison.global_map import GlobalGridConfig, plot_gt10_vs_full_panels
 
     if gt10_dir is None:
-        gt10_dir = str(SourceConfig(filter_name="gt10").data_dir)
+        gt10_dir = str(SourceConfig(output_filter="gt10").data_dir)
     if full_dir is None:
-        full_dir = str(SourceConfig(filter_name="full").data_dir)
+        full_dir = str(SourceConfig(output_filter="full").data_dir)
     if output_dir is None:
         output_dir = str(output_path("comparison", "benchmarks", "algorithms", "full", "figures", "global"))
 
@@ -185,7 +185,7 @@ def dataset(
 def hawkes(
     sample_file: str = typer.Option(..., "--sample-file", help="Path to sample_lakes.parquet"),
     chunk_size: ChunkSizeOpt = 500,
-    io_budget: IoBudgetOpt = 4,
+    filter_name: FilterNameOpt = "full",
     output_dir: str = typer.Option(None, help="Output directory"),
 ) -> None:
     """Compare PWM-Hawkes vs EOT-Hawkes on sampled lakes."""
@@ -197,7 +197,7 @@ def hawkes(
     sample = pd.read_parquet(sample_file)
     sample_ids = set(int(v) for v in sample["hylak_id"].dropna().tolist())
 
-    config = SourceConfig()
+    config = SourceConfig(output_filter=filter_name)
     if output_dir is None:
         output_dir = str(output_path("comparison", "benchmarks", "hawkes"))
     reader = build_provider_batch_reader(config, done_table="hawkes_comparison", done_requires_status=True)
@@ -206,7 +206,7 @@ def hawkes(
     engine = Engine(
         reader=reader, writer=writer, calculator=calculator,
         algorithm="hawkes_comparison", lake_filter=IdSetFilter(sample_ids),
-        chunk_size=chunk_size, io_budget=io_budget,
+        chunk_size=chunk_size,
     )
     engine.run()
     typer.echo(f"Hawkes comparison complete. Output: {output_dir}")

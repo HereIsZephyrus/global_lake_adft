@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, IdEndOpt, IdStartOpt, IoBudgetOpt, LimitIdOpt, run_batch_engine
+from ._common import ChunkSizeOpt, FilterNameOpt, IdEndOpt, IdStartOpt, LimitIdOpt, run_batch_engine
 
 app = typer.Typer(help="Extremes-over-threshold analysis", no_args_is_help=True)
 
@@ -12,10 +12,10 @@ app = typer.Typer(help="Extremes-over-threshold analysis", no_args_is_help=True)
 @app.command()
 def run(
     chunk_size: ChunkSizeOpt = 10_000,
+    filter_name: FilterNameOpt = "full",
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    io_budget: IoBudgetOpt = 4,
     tail: str = typer.Option("both", help="Tail: high, low, or both"),
     threshold_quantiles: list[float] = typer.Option([0.95, 0.98], "--threshold", help="Quantile thresholds"),
 ) -> None:
@@ -27,10 +27,10 @@ def run(
         done_table="eot_run_status",
         ensure_tables=("eot",),
         chunk_size=chunk_size,
+        filter_name=filter_name,
         limit_id=limit_id,
         id_start=id_start,
         id_end=id_end,
-        io_budget=io_budget,
         calculator_kwargs={"tails": tails, "quantiles": threshold_quantiles},
     )
 
@@ -87,10 +87,10 @@ def basemodel(
 @app.command()
 def quantile(
     chunk_size: ChunkSizeOpt = 10_000,
+    filter_name: FilterNameOpt = "full",
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    io_budget: IoBudgetOpt = 4,
     min_valid_per_month: int | None = typer.Option(None, help="Min valid obs per month"),
     min_valid_observations: int | None = typer.Option(None, help="Min total valid obs"),
     method: str = typer.Option("stl", help="Decomposition method: stl | legacy"),
@@ -102,10 +102,10 @@ def quantile(
         done_table="quantile_run_status",
         ensure_tables=("quantile",),
         chunk_size=chunk_size,
+        filter_name=filter_name,
         limit_id=limit_id,
         id_start=id_start,
         id_end=id_end,
-        io_budget=io_budget,
         calculator_kwargs=dict(
             min_valid_per_month=min_valid_per_month,
             min_valid_observations=min_valid_observations,

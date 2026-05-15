@@ -13,7 +13,7 @@ from lakeanalysis.batch import (  # pylint: disable=no-name-in-module
 )
 from lakeanalysis.filters import build_lake_filter
 from lakeanalysis.logger import Logger
-from lakesource.config import SourceConfig
+from lakesource.config import OutputFilter, SourceConfig
 
 
 def setup_logging(name: str) -> None:
@@ -43,7 +43,7 @@ def run_batch_engine(
     limit_id: int | None = None,
     id_start: int = 0,
     id_end: int | None = None,
-    io_budget: int = 4,
+    filter_name: str = OutputFilter.FULL.value,
     calculator_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Run a batch engine pipeline with the given calculator.
@@ -53,7 +53,7 @@ def run_batch_engine(
     from the batch framework.
     """
     setup_logging(name)
-    source_config = SourceConfig()
+    source_config = SourceConfig(output_filter=OutputFilter(filter_name))
 
     try:
         from mpi4py import MPI
@@ -120,7 +120,6 @@ def run_batch_engine(
         algorithm=algorithm,
         lake_filter=lake_filter,
         chunk_size=chunk_size,
-        io_budget=io_budget,
         dataset_factory=dataset_factory,
     )
     engine.run()
@@ -138,6 +137,11 @@ ChunkSizeOpt = Annotated[
     typer.Option("--chunk-size", "-c", help="Lakes per batch chunk"),
 ]
 
+FilterNameOpt = Annotated[
+    str,
+    typer.Option("--filter", help="Named lake filter for input/output routing"),
+]
+
 IdStartOpt = Annotated[
     int,
     typer.Option("--id-start", help="Start of hylak_id range"),
@@ -146,11 +150,6 @@ IdStartOpt = Annotated[
 IdEndOpt = Annotated[
     int | None,
     typer.Option("--id-end", help="End of hylak_id range (exclusive)"),
-]
-
-IoBudgetOpt = Annotated[
-    int,
-    typer.Option("--io-budget", help="Max concurrent DB I/O workers"),
 ]
 
 DryRunOpt = Annotated[

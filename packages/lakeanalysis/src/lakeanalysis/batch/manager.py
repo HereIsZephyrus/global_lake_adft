@@ -1,8 +1,4 @@
-"""Manager: IO scheduler and status tracker for MPI batch computation.
-
-IO slot lifecycle:
-  - TRIGGER_READ sent → io_active += 1
-  - CALCULATING received (reading ended) → io_active -= 1
+"""Manager status tracker for MPI batch computation.
 
 Workers send computed data to rank 0 via TAG_DATA; Manager collects and flushes.
 """
@@ -12,31 +8,26 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 import time
-from collections import deque
 
-from .protocol import RunReport, TAG_STATUS, TAG_TRIGGER, TAG_DATA, TRIGGER_READ, WorkerState, _iter_id_batches
-from .lake_dataset_query import LakeDatasetQuery
+from .protocol import RunReport, TAG_STATUS, TAG_DATA, WorkerSliceAssignment, WorkerState, _iter_id_batches
 
 log = logging.getLogger(__name__)
 
 
 class Manager:
-    def __init__(self, comm, size: int, io_budget: int = 4, lake_filter=None, writer=None) -> None:
+    def __init__(self, comm, size: int, lake_filter=None, writer=None) -> None:
         self._comm = comm
         self._size = size
-        self._io_budget = io_budget
         self._lake_filter = lake_filter
         self._writer = writer
-        self._io_active = 0
         self._n_workers = size - 1
         self._worker_states: dict[int, str] = {}
-        self._read_queue: deque[int] = deque()
-        self._queued_workers: set[int] = set()
         self._done_workers: set[int] = set()
         self._report = RunReport()
         self._pending_rows: dict[str, list[dict]] = defaultdict(list)
         self._chunks_since_flush = 0
         self._flush_interval = 50
+        self._started_at = time.perf_counter()
 
     @property
     def report(self) -> RunReport:
@@ -59,26 +50,29 @@ class Manager:
         worker = status.Get_source()
         state, stats = msg
         self._on_status(worker, state, stats)
-        self._schedule_io()
 
     def _on_status(self, worker: int, state: str, stats: dict) -> None:
-        prev = self._worker_states.get(worker)
         self._worker_states[worker] = state
 
-        if prev == WorkerState.READING and state in (
-            WorkerState.CALCULATING,
-            WorkerState.PENDING,
-            WorkerState.DONE,
-        ):
-            self._io_active = max(0, self._io_active - 1)
-
-        if state == WorkerState.CALCULATING:
+        if state == WorkerState.PRELOADING:
+            log.debug(
+                "Worker %d preloading slice_lakes=%d read=%.3fs",
+                worker,
+                stats.get("source", 0),
+                stats.get("read_seconds", 0.0),
+            )
             return
 
-        elif state == WorkerState.PENDING:
-            self._enqueue_for_read(worker)
+        if state == WorkerState.CALCULATING:
+            log.debug(
+                "Worker %d calculating chunks=%d source=%d",
+                worker,
+                stats.get("chunks", 0),
+                stats.get("source", 0),
+            )
+            return
 
-        elif state == WorkerState.DONE:
+        if state == WorkerState.DONE:
             self._report.source_lakes += stats.get("source", 0)
             self._report.skipped_lakes += stats.get("skipped", 0)
             self._report.success_lakes += stats.get("success", 0)
@@ -86,26 +80,13 @@ class Manager:
             self._report.processed_chunks += stats.get("chunks", 0)
             self._done_workers.add(worker)
             log.info(
-                "Worker %d: done (success=%d error=%d chunks=%d) io_active=%d",
+                "Worker %d: done (success=%d error=%d chunks=%d elapsed=%.3fs) io_active=%d",
                 worker,
                 stats.get("success", 0),
                 stats.get("error", 0),
                 stats.get("chunks", 0),
-                self._io_active,
+                stats.get("elapsed_seconds", 0.0),
             )
-
-    def _enqueue_for_read(self, worker: int) -> None:
-        if worker in self._done_workers or worker in self._queued_workers:
-            return
-        self._read_queue.append(worker)
-        self._queued_workers.add(worker)
-
-    def _schedule_io(self) -> None:
-        while self._read_queue and self._io_active < self._io_budget:
-            worker = self._read_queue.popleft()
-            self._queued_workers.discard(worker)
-            self._comm.send(TRIGGER_READ, dest=worker, tag=TAG_TRIGGER)
-            self._io_active += 1
 
     def _drain_data(self) -> None:
         from mpi4py import MPI
@@ -126,7 +107,9 @@ class Manager:
         if self._writer is None:
             log.warning("No writer set, cannot flush data")
             return
+        total_rows = sum(len(rows) for rows in self._pending_rows.values())
         self._writer.persist(dict(self._pending_rows))
+        log.info("Flushed %d rows across %d tables", total_rows, len(self._pending_rows))
         self._pending_rows = defaultdict(list)
         self._chunks_since_flush = 0
 
@@ -136,10 +119,13 @@ class Manager:
         batch_size: int,
         algorithm: str,
     ) -> RunReport:
-        assignments = self._assign_dataset_queries(sorted_ids, batch_size, algorithm)
+        assignments = self._assign_worker_slices(sorted_ids, batch_size, algorithm)
         self._comm.bcast(assignments, root=0)
 
-        self._report.total_chunks = sum(len(qs) for qs in assignments.values())
+        self._report.total_chunks = sum(
+            len(_iter_id_batches(sorted(assignment.id_subset), assignment.chunk_size))
+            for assignment in assignments.values()
+        )
 
         while len(self._done_workers) < self._n_workers:
             self._poll_and_dispatch()
@@ -148,49 +134,40 @@ class Manager:
         self._flush()
         self._comm.bcast(None, root=0)
         log.info(
-            "Dataset ID-batch all workers done: success=%d error=%d skipped=%d",
+            "Dataset ID-batch all workers done: success=%d error=%d skipped=%d elapsed=%.3fs",
             self._report.success_lakes,
             self._report.error_lakes,
             self._report.skipped_lakes,
+            time.perf_counter() - self._started_at,
         )
         return self._report
 
-    def _assign_dataset_queries(
+    def _assign_worker_slices(
         self,
         sorted_ids: list[int],
         batch_size: int,
         algorithm: str,
-    ) -> dict[int, list[LakeDatasetQuery]]:
-        """Split the already-filtered quality-domain IDs across workers.
+    ) -> dict[int, WorkerSliceAssignment]:
+        """Split already-filtered IDs into worker-scoped resident slices."""
+        base = len(sorted_ids) // self._n_workers if self._n_workers else 0
+        remainder = len(sorted_ids) % self._n_workers if self._n_workers else 0
 
-        Queries keep the exact sparse ``id_subset`` for each worker batch
-        instead of expanding back to contiguous ranges.
-        """
-        id_batches = _iter_id_batches(sorted_ids, batch_size)
-        n_batches = len(id_batches)
-        base = n_batches // self._n_workers
-        remainder = n_batches % self._n_workers
-
-        assignments: dict[int, list[LakeDatasetQuery]] = {}
+        assignments: dict[int, WorkerSliceAssignment] = {}
         idx = 0
         for r in range(1, self._size):
             count = base + (1 if r <= remainder else 0)
-            batches_for_worker = id_batches[idx : idx + count]
-            assignments[r] = [
-                LakeDatasetQuery(
-                    algorithm=algorithm,
-                    id_subset=frozenset(b),
-                    require_quality=False,
-                    exclude_done=False,
-                )
-                for b in batches_for_worker
-            ]
+            worker_ids = frozenset(sorted_ids[idx : idx + count])
+            assignments[r] = WorkerSliceAssignment(
+                id_subset=worker_ids,
+                chunk_size=batch_size,
+                algorithm=algorithm,
+            )
             idx += count
 
         log.info(
-            "Dataset ID-batch assigned %d workers, %d batches: %s",
+            "Assigned %d workers across %d lakes: %s",
             self._n_workers,
-            n_batches,
-            {r: len(b) for r, b in assignments.items()},
+            len(sorted_ids),
+            {r: len(a.id_subset) for r, a in assignments.items()},
         )
         return assignments

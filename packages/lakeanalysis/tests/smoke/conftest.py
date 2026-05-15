@@ -20,6 +20,9 @@ from lakeanalysis.batch.calculator import CalculatorFactory
 from lakeanalysis.batch import LakeTask
 
 
+_SMOKE_FILTER = "full"
+
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -34,13 +37,23 @@ def _require_db_env():
 
 
 def _parquet_data_dir() -> Path:
-    """Resolve parquet data directory from env vars."""
-    data_dir = os.environ.get("SMOKE_PARQUET_DIR") or os.environ.get("LAKE_DATA_DIR")
-    if not data_dir:
-        pytest.skip("SMOKE_PARQUET_DIR or LAKE_DATA_DIR env var required for parquet smoke test")
+    """Resolve parquet data directory using runtime config rules."""
+    data_dir = SourceConfig(backend=Backend.PARQUET, output_filter=_SMOKE_FILTER).data_dir
+    if data_dir is None:
+        pytest.skip("PARQUET_DATA_DIR env var or default data root required for parquet smoke test")
     path = Path(data_dir)
     if not path.exists():
         pytest.skip(f"Parquet data dir does not exist: {path}")
+    return path
+
+
+def _parquet_output_dir() -> Path:
+    """Resolve parquet output directory used for isolated smoke results."""
+    output_dir = SourceConfig(backend=Backend.PARQUET, output_filter=_SMOKE_FILTER).output_dir
+    if output_dir is None:
+        pytest.skip("OUTPUT_DIR env var or default output root required for parquet smoke test")
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -92,10 +105,22 @@ def parquet_data_dir():
 
 
 @pytest.fixture(scope="session")
-def source_config(backend, parquet_data_dir):
+def parquet_output_dir():
+    """Return the parquet output directory for algorithm result tables."""
+    load_env()
+    return _parquet_output_dir()
+
+
+@pytest.fixture(scope="session")
+def source_config(backend, parquet_data_dir, parquet_output_dir):
     """Return SourceConfig for the current backend."""
     if backend == "parquet":
-        return SourceConfig(backend=Backend.PARQUET, data_dir=parquet_data_dir)
+        return SourceConfig(
+            backend=Backend.PARQUET,
+            data_dir=parquet_data_dir,
+            output_dir=parquet_output_dir,
+            output_filter=_SMOKE_FILTER,
+        )
     return SourceConfig(backend=Backend.POSTGRES)
 
 
@@ -180,7 +205,7 @@ def pwm_id_range(backend, source_config):
 # ------------------------------------------------------------------
 
 @pytest.fixture()
-def cleanup(backend, source_config, id_range, parquet_data_dir):
+def cleanup(backend, source_config, id_range, parquet_output_dir):
     """Post-test cleanup: remove algorithm output rows/files.
 
     Usage::
@@ -202,7 +227,7 @@ def cleanup(backend, source_config, id_range, parquet_data_dir):
         tables = _CLEANUP_TABLES.get(algo, [])
         if backend == "parquet":
             for table in tables:
-                table_path = parquet_data_dir / f"{table}.parquet"
+                table_path = parquet_output_dir / f"{table}.parquet"
                 table_path.unlink(missing_ok=True)
         else:
             import psycopg
@@ -225,7 +250,7 @@ def cleanup(backend, source_config, id_range, parquet_data_dir):
 
 
 @pytest.fixture()
-def cleanup_pwm(backend, source_config, pwm_id_range, parquet_data_dir):
+def cleanup_pwm(backend, source_config, pwm_id_range, parquet_output_dir):
     """Post-test cleanup for PWM tests (uses pwm_id_range)."""
     registered: list[str] = []
 
@@ -240,7 +265,7 @@ def cleanup_pwm(backend, source_config, pwm_id_range, parquet_data_dir):
         tables = _CLEANUP_TABLES.get(algo, [])
         if backend == "parquet":
             for table in tables:
-                table_path = parquet_data_dir / f"{table}.parquet"
+                table_path = parquet_output_dir / f"{table}.parquet"
                 table_path.unlink(missing_ok=True)
         else:
             import psycopg

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from ._common import ChunkSizeOpt, IdEndOpt, IdStartOpt, IoBudgetOpt, LimitIdOpt, run_batch_engine, setup_logging
+from ._common import ChunkSizeOpt, FilterNameOpt, IdEndOpt, IdStartOpt, LimitIdOpt, run_batch_engine, setup_logging
 
 app = typer.Typer(help="Hawkes process modelling", no_args_is_help=True)
 
@@ -83,10 +83,10 @@ def run(
 @app.command()
 def eot_batch(
     chunk_size: ChunkSizeOpt = 10_000,
+    filter_name: FilterNameOpt = "full",
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    io_budget: IoBudgetOpt = 4,
     threshold_quantile: float = typer.Option(0.90, help="EOT threshold quantile"),
     hawkes_window_months: float = typer.Option(4.0, help="Kernel window in months"),
     min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
@@ -103,10 +103,10 @@ def eot_batch(
         done_table="eot_hawkes_run_status",
         ensure_tables=("eot_hawkes",),
         chunk_size=chunk_size,
+        filter_name=filter_name,
         limit_id=limit_id,
         id_start=id_start,
         id_end=id_end,
-        io_budget=io_budget,
         calculator_kwargs=dict(
             threshold_quantile=threshold_quantile,
             hawkes_window_months=hawkes_window_months,

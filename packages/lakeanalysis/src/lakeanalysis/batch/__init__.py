@@ -9,9 +9,8 @@ from .lake_dataset_query import LakeDatasetQuery
 from .manager import Manager
 from .protocol import (
     TAG_STATUS,
-    TAG_TRIGGER,
-    TRIGGER_READ,
     RunReport,
+    WorkerSliceAssignment,
     WorkerState,
 )
 
@@ -31,9 +30,8 @@ __all__ = [
     "RunReport",
     "SingleProcessLakeDatasetRunner",
     "TAG_STATUS",
-    "TAG_TRIGGER",
-    "TRIGGER_READ",
     "Worker",
+    "WorkerSliceAssignment",
     "WorkerState",
     "build_batch_reader",
     "build_provider_batch_reader",

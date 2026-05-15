@@ -22,7 +22,6 @@ def _default_args() -> MODULE.argparse.Namespace:
         id_end=None,
         min_valid_per_month=None,
         min_valid_observations=None,
-        io_budget=4,
         method="stl",
     )
 
@@ -63,8 +62,9 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
             captured["logger_name"] = name
 
     class _FakeSourceConfig:
-        def __init__(self) -> None:
+        def __init__(self, *args, **kwargs) -> None:
             captured["source_config_created"] = True
+            captured["source_config_kwargs"] = kwargs
 
     class _FakeEngine:
         def __init__(self, **kwargs) -> None:
@@ -98,7 +98,6 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
             id_end=200,
             min_valid_per_month=3,
             min_valid_observations=36,
-            io_budget=2,
             method="stl",
         ),
     )
@@ -114,6 +113,7 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
 
     assert captured["logger_name"] == "run_quantile"
     assert captured["source_config_created"] is True
+    assert captured["source_config_kwargs"] == {}
     assert captured["reader_kwargs"] == {
         "done_table": "quantile_run_status",
         "done_requires_status": True,
@@ -132,7 +132,6 @@ def test_main_builds_batch_engine_from_args(monkeypatch) -> None:
     assert engine_kwargs["calculator"] == "calculator"
     assert engine_kwargs["algorithm"] == "quantile"
     assert engine_kwargs["chunk_size"] == 25
-    assert engine_kwargs["io_budget"] == 2
     assert engine_kwargs["dataset_factory"] == "fake_factory"
     lake_filter = engine_kwargs["lake_filter"]
     assert isinstance(lake_filter, MODULE.RangeFilter)
