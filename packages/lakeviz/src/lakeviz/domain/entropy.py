@@ -7,7 +7,6 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.axes import Axes
 from scipy.stats import pearsonr, spearmanr
 
 from lakeviz.draw.line import draw_line
@@ -19,10 +18,9 @@ from lakeviz.draw.annotate import draw_text_box
 from lakeviz.style.base import AxisStyle, apply_axis_style
 from lakeviz.style.line import LineStyle
 from lakeviz.style.scatter import ScatterStyle
-from lakeviz.style.bar import BarStyle
 from lakeviz.style.histogram import HistogramStyle
 from lakeviz.style.reference import ReferenceLineStyle
-from lakeviz.style.presets import ENTROPY_AE_LINE, ENTROPY_ANOMALY_POS, ENTROPY_ANOMALY_NEG
+from lakeviz.style.presets import ENTROPY_AE_LINE, ENTROPY_ANOMALY_POS
 
 log = logging.getLogger(__name__)
 

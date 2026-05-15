@@ -10,12 +10,12 @@ from lakesource.provider.factory import create_provider
 
 from . import default_filters, ZeroQuantileConfig
 
-from .batch import (
+from .batch import (  # pylint: disable=unused-import
     QualityBatchReader,
     QualityBatchWriter,
     QualityCalculator,
     QualityRunConfig,
-    build_quality_context,  # pylint: disable=unused-import
+    build_quality_context,
 )
 
 log = logging.getLogger(__name__)
