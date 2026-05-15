@@ -1,42 +1,148 @@
 #!/bin/bash
-# 从 HPC 拉取 parquet 数据到本地。
-# 代码推送用 git push hpc main，与本脚本分离。
+# 统一同步 HPC 非 Git 目录。
+# 代码仓库通过 git push / git clone 管理，不走 rsync。
 #
-#   --pull        拉取全量 parquet
-#   --pull-gt10   拉取 gt10 数据
-#   --pull-all    拉取全部
-set -e
+#   --push-data              本地 data/ -> HPC lake_data/
+#   --pull-data              HPC lake_data/ -> 本地 data/
+#   --push-lsf               本地 lsf/ -> HPC lsf/
+#   --pull-lsf               HPC lsf/ -> 本地 lsf/
+#   --pull-output            HPC output/ -> 本地 output/
+#   --push-output            本地 output/ -> HPC output/
+#   --filter <name>          仅同步 output/<name>/ 子树（仅 output 命令支持）
+set -euo pipefail
 
 REMOTE_USER="guxh01"
 REMOTE_HOST="111.172.12.146"
 REMOTE_PORT="4351"
 REMOTE_PASS="${HPC_PASSWORD:-Guxh_Extreme2024_01}"
-REMOTE_PATH="/data/users/guxh01/2026_tcb/lake"
-LOCAL_PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
-LOCAL_DATA="$LOCAL_PROJECT/data/parquet"
-REMOTE_DATA="$REMOTE_PATH/lake_data"
-LOCAL_DATA_GT10="$LOCAL_PROJECT/data/parquet_gt10"
-REMOTE_DATA_GT10="$REMOTE_PATH/lake_data_gt10"
-REMOTE_ARCHIVE="$REMOTE_PATH/data_archive_20260426"
+REMOTE_ROOT="/data/users/guxh01/2026_tcb/lake"
+LOCAL_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LOCAL_DATA="$LOCAL_REPO/data"
+LOCAL_LSF="$LOCAL_REPO/lsf"
+LOCAL_OUTPUT="$LOCAL_REPO/output"
+REMOTE_DATA="$REMOTE_ROOT/lake_data"
+REMOTE_LSF="$REMOTE_ROOT/lsf"
+REMOTE_REPO="$REMOTE_ROOT/global_lake_adft"
+REMOTE_OUTPUT="$REMOTE_REPO/output"
 
-RSYNC_SSH=(-e "sshpass -p $REMOTE_PASS ssh -p $REMOTE_PORT -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=30")
+FILTER_NAME=""
+ACTION=""
 
-pull_parquet() {
-    local remote_data="${1:-$REMOTE_DATA}"
-    local local_data="${2:-$LOCAL_DATA}"
-    echo ">>> 拉取 HPC parquet: $remote_data → $local_data"
-    mkdir -p "$local_data"
+RSYNC_SSH=(
+    -e
+    "sshpass -p $REMOTE_PASS ssh -p $REMOTE_PORT -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=30"
+)
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bash scripts/rsync_hpc.sh --push-data
+  bash scripts/rsync_hpc.sh --pull-data
+  bash scripts/rsync_hpc.sh --push-lsf
+  bash scripts/rsync_hpc.sh --pull-lsf
+  bash scripts/rsync_hpc.sh --pull-output [--filter full|gt10|no_pwm_err]
+  bash scripts/rsync_hpc.sh --push-output [--filter full|gt10|no_pwm_err]
+
+Notes:
+  - 本脚本只同步非 Git 目录：data、lsf、output。
+  - HPC 代码仓库请使用 Git 同步，不要用 rsync 覆盖工作区。
+  - output 默认同步整个 output/；带 --filter 时仅同步 output/<filter>/。
+EOF
+}
+
+ensure_local_dir() {
+    mkdir -p "$1"
+}
+
+sync_to_remote() {
+    local local_dir="$1"
+    local remote_dir="$2"
+    local label="$3"
+    echo ">>> 推送 $label: $local_dir -> $remote_dir"
+    ensure_local_dir "$local_dir"
     sshpass -p "$REMOTE_PASS" rsync -avz --progress \
         "${RSYNC_SSH[@]}" \
-        "$REMOTE_USER@$REMOTE_HOST:$remote_data/" "$local_data/"
+        "$local_dir/" "$REMOTE_USER@$REMOTE_HOST:$remote_dir/"
     echo "完成"
 }
 
-case "${1:-}" in
-    --pull)        pull_parquet "$REMOTE_DATA" "$LOCAL_DATA" ;;
-    --pull-gt10)   pull_parquet "$REMOTE_DATA_GT10" "$LOCAL_DATA_GT10" ;;
-    --pull-all)    pull_parquet "$REMOTE_DATA" "$LOCAL_DATA"
-                   pull_parquet "$REMOTE_DATA_GT10" "$LOCAL_DATA_GT10" ;;
-    *)             echo "Usage: $0 --pull | --pull-gt10 | --pull-all" >&2
-                   exit 1 ;;
+sync_from_remote() {
+    local remote_dir="$1"
+    local local_dir="$2"
+    local label="$3"
+    echo ">>> 拉取 $label: $remote_dir -> $local_dir"
+    ensure_local_dir "$local_dir"
+    sshpass -p "$REMOTE_PASS" rsync -avz --progress \
+        "${RSYNC_SSH[@]}" \
+        "$REMOTE_USER@$REMOTE_HOST:$remote_dir/" "$local_dir/"
+    echo "完成"
+}
+
+output_paths() {
+    if [ -n "$FILTER_NAME" ]; then
+        printf '%s\n%s\n' "$LOCAL_OUTPUT/$FILTER_NAME" "$REMOTE_OUTPUT/$FILTER_NAME"
+        return
+    fi
+
+    printf '%s\n%s\n' "$LOCAL_OUTPUT" "$REMOTE_OUTPUT"
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --push-data|--pull-data|--push-lsf|--pull-lsf|--pull-output|--push-output)
+            if [ -n "$ACTION" ]; then
+                echo "Only one action can be specified per run." >&2
+                usage >&2
+                exit 1
+            fi
+            ACTION="$1"
+            shift
+            ;;
+        --filter)
+            if [ "$#" -lt 2 ]; then
+                echo "--filter requires a value." >&2
+                usage >&2
+                exit 1
+            fi
+            FILTER_NAME="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$ACTION" ]; then
+    usage >&2
+    exit 1
+fi
+
+case "$ACTION" in
+    --push-data)
+        sync_to_remote "$LOCAL_DATA" "$REMOTE_DATA" "共享输入 data"
+        ;;
+    --pull-data)
+        sync_from_remote "$REMOTE_DATA" "$LOCAL_DATA" "共享输入 data"
+        ;;
+    --push-lsf)
+        sync_to_remote "$LOCAL_LSF" "$REMOTE_LSF" "LSF 脚本"
+        ;;
+    --pull-lsf)
+        sync_from_remote "$REMOTE_LSF" "$LOCAL_LSF" "LSF 脚本"
+        ;;
+    --pull-output)
+        mapfile -t paths < <(output_paths)
+        sync_from_remote "${paths[1]}" "${paths[0]}" "输出 output"
+        ;;
+    --push-output)
+        mapfile -t paths < <(output_paths)
+        sync_to_remote "${paths[0]}" "${paths[1]}" "输出 output"
+        ;;
 esac
