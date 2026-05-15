@@ -72,8 +72,10 @@ def run_single_lake_service(  # pylint: disable=too-many-arguments,too-many-loca
 
     valid_df = validate_monthly_series(series_df)
 
-    if frozen_year_months and use_frozen_mask:
-        valid_df = filter_frozen_rows(valid_df, frozen_year_months)
+    # Frozen-month masking is intentionally disabled for the shared
+    # quantile/pwm STL path. Keep the parameters for API compatibility,
+    # but run decomposition on the validated raw monthly series.
+    del frozen_year_months, use_frozen_mask
 
     if valid_df.empty:
         raise ValueError("No valid observations remain after filtering")
