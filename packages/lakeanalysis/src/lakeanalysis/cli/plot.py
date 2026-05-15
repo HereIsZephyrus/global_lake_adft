@@ -489,3 +489,43 @@ def pv_series(
     import sys as _sys
     _sys.argv = ["plot_pv_lake_series", "--output-dir", str(output_dir), "--top-n", str(top_n)]
     _main()
+
+
+# ── Quality / QC visualizations ─────────────────────────────────────────────
+
+
+@app.command()
+def quality(
+    min_size: int = typer.Option(5, "--min-size", help="Minimum intersection size for upset"),
+    area_data_dir: str | None = typer.Option(None, "--area-data-dir", help="Parquet data dir for area comparison"),
+    area_good_threshold: float = typer.Option(2.0, "--area-good", help="Area comparison good threshold"),
+) -> None:
+    """Generate quality overview: anomaly upset + area-vs-atlas comparison."""
+    setup_logging("visualize-quality")
+    from . import comparison as comparison_cli
+
+    # Anomaly upset plot
+    upset(min_size=min_size)
+
+    # Area comparison plot
+    try:
+        comparison_cli.area(
+            data_dir=area_data_dir,
+            good_threshold=area_good_threshold,
+            sample=60,
+        )
+    except Exception:
+        pass
+
+
+@app.command()
+def qr(
+    threshold_quantile: float | None = typer.Option(None, help="Filter by quantile"),
+    results_limit: int = typer.Option(200_000, help="Results sample size"),
+    no_plots: bool = typer.Option(False, "--no-plots", help="Skip plot generation"),
+) -> None:
+    """Run result-quality review across all result families."""
+    setup_logging("visualize-qr")
+    from . import hawkes as hawkes_cli
+
+    hawkes_cli.qc(threshold_quantile=threshold_quantile, results_limit=results_limit, no_plots=no_plots)

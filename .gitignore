@@ -217,7 +217,9 @@ __marimo__/
 
 # Temporary data
 .cursor/
-data/
+data/*
+!data/**/
+!data/**/.gitkeep
 results/
 logs/
 sampled/
