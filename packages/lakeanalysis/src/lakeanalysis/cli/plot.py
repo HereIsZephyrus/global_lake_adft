@@ -205,7 +205,7 @@ def comparison_zonal(
     setup_logging("plot-comparison-zonal")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "comparison"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_comparison_zonal import main as _main
@@ -247,7 +247,7 @@ def extremes_scatter(
 @app.command()
 def area_histogram(
     limit: int | None = typer.Option(None, "--limit", help="Limit number of lakes"),
-    output_dir: str = typer.Option("data/figures/histogram", help="Output directory"),
+    output_dir: str = typer.Option("figure", help="Output directory"),
 ) -> None:
     """Plot KDE of lake area distribution (lake_info vs area_quality)."""
     setup_logging("plot-area-histogram")
@@ -271,7 +271,7 @@ def upset(
     setup_logging("plot-upset")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "upset"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_anomaly_upset import main as _main
@@ -294,7 +294,7 @@ def interpolation_sample(
     setup_logging("plot-interpolation-sample")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "interpolation"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_interpolation_sample import main as _main
@@ -312,7 +312,7 @@ def interpolation_hq(
     setup_logging("plot-interpolation-hq")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "interpolation"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_interpolation_hq import main as _main
@@ -335,7 +335,7 @@ def eot_extremes(
     setup_logging("plot-eot-extremes")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "eot"
+        output_dir = SourceConfig().figures_dir
     import matplotlib.pyplot as plt
     from lakesource.postgres import fetch_eot_extremes_by_id, fetch_lake_area_by_ids, series_db
     from lakeanalysis.eot import plot_eot_extremes
@@ -366,7 +366,7 @@ def pwm_hawkes_lake(
     setup_logging("plot-pwm-hawkes-lake")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "pwm_hawkes"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pwm_hawkes_lake import main as _main
@@ -384,7 +384,7 @@ def pwm_hawkes_summary(
     setup_logging("plot-pwm-hawkes-summary")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "pwm_hawkes"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pwm_hawkes_summary import main as _main
@@ -406,7 +406,7 @@ def shift_candidates(
     setup_logging("plot-shift-candidates")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "shift"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_shift_candidate_lakes import main as _main
@@ -428,7 +428,7 @@ def flat_series(
     setup_logging("plot-flat-series")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "quality"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_flat_lake_series import main as _main
@@ -446,7 +446,7 @@ def hcv_series(
     setup_logging("plot-hcv-series")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "quality"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_hcv_lake_series import main as _main
@@ -464,7 +464,7 @@ def hcv_mid_series(
     setup_logging("plot-hcv-mid-series")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "quality"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_hcv_mid_lake_series import main as _main
@@ -482,7 +482,7 @@ def pv_series(
     setup_logging("plot-pv-series")
     from lakesource.config import SourceConfig
     if output_dir is None:
-        output_dir = SourceConfig().figures_dir / "quality"
+        output_dir = SourceConfig().figures_dir
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
     from plot_pv_lake_series import main as _main

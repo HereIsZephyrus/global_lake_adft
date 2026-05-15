@@ -161,7 +161,7 @@ class TestMakeGridMap:
         )
         cfg = GlobalGridConfig(provider=provider, resolution=0.5, output_dir=tmp_path)
         result = fn(cfg)
-        assert result == tmp_path / "sub" / "map.png"
+        assert result == tmp_path / "sub_map.png"
         assert result.exists()
 
 

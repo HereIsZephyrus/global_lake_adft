@@ -55,11 +55,11 @@ class TestFiguresDir:
 
     def test_default_when_data_dir_is_set(self):
         config = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/data/parquet"))
-        assert config.figures_dir == Path("/data/figures")
+        assert config.figures_dir == Path("/data/figure")
 
     def test_default_when_data_dir_is_none(self):
         config = SourceConfig(backend=Backend.POSTGRES)
-        expected = Path.cwd() / "data" / "figures"
+        expected = Path.cwd() / "figure"
         assert config.figures_dir == expected
 
     def test_explicit_figures_dir(self):

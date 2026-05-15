@@ -1,4 +1,4 @@
-"""Generate comparison density panels under data/figures/comparison/."""
+"""Generate comparison density panels under figure/."""
 
 from __future__ import annotations
 

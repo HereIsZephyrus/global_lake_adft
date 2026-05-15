@@ -241,8 +241,6 @@ def plot_anomaly_upset(
     show_counts: bool = True,
     title: str = "异常集合交集",
 ) -> plt.Figure:
-    import upsetplot
-
     set_cols = list(_SET_DISPLAY_NAMES.keys())
     for col in set_cols:
         if col not in flags_df.columns:
@@ -251,14 +249,37 @@ def plot_anomaly_upset(
     plot_df = flags_df.copy()
     for col in set_cols:
         plot_df[col] = plot_df[col].astype(bool)
-    rename_map = {col: _SET_DISPLAY_NAMES[col] for col in set_cols}
-    plot_df = plot_df.rename(columns=rename_map)
-    counts = upsetplot.from_indicators(list(rename_map.values()), data=plot_df)
+    display_names = [_SET_DISPLAY_NAMES[col] for col in set_cols]
+
+    def _combo_label(row: pd.Series) -> str:
+        active = [disp for col, disp in zip(set_cols, display_names, strict=True) if bool(row[col])]
+        return " + ".join(active) if active else "正常"
+
+    counts = plot_df.apply(_combo_label, axis=1).value_counts().sort_values(ascending=False)
     counts = counts[counts >= min_size]
-    fig = plt.figure(figsize=(10, 6))
-    upsetplot.plot(counts, fig=fig, show_counts=show_counts, sort_by="cardinality")
-    fig.suptitle(title, fontsize=13)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    if counts.empty:
+        counts = pd.Series({"无组合达到阈值": 0})
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(range(len(counts)), counts.to_numpy(), color="#5B8FF9", alpha=0.9)
+    ax.set_xticks(range(len(counts)))
+    ax.set_xticklabels(counts.index.tolist(), rotation=30, ha="right")
+    ax.set_ylabel("湖泊数量")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.2)
+
+    if show_counts:
+        for bar, value in zip(bars, counts.to_numpy(), strict=True):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                str(int(value)),
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    fig.tight_layout()
     return fig
 
 

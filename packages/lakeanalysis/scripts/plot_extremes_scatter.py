@@ -5,7 +5,7 @@ Usage:
         uv run python packages/lakeanalysis/scripts/plot_extremes_scatter.py
 
     DATA_BACKEND=parquet PARQUET_DATA_DIR=data/parquet_gt10 \\
-        uv run python packages/lakeanalysis/scripts/plot_extremes_scatter.py --output-dir data/figures/gt10
+        uv run python packages/lakeanalysis/scripts/plot_extremes_scatter.py --output-dir figure
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ def main() -> None:
     load_env()
     Theme.apply()
 
-    out = args.output_dir / "quantile"
+    out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
     log.info("Loading extreme event counts from %s ...", args.parquet_dir)

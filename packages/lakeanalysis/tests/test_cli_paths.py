@@ -19,9 +19,9 @@ class TestSourceConfigPathResolution:
         assert source.data_dir.parent / "parquet_gt10" == Path("/data/parquet_gt10")
 
     def test_figures_dir_from_data_dir(self):
-        """Default figures_dir = data_dir.parent / "figures"."""
+        """Default figures_dir = data_dir.parent / "figure"."""
         source = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/data/parquet"))
-        assert source.figures_dir == Path("/data/figures")
+        assert source.figures_dir == Path("/data/figure")
 
     def test_domain_data_subdirs(self):
         """Domain-specific data dirs derive from data_dir.parent."""
@@ -32,11 +32,9 @@ class TestSourceConfigPathResolution:
         assert base / "comparison" / "sample_lakes.parquet" == Path("/data/comparison/sample_lakes.parquet")
 
     def test_domain_figure_subdirs(self):
-        """Figure subdirs derive from figures_dir."""
+        """Figure outputs derive from figures_dir root."""
         source = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/data/parquet"))
-        assert source.figures_dir / "quality" == Path("/data/figures/quality")
-        assert source.figures_dir / "pwm_hawkes" == Path("/data/figures/pwm_hawkes")
-        assert source.figures_dir / "interpolation" == Path("/data/figures/interpolation")
+        assert source.figures_dir == Path("/data/figure")
 
     def test_no_module_level_data_dir(self):
         """_common.py must not export DATA_DIR as a module constant."""

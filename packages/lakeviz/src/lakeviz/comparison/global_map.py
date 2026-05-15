@@ -478,7 +478,8 @@ def _render_six_panels(
     stat_label = {"high": "高值异常", "low": "低值异常", "all": "全部异常"}
     outputs: list[Path] = []
     for stat, agg, cmap, log_scale, agg_label in specs:
-        out_path = config.output_dir / sub_dir / f"{stat}_{agg}.png"
+        flat_sub_dir = sub_dir.replace("/", "_")
+        out_path = config.output_dir / f"{flat_sub_dir}_{stat}_{agg}.png"
         result = _render_two_panel(
             config,
             df,
@@ -511,7 +512,7 @@ def plot_pwm_pvalue_panels(
     df = _standardize_pwm_pvalues(config.provider, config.resolution, p1=p1, p2=p2, refresh=refresh)
     return _render_six_panels(
         config, df,
-        sub_dir="comparison/pwm_pvalue",
+        sub_dir="comparison_pwm_pvalue",
         left_label=f"PWM p={p1}",
         right_label=f"PWM p={p2}",
         min_lakes=min_lakes,
@@ -532,7 +533,7 @@ def plot_eot_quantile_panels(
     df = _standardize_eot_quantiles(config.provider, config.resolution, q1=q1, q2=q2, refresh=refresh)
     return _render_six_panels(
         config, df,
-        sub_dir="comparison/eot_quantile",
+        sub_dir="comparison_eot_quantile",
         left_label=f"EOT q={q1}",
         right_label=f"EOT q={q2}",
         min_lakes=min_lakes,
@@ -550,7 +551,7 @@ def plot_quantile_vs_pwm_panels(
     df = _standardize_quantile_vs_pwm(config.provider, config.resolution, refresh=refresh)
     return _render_six_panels(
         config, df,
-        sub_dir="comparison/quantile_vs_pwm",
+        sub_dir="comparison_quantile_vs_pwm",
         left_label="Quantile",
         right_label="PWM",
         min_lakes=min_lakes,
@@ -569,7 +570,7 @@ def plot_pwm_vs_eot_panels(
     df = _standardize_pwm_vs_eot(config.provider, config.resolution, refresh=refresh)
     return _render_six_panels(
         config, df,
-        sub_dir="comparison/pwm_vs_eot",
+        sub_dir="comparison_pwm_vs_eot",
         left_label="PWM",
         right_label="EOT",
         min_lakes=min_lakes,
@@ -599,7 +600,7 @@ def plot_gt10_vs_full_panels(
         domain_outputs = _render_six_panels(
             config,
             df,
-            sub_dir="comparison/gt10_vs_full",
+            sub_dir="comparison_gt10_vs_full",
             left_label="gt10",
             right_label="full",
             min_lakes=min_lakes,
@@ -607,9 +608,6 @@ def plot_gt10_vs_full_panels(
             draw_hatch=draw_hatch,
         )
         renamed_outputs: list[Path] = []
-        for path in domain_outputs:
-            target = path.with_name(f"{domain}_{path.name}")
-            path.rename(target)
-            renamed_outputs.append(target)
+        renamed_outputs.extend(domain_outputs)
         outputs.extend(renamed_outputs)
     return outputs

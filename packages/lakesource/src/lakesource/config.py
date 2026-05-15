@@ -104,9 +104,9 @@ class SourceConfig:
             if fd:
                 object.__setattr__(self, "figures_dir", Path(fd))
             elif self.data_dir is not None:
-                object.__setattr__(self, "figures_dir", self.data_dir.parent / "figures")
+                object.__setattr__(self, "figures_dir", self.data_dir.parent / "figure")
             else:
-                object.__setattr__(self, "figures_dir", Path.cwd() / "data" / "figures")
+                object.__setattr__(self, "figures_dir", Path.cwd() / "figure")
 
         if self.db_host is None:
             h = _env("DB_HOST")
