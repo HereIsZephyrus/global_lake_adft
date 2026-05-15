@@ -80,7 +80,7 @@ class Manager:
             self._report.processed_chunks += stats.get("chunks", 0)
             self._done_workers.add(worker)
             log.info(
-                "Worker %d: done (success=%d error=%d chunks=%d elapsed=%.3fs) io_active=%d",
+                "Worker %d: done (success=%d error=%d chunks=%d elapsed=%.3fs)",
                 worker,
                 stats.get("success", 0),
                 stats.get("error", 0),
