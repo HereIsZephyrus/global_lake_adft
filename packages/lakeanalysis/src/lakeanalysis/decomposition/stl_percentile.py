@@ -17,33 +17,11 @@ import pandas as pd
 from statsmodels.tsa.seasonal import STL
 
 from .base import DecompositionResult
+from .series import normalize_monthly_series
 
 log = logging.getLogger(__name__)
 
-REQUIRED_COLUMNS = ("year", "month", "water_area")
 MIN_YEARS = 3
-
-
-def _validate_and_sort(series_df: pd.DataFrame) -> pd.DataFrame:
-    missing = [c for c in REQUIRED_COLUMNS if c not in series_df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-
-    df = series_df.loc[:, list(REQUIRED_COLUMNS)].copy()
-    df["year"] = pd.to_numeric(df["year"], errors="raise").astype(int)
-    df["month"] = pd.to_numeric(df["month"], errors="raise").astype(int)
-    df["water_area"] = pd.to_numeric(df["water_area"], errors="raise").astype(float)
-
-    if ((df["month"] < 1) | (df["month"] > 12)).any():
-        raise ValueError("month must be in 1..12")
-
-    if df.duplicated(["year", "month"]).any():
-        df = df.drop_duplicates(subset=["year", "month"], keep="first")
-
-    df = df.sort_values(["year", "month"]).reset_index(drop=True)
-    df["year_month_key"] = df["year"] * 100 + df["month"]
-    df["month_ordinal"] = df["year"] * 12 + (df["month"] - 1)
-    return df
 
 
 def _compute_monthly_percentiles(
@@ -91,7 +69,7 @@ class STLPercentileMethod:
         return "stl"
 
     def decompose(self, series_df: pd.DataFrame) -> DecompositionResult:
-        df = _validate_and_sort(series_df)
+        df = normalize_monthly_series(series_df)
 
         if (df["water_area"] <= 0).any():
             raise ValueError("STL decomposition requires all water_area > 0")

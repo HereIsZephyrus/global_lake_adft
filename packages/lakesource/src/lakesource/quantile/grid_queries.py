@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from lakesource.grid_cache import cached_or_compute
 from lakesource.provider.grid_query import register_grid_query
 
 log = logging.getLogger(__name__)
@@ -30,19 +31,6 @@ def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _cached_or_compute(
-    cache_path: Path, refresh: bool, compute_fn
-) -> pd.DataFrame:
-    if not refresh and cache_path.exists():
-        log.info("Loading from cache: %s", cache_path)
-        return pd.read_parquet(cache_path)
-    df = compute_fn()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(cache_path, index=False)
-    log.info("Cached %d rows to %s", len(df), cache_path)
-    return df
-
-
 class _QuantileExtremesQuery:
     name = "quantile.extremes"
 
@@ -51,7 +39,7 @@ class _QuantileExtremesQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "quantile" / f"extremes_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
@@ -62,7 +50,7 @@ class _QuantileExtremesQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -80,7 +68,7 @@ class _QuantileExtremesByTypeQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "quantile" / f"extremes_by_type_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT e.event_type,
                    FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
@@ -92,7 +80,7 @@ class _QuantileExtremesByTypeQuery:
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -110,7 +98,7 @@ class _QuantileTransitionsQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "quantile" / f"transitions_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
@@ -121,7 +109,7 @@ class _QuantileTransitionsQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -139,7 +127,7 @@ class _QuantileTransitionsByTypeQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "quantile" / f"transitions_by_type_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT t.transition_type,
                    FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
@@ -151,7 +139,7 @@ class _QuantileTransitionsByTypeQuery:
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -169,7 +157,7 @@ class _QuantilePerLakeStatsQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "quantile" / f"per_lake_stats_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             WITH per_lake AS (
                 SELECT e.hylak_id,
@@ -192,7 +180,7 @@ class _QuantilePerLakeStatsQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,

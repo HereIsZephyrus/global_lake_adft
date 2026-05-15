@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from lakesource.grid_cache import cached_or_compute
 from lakesource.provider.grid_query import register_grid_query
 
 log = logging.getLogger(__name__)
@@ -20,20 +21,6 @@ def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _cached_or_compute(
-    cache_path: Path, refresh: bool, compute_fn
-) -> pd.DataFrame:
-    if not refresh and cache_path.exists():
-        log.info("Loading from cache: %s", cache_path)
-        return pd.read_parquet(cache_path)
-    df = compute_fn()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(cache_path, index=False)
-    log.info("Cached %d rows to %s", len(df), cache_path)
-    return df
-
-
-
 class _PWMConvergenceQuery:
     name = "pwm.convergence"
 
@@ -42,7 +29,7 @@ class _PWMConvergenceQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "pwm_extreme" / f"convergence_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
@@ -54,7 +41,7 @@ class _PWMConvergenceQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -72,7 +59,7 @@ class _PWMConvergedQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "pwm_extreme" / f"converged_grid_agg_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
                    FLOOR(l.lon / {resolution}) * {resolution} AS cell_lon,
@@ -85,7 +72,7 @@ class _PWMConvergedQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -103,7 +90,7 @@ class _PWMMonthlyThresholdQuery:
         *, refresh: bool = False, **kwargs: Any,
     ) -> pd.DataFrame:
         cache = cache_dir / "pwm_extreme" / f"monthly_threshold_grid_agg_r{resolution}.parquet"
-        df = _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        df = cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             SELECT t.month,
                    FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
@@ -117,7 +104,7 @@ class _PWMMonthlyThresholdQuery:
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """)
-        ))
+        ), log=log)
         df["month"] = df["month"].astype(int)
         return df
 
@@ -139,7 +126,7 @@ class _PWMExceedanceQuery:
     ) -> pd.DataFrame:
         p_tag = f"p{p_high:.4f}"
         cache = cache_dir / "pwm_extreme" / f"exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             WITH exceedance AS (
                 SELECT hylak_id,
@@ -162,7 +149,7 @@ class _PWMExceedanceQuery:
             GROUP BY 1, 2
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,
@@ -185,7 +172,7 @@ class _PWMMonthlyExceedanceQuery:
     ) -> pd.DataFrame:
         p_tag = f"p{p_high:.4f}"
         cache = cache_dir / "pwm_extreme" / f"monthly_exceedance_grid_agg_{p_tag}_r{resolution}.parquet"
-        df = _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        df = cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             WITH exceedance AS (
                 SELECT hylak_id, month,
@@ -205,7 +192,7 @@ class _PWMMonthlyExceedanceQuery:
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """)
-        ))
+        ), log=log)
         df["month"] = df["month"].astype(int)
         return df
 

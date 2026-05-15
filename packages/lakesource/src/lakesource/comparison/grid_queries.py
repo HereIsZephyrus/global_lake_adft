@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 
+from lakesource.grid_cache import cached_or_compute
 from lakesource.provider.grid_query import register_grid_query
 
 log = logging.getLogger(__name__)
@@ -23,19 +24,6 @@ def _fix_grid_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("lake_count",):
         if col in df.columns:
             df[col] = df[col].astype(int)
-    return df
-
-
-def _cached_or_compute(
-    cache_path: Path, refresh: bool, compute_fn
-) -> pd.DataFrame:
-    if not refresh and cache_path.exists():
-        log.info("Loading from cache: %s", cache_path)
-        return pd.read_parquet(cache_path)
-    df = compute_fn()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(cache_path, index=False)
-    log.info("Cached %d rows to %s", len(df), cache_path)
     return df
 
 
@@ -56,7 +44,7 @@ class _ComparisonExceedanceQuery:
             q_sample_filter = f"AND q.hylak_id IN ({id_list})"
             pwm_sample_filter = f"AND la.hylak_id IN ({id_list})"
 
-        return _cached_or_compute(cache, refresh, lambda: _fix_grid_dtypes(
+        return cached_or_compute(cache, refresh=refresh, compute_fn=lambda: _fix_grid_dtypes(
             client.query_df(f"""
             WITH quantile_agg AS (
                 SELECT FLOOR(l.lat / {resolution}) * {resolution} AS cell_lat,
@@ -107,7 +95,7 @@ class _ComparisonExceedanceQuery:
             JOIN pwm_agg pa ON pa.cell_lat = qa.cell_lat AND pa.cell_lon = qa.cell_lon
             ORDER BY 1, 2
             """)
-        ))
+        ), log=log)
 
     def fetch_postgres(
         self, config: Any, resolution: float,

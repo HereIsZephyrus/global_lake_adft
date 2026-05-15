@@ -2,7 +2,10 @@
 
 Each method produces a :class:`DecompositionResult` whose ``index_value``
 column is a cross-month comparable anomaly index consumed by downstream
-quantile / PWM extreme calculators.
+ quantile / PWM extreme calculators.
+
+``MonthlyClimatologyMethod`` remains available for legacy compatibility but is
+deprecated. Prefer ``STLPercentileMethod`` for new runs.
 """
 
 from __future__ import annotations

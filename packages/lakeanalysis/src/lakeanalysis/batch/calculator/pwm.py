@@ -19,10 +19,16 @@ from lakesource.pwm.store import (
 from lakeanalysis.pwm.service import run_single_lake_service
 from lakesource.pwm.schema import PWMExtremeServiceConfig, PWMExtremeConfig
 
-from .. import Calculator, LakeTask
+from .extreme_base import ExtremeBatchCalculator
 
 
-class PWMCalculator(Calculator):
+class PWMCalculator(ExtremeBatchCalculator):
+    _run_status_table = "pwm_extreme_run_status"
+    _run_status_done = RUN_STATUS_DONE
+    _run_status_error = RUN_STATUS_ERROR
+    _service_runner = staticmethod(run_single_lake_service)
+    _run_status_builder = staticmethod(make_run_status_row)
+
     def __init__(
         self,
         *,
@@ -31,49 +37,19 @@ class PWMCalculator(Calculator):
         min_valid_observations: int | None = None,
         method: str = "stl",
     ) -> None:
-        self._service_config = PWMExtremeServiceConfig(
-            pwm_config=pwm_config or PWMExtremeConfig(),
-            min_valid_per_month=min_valid_per_month,
-            min_valid_observations=min_valid_observations,
-            method=method,
-        )
-
-    def compute(self, task: LakeTask) -> Any:
-        return run_single_lake_service(
-            task.series_df,
-            hylak_id=task.hylak_id,
-            config=self._service_config,
-            frozen_year_months=set(task.frozen_year_months) or None,
-            use_frozen_mask=bool(task.frozen_year_months),
+        super().__init__(
+            PWMExtremeServiceConfig(
+                pwm_config=pwm_config or PWMExtremeConfig(),
+                min_valid_per_month=min_valid_per_month,
+                min_valid_observations=min_valid_observations,
+                method=method,
+            )
         )
 
     def result_to_rows(self, result: Any) -> dict[str, list[dict]]:
-        return {
+        return self.with_done_status({
             "pwm_extreme_thresholds": result_to_threshold_rows(result),
             "pwm_extreme_labels": result_to_label_rows(result),
             "pwm_extreme_extremes": result_to_extreme_rows(result),
             "pwm_extreme_abrupt_transitions": result_to_transition_rows(result),
-            "pwm_extreme_run_status": [
-                make_run_status_row(
-                    hylak_id=result.hylak_id or 0,
-                    chunk_start=0,
-                    chunk_end=0,
-                    status=RUN_STATUS_DONE,
-                )
-            ],
-        }
-
-    def error_to_rows(
-        self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
-    ) -> dict[str, list[dict]]:
-        return {
-            "pwm_extreme_run_status": [
-                make_run_status_row(
-                    hylak_id=hylak_id,
-                    chunk_start=chunk_start,
-                    chunk_end=chunk_end,
-                    status=RUN_STATUS_ERROR,
-                    error_message=str(error),
-                )
-            ],
-        }
+        }, result)

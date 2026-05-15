@@ -17,10 +17,16 @@ from lakesource.quantile.store import (
 from lakeanalysis.quantile.service import run_single_lake_service
 from lakesource.quantile.schema import QuantileServiceConfig
 
-from .. import Calculator, LakeTask
+from .extreme_base import ExtremeBatchCalculator
 
 
-class QuantileCalculator(Calculator):
+class QuantileCalculator(ExtremeBatchCalculator):
+    _run_status_table = "quantile_run_status"
+    _run_status_done = RUN_STATUS_DONE
+    _run_status_error = RUN_STATUS_ERROR
+    _service_runner = staticmethod(run_single_lake_service)
+    _run_status_builder = staticmethod(make_run_status_row)
+
     def __init__(
         self,
         *,
@@ -28,48 +34,17 @@ class QuantileCalculator(Calculator):
         min_valid_observations: int | None = None,
         method: str = "stl",
     ) -> None:
-        self._service_config = QuantileServiceConfig(
-            min_valid_per_month=min_valid_per_month,
-            min_valid_observations=min_valid_observations,
-            method=method,
-        )
-
-    def compute(self, task: LakeTask) -> Any:
-        return run_single_lake_service(
-            task.series_df,
-            hylak_id=task.hylak_id,
-            config=self._service_config,
-            frozen_year_months=set(task.frozen_year_months) or None,
-            use_frozen_mask=bool(task.frozen_year_months),
+        super().__init__(
+            QuantileServiceConfig(
+                min_valid_per_month=min_valid_per_month,
+                min_valid_observations=min_valid_observations,
+                method=method,
+            )
         )
 
     def result_to_rows(self, result: Any) -> dict[str, list[dict]]:
-        return {
+        return self.with_done_status({
             "quantile_labels": result_to_label_rows(result),
             "quantile_extremes": result_to_extreme_rows(result),
             "quantile_abrupt_transitions": result_to_transition_rows(result),
-            "quantile_run_status": [
-                make_run_status_row(
-                    hylak_id=result.hylak_id or 0,
-                    chunk_start=0,
-                    chunk_end=0,
-                    status=RUN_STATUS_DONE,
-                )
-            ],
-        }
-
-
-    def error_to_rows(
-        self, hylak_id: int, error: Exception, chunk_start: int, chunk_end: int
-    ) -> dict[str, list[dict]]:
-        return {
-            "quantile_run_status": [
-                make_run_status_row(
-                    hylak_id=hylak_id,
-                    chunk_start=chunk_start,
-                    chunk_end=chunk_end,
-                    status=RUN_STATUS_ERROR,
-                    error_message=str(error),
-                )
-            ],
-        }
+        }, result)
