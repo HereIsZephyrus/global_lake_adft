@@ -39,9 +39,9 @@ lake_adft --help
 lake_adft plot --help
 
 # 运行具体命令
-lake_adft plot comparison-global --data-dir data/output
-lake_adft hawkes mine --limit-id 100
-lake_adft eot run --chunk-size 5000
+lake_adft --filter gt10 comparison global
+lake_adft --filter full hawkes mine --limit-id 100
+lake_adft --filter no_pwm_err eot run --chunk-size 5000
 ```
 
 如果未安装到 PATH，可通过 `uv run` 调用：
@@ -67,7 +67,7 @@ DB_USER=
 DB_PASSWORD=
 DB_HOST=
 DB_PORT=
-LAKE_DATA_DIR=
+PARQUET_DATA_DIR=
 ```
 
 其中：
@@ -75,7 +75,14 @@ LAKE_DATA_DIR=
 - `ALTAS_DB` 用于湖泊几何或基础资料查询
 - `SERIES_DB` 用于时序结果消费
 - `DB_HOST`、`DB_PORT` 为空时会回退到默认本地连接
-- `LAKE_DATA_DIR` 用于 Parquet 文件后端（可选）
+- `PARQUET_DATA_DIR` 用于共享 Parquet 输入根目录，默认读取仓库内 `data/`
+
+## HPC 同步边界
+
+- 代码 checkout 走 Git，不要用 rsync 覆盖 HPC 工作区
+- 共享输入通过 `bash scripts/rsync_hpc.sh --push-data|--pull-data` 在本地与 HPC 仓库内 `data/` 间同步
+- `lsf/` 通过 `bash scripts/rsync_hpc.sh --push-lsf|--pull-lsf` 与 HPC 仓库外脚本目录同步
+- 结果目录通过 `bash scripts/rsync_hpc.sh --pull-output [--filter full|gt10|no_pwm_err]` 回传
 
 ## Batch 框架
 

@@ -10,7 +10,7 @@
 
 ```text
 global_lake_adft/
-├── data/                        # 本地分析输入与输出数据（不纳入版本控制）
+├── data/                        # 本地/远端共享输入数据（不纳入版本控制）
 ├── docs/
 │   ├── architecture/            # 仓库结构与边界说明
 │   └── research/                # 研究方法与算法说明
@@ -51,6 +51,15 @@ DB_PORT=
 uv run --package lakeanalysis pytest packages/lakeanalysis/tests
 uv run --package lakeanalysis pylint packages/lakeanalysis/src/lakeanalysis
 ```
+
+## HPC 同步约定
+
+- 代码仓库 `global_lake_adft/` 只通过 Git 同步
+- 共享输入 `data/` 通过 `bash scripts/rsync_hpc.sh --push-data|--pull-data` 在本地与 HPC 仓库内同步
+- HPC 作业脚本 `lsf/` 与 HPC 仓库外 `lsf/` 通过 `bash scripts/rsync_hpc.sh --push-lsf|--pull-lsf` 同步
+- 结果目录 `output/` 按需通过 `bash scripts/rsync_hpc.sh --pull-output [--filter ...]` 回传
+
+这套约定避免用 rsync 覆盖 Git 工作区，减少 HPC 本地改动、缓存文件和结果文件混入代码仓库的风险。
 
 ## 文档入口
 

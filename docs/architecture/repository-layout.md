@@ -24,4 +24,10 @@ global_lake_adft/
 - `packages/lakeviz/`：可视化与地图聚合导出
 - `docs/architecture/`：仓库结构与工程边界
 - `docs/research/`：研究方法、算法与报告
-- `data/`：本地数据与输出，不纳入版本控制
+- `data/`：本地与 HPC 仓库内共享输入根，不纳入版本控制
+
+运行约定：
+
+- 本地与 HPC 都从仓库内 `data/` 读取共享输入
+- HPC 仓库外只保留 `lsf/` 等运维脚本目录，不再维护独立 `lake_data/`
+- 业务输出统一写入仓库内 `output/<filter>/...`

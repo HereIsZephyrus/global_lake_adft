@@ -2,13 +2,16 @@
 # 统一同步 HPC 非 Git 目录。
 # 代码仓库通过 git push / git clone 管理，不走 rsync。
 #
-#   --push-data              本地 data/ -> HPC lake_data/
-#   --pull-data              HPC lake_data/ -> 本地 data/
+#   --push-data              本地 data/ -> HPC data/
+#   --pull-data              HPC data/ -> 本地 data/
 #   --push-lsf               本地 lsf/ -> HPC lsf/
 #   --pull-lsf               HPC lsf/ -> 本地 lsf/
 #   --pull-output            HPC output/ -> 本地 output/
 #   --push-output            本地 output/ -> HPC output/
 #   --filter <name>          仅同步 output/<name>/ 子树（仅 output 命令支持）
+#
+# Data sync notes:
+#   - projects/ 默认不参与 HPC data 同步
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -27,7 +30,7 @@ LOCAL_REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_DATA="$LOCAL_REPO/data"
 LOCAL_LSF="$LOCAL_REPO/lsf"
 LOCAL_OUTPUT="$LOCAL_REPO/output"
-REMOTE_DATA="$REMOTE_ROOT/lake_data"
+REMOTE_DATA="$REMOTE_ROOT/global_lake_adft/data"
 REMOTE_LSF="$REMOTE_ROOT/lsf"
 REMOTE_REPO="$REMOTE_ROOT/global_lake_adft"
 REMOTE_OUTPUT="$REMOTE_REPO/output"
@@ -85,6 +88,26 @@ sync_from_remote() {
     echo "完成"
 }
 
+sync_data_to_remote() {
+    echo ">>> 推送 共享输入 data: $LOCAL_DATA -> $REMOTE_DATA"
+    ensure_local_dir "$LOCAL_DATA"
+    sshpass -p "$REMOTE_PASS" rsync -avz --progress \
+        --exclude "projects/" \
+        "${RSYNC_SSH[@]}" \
+        "$LOCAL_DATA/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DATA/"
+    echo "完成"
+}
+
+sync_data_from_remote() {
+    echo ">>> 拉取 共享输入 data: $REMOTE_DATA -> $LOCAL_DATA"
+    ensure_local_dir "$LOCAL_DATA"
+    sshpass -p "$REMOTE_PASS" rsync -avz --progress \
+        --exclude "projects/" \
+        "${RSYNC_SSH[@]}" \
+        "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DATA/" "$LOCAL_DATA/"
+    echo "完成"
+}
+
 output_paths() {
     if [ -n "$FILTER_NAME" ]; then
         printf '%s\n%s\n' "$LOCAL_OUTPUT/$FILTER_NAME" "$REMOTE_OUTPUT/$FILTER_NAME"
@@ -133,10 +156,10 @@ fi
 
 case "$ACTION" in
     --push-data)
-        sync_to_remote "$LOCAL_DATA" "$REMOTE_DATA" "共享输入 data"
+        sync_data_to_remote
         ;;
     --pull-data)
-        sync_from_remote "$REMOTE_DATA" "$LOCAL_DATA" "共享输入 data"
+        sync_data_from_remote
         ;;
     --push-lsf)
         sync_to_remote "$LOCAL_LSF" "$REMOTE_LSF" "LSF 脚本"
