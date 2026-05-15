@@ -334,10 +334,9 @@ class TestBackendMetadata:
         provider = _make_provider(tmp_path)
         assert provider.cache_dir == tmp_path.parent / "cache"
 
-    def test_raises_when_data_dir_is_none(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("PARQUET_DATA_DIR", raising=False)
-        test_config = SourceConfig(backend=Backend.PARQUET, data_dir=None)
-        # Force-construct with None by bypassing post_init override
+    def test_raises_when_data_dir_is_none(self, monkeypatch):
+        monkeypatch.setenv("PARQUET_DATA_DIR", "/fake/to/satisfy/init")
+        test_config = SourceConfig(backend=Backend.PARQUET)
         object.__setattr__(test_config, "data_dir", None)
         with pytest.raises(ValueError, match="data_dir is required"):
             ParquetLakeProvider(test_config)

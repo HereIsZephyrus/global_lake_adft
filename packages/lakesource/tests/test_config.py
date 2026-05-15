@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lakesource.config import Backend, OutputFilter, SourceConfig, _env, _normalize_data_dir
+from lakesource.config import Backend, SourceConfig, _env
 from lakesource.env import config_dir, ensure_env_loaded, load_env, _find_dotenv
 
 
@@ -46,31 +46,6 @@ class TestEnvHelper:
         assert _env("TEST_KEY") is None
 
 
-# ── _normalize_data_dir() ─────────────────────────────────────────────────
-
-class TestNormalizeDataDir:
-    def test_no_change_for_non_legacy_path(self):
-        assert _normalize_data_dir(Path("/real/data/path")) == Path("/real/data/path")
-
-    def test_collapses_legacy_parquet_variant(self):
-        assert _normalize_data_dir(Path("/base/data/parquet")) == Path("/base/data")
-
-    def test_collapses_legacy_full_variant(self):
-        assert _normalize_data_dir(Path("/base/data/full")) == Path("/base/data")
-
-    def test_collapses_legacy_gt10_variant(self):
-        assert _normalize_data_dir(Path("/base/data/gt10")) == Path("/base/data")
-
-    def test_collapses_legacy_no_pwm_err_variant(self):
-        assert _normalize_data_dir(Path("/base/data/no_pwm_err")) == Path("/base/data")
-
-    def test_no_collapse_when_grandparent_not_named_data(self):
-        assert _normalize_data_dir(Path("/base/other/parquet")) == Path("/base/other/parquet")
-
-    def test_no_collapse_when_not_a_known_variant_name(self):
-        assert _normalize_data_dir(Path("/base/data/custom")) == Path("/base/data/custom")
-
-
 # ── SourceConfig: backend resolution ──────────────────────────────────────
 
 class TestSourceConfigBackend:
@@ -91,35 +66,27 @@ class TestSourceConfigBackend:
 
     def test_falls_back_to_adapter_yaml_when_no_env(self, monkeypatch):
         monkeypatch.delenv("DATA_BACKEND", raising=False)
+        monkeypatch.setenv("PARQUET_DATA_DIR", "/tmp/data")
         cfg = SourceConfig()
-        assert cfg.backend in (Backend.PARQUET, Backend.POSTGRES)
+        assert cfg.backend == Backend.PARQUET  # adapter.yaml default
 
 
 # ── SourceConfig: data_dir resolution ─────────────────────────────────────
 
 class TestSourceConfigDataDir:
-    def test_parquet_defaults_to_cwd_data_when_no_env(self, monkeypatch):
+    def test_parquet_raises_when_no_data_dir_and_no_env(self, monkeypatch):
         monkeypatch.delenv("PARQUET_DATA_DIR", raising=False)
-        cfg = SourceConfig(backend=Backend.PARQUET)
-        assert cfg.data_dir == Path.cwd() / "data"
+        with pytest.raises(ValueError, match="data_dir is required"):
+            SourceConfig(backend=Backend.PARQUET)
 
     def test_parquet_resolves_from_env_parquet_data_dir(self, monkeypatch):
         monkeypatch.setenv("PARQUET_DATA_DIR", "/env/data")
         cfg = SourceConfig(backend=Backend.PARQUET)
         assert cfg.data_dir == Path("/env/data")
 
-    def test_parquet_env_path_is_normalized(self, monkeypatch):
-        monkeypatch.setenv("PARQUET_DATA_DIR", "/base/data/parquet")
-        cfg = SourceConfig(backend=Backend.PARQUET)
-        assert cfg.data_dir == Path("/base/data")
-
     def test_explicit_data_dir_is_kept_for_parquet(self):
         cfg = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/explicit"))
         assert cfg.data_dir == Path("/explicit")
-
-    def test_explicit_data_dir_is_normalized(self):
-        cfg = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/base/data/gt10"))
-        assert cfg.data_dir == Path("/base/data")
 
     def test_postgres_does_not_set_data_dir(self, monkeypatch):
         monkeypatch.delenv("PARQUET_DATA_DIR", raising=False)
@@ -127,67 +94,24 @@ class TestSourceConfigDataDir:
         assert cfg.data_dir is None
 
 
-# ── SourceConfig: output_filter resolution ────────────────────────────────
+# ── SourceConfig: figures_dir resolution ──────────────────────────────────
 
-class TestSourceConfigOutputFilter:
-    def test_default_is_full(self, monkeypatch):
-        monkeypatch.delenv("LAKE_FILTER", raising=False)
-        cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.output_filter == OutputFilter.FULL
-
-    def test_resolves_from_env_lake_filter(self, monkeypatch):
-        monkeypatch.setenv("LAKE_FILTER", "gt10")
-        cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.output_filter == OutputFilter.GT10
-
-    def test_resolves_no_pwm_err(self, monkeypatch):
-        monkeypatch.setenv("LAKE_FILTER", "no_pwm_err")
-        cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.output_filter == OutputFilter.NO_PWM_ERR
-
-    def test_invalid_lake_filter_raises(self, monkeypatch):
-        monkeypatch.setenv("LAKE_FILTER", "invalid")
-        with pytest.raises(ValueError, match="Invalid LAKE_FILTER: 'invalid'"):
-            SourceConfig(backend=Backend.POSTGRES)
-
-    def test_explicit_filter_is_kept(self):
-        cfg = SourceConfig(backend=Backend.POSTGRES, output_filter=OutputFilter.GT10)
-        assert cfg.output_filter == OutputFilter.GT10
-
-
-# ── SourceConfig: output_dir / figures_dir resolution ─────────────────────
-
-class TestSourceConfigOutputDirs:
-    def test_output_dir_default_full(self, monkeypatch):
-        monkeypatch.delenv("OUTPUT_DIR", raising=False)
-        monkeypatch.delenv("LAKE_FILTER", raising=False)
-        cfg = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/data"))
-        assert cfg.output_dir == Path.cwd() / "output" / "full"
-
-    def test_output_dir_follows_output_filter(self, monkeypatch):
-        monkeypatch.delenv("OUTPUT_DIR", raising=False)
-        monkeypatch.setenv("LAKE_FILTER", "gt10")
-        cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.output_dir == Path.cwd() / "output" / "gt10"
-
-    def test_output_dir_from_env(self, monkeypatch):
-        monkeypatch.setenv("OUTPUT_DIR", "/custom/output")
-        cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.output_dir == Path("/custom/output")
-
-    def test_figures_dir_defaults_to_output_visualize(self, monkeypatch):
-        monkeypatch.delenv("OUTPUT_DIR", raising=False)
+class TestSourceConfigFiguresDir:
+    def test_defaults_to_cwd_figure_when_no_data_dir(self, monkeypatch):
         monkeypatch.delenv("FIGURES_DIR", raising=False)
-        monkeypatch.delenv("LAKE_FILTER", raising=False)
         cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.figures_dir == Path.cwd() / "output" / "full" / "visualize"
+        assert cfg.figures_dir == Path.cwd() / "figure"
 
-    def test_figures_dir_from_env(self, monkeypatch):
-        monkeypatch.setenv("FIGURES_DIR", "/env/figures")
+    def test_defaults_to_data_parent_figure_when_data_dir_set(self):
+        cfg = SourceConfig(backend=Backend.PARQUET, data_dir=Path("/data/mydata"))
+        assert cfg.figures_dir == Path("/data") / "figure"
+
+    def test_resolves_from_env(self, monkeypatch):
+        monkeypatch.setenv("FIGURES_DIR", "/custom/figures")
         cfg = SourceConfig(backend=Backend.POSTGRES)
-        assert cfg.figures_dir == Path("/env/figures")
+        assert cfg.figures_dir == Path("/custom/figures")
 
-    def test_explicit_figures_dir_overrides_env(self, monkeypatch):
+    def test_explicit_overrides_env(self, monkeypatch):
         monkeypatch.setenv("FIGURES_DIR", "/env/figures")
         cfg = SourceConfig(backend=Backend.POSTGRES, figures_dir=Path("/explicit"))
         assert cfg.figures_dir == Path("/explicit")
@@ -327,7 +251,7 @@ class TestSourceConfigConnectionParams:
     def test_connection_params_allows_empty_password_if_set(self):
         cfg = SourceConfig(backend=Backend.POSTGRES, db_user="user", db_password="")
         params = cfg.connection_params("mydb")
-        assert params["password"] == ""  # empty string is explicitly set
+        assert params["password"] == ""
 
 
 # ── SourceConfig: t property ──────────────────────────────────────────────
@@ -336,21 +260,7 @@ class TestSourceConfigTProperty:
     def test_t_returns_table_config(self):
         cfg = SourceConfig(backend=Backend.POSTGRES)
         assert cfg.t is not None
-        assert cfg.t.series_table is not None  # has a callable method
-
-
-# ── OutputFilter enum ─────────────────────────────────────────────────────
-
-class TestOutputFilterEnum:
-    def test_values(self):
-        assert OutputFilter.FULL.value == "full"
-        assert OutputFilter.GT10.value == "gt10"
-        assert OutputFilter.NO_PWM_ERR.value == "no_pwm_err"
-
-    def test_from_string(self):
-        assert OutputFilter("full") == OutputFilter.FULL
-        assert OutputFilter("gt10") == OutputFilter.GT10
-        assert OutputFilter("no_pwm_err") == OutputFilter.NO_PWM_ERR
+        assert cfg.t.series_table is not None
 
 
 # ── Backend enum ──────────────────────────────────────────────────────────
@@ -371,7 +281,7 @@ class TestBackendEnum:
 # ── SourceConfig: year filters ────────────────────────────────────────────
 
 class TestSourceConfigYearFilters:
-    def test_default_none(self, monkeypatch):
+    def test_default_none(self):
         cfg = SourceConfig(backend=Backend.POSTGRES)
         assert cfg.year_start is None
         assert cfg.year_end is None
@@ -417,7 +327,6 @@ class TestFindDotenv:
         assert _find_dotenv() == env_file
 
     def test_falls_back_to_cwd_when_dotenv_installed(self, monkeypatch, tmp_path):
-        """When LAKE_ENV_FILE is not set, find_dotenv returns the cwd .env if it exists."""
         monkeypatch.delenv("LAKE_ENV_FILE", raising=False)
         dotenv_file = tmp_path / ".env"
         dotenv_file.write_text("KEY=val")
@@ -426,10 +335,8 @@ class TestFindDotenv:
             assert _find_dotenv() == dotenv_file
 
     def test_falls_back_to_legacy_path(self, monkeypatch):
-        """When no env, no .env in cwd, returns the legacy path."""
         monkeypatch.delenv("LAKE_ENV_FILE", raising=False)
         result = _find_dotenv()
-        expected_suffix = Path("lakesource") / ".env"
         assert result.name == ".env"
         assert result.parent.name == "lakesource"
 
@@ -445,16 +352,16 @@ class TestEnvLoading:
         import os
         assert os.environ["TEST_VAR_FROM_ENV"] == "hooray"
 
-    def test_load_env_skips_if_not_exists(self, tmp_path, monkeypatch):
+    def test_load_env_skips_if_not_exists(self, tmp_path):
         nonexistent = tmp_path / "nonexistent.env"
-        load_env(dotenv_path=nonexistent)  # should not raise
+        load_env(dotenv_path=nonexistent)
 
     def test_ensure_env_loaded_is_idempotent(self, tmp_path, monkeypatch):
         env_file = tmp_path / ".env"
         env_file.write_text("DB_HOST=example.test\n")
         monkeypatch.delenv("DB_HOST", raising=False)
         ensure_env_loaded(dotenv_path=env_file)
-        ensure_env_loaded(dotenv_path=env_file)  # second call is no-op
+        ensure_env_loaded(dotenv_path=env_file)
 
     def test_load_env_override_true(self, tmp_path, monkeypatch):
         env_file = tmp_path / ".env"
