@@ -48,10 +48,6 @@ def hawkes(
     id_end: IdEndOpt = None,
     decay_rate: float = typer.Option(0.8, help="Exponential decay rate λ for S_k strength"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
-    min_event_rate: float = typer.Option(0.01, help="Minimum event rate"),
-    max_event_rate: float = typer.Option(0.30, help="Maximum event rate"),
-    min_relative_amplitude: float = typer.Option(0.05, help="Minimum relative amplitude"),
-    min_median_severity: float = typer.Option(1.0, help="Minimum median severity"),
     monthly_significance_quantile: float = typer.Option(0.95, help="Monthly significance quantile"),
 ) -> None:
     """Run batch PWM-Hawkes computation."""
@@ -68,10 +64,6 @@ def hawkes(
         calculator_kwargs=dict(
             decay_rate=decay_rate,
             hawkes_window_months=hawkes_window_months,
-            min_event_rate=min_event_rate,
-            max_event_rate=max_event_rate,
-            min_relative_amplitude=min_relative_amplitude,
-            min_median_severity=min_median_severity,
             monthly_significance_quantile=monthly_significance_quantile,
         ),
     )
@@ -83,8 +75,6 @@ def diag(
     chunk_size: ChunkSizeOpt = 10_000,
     filter_name: FilterNameOpt = "full",
     skip_run: bool = typer.Option(False, "--skip-run", help="Skip batch run, only fetch diagnosis"),
-    min_event_rate: float = typer.Option(0.005, help="Minimum event rate"),
-    max_event_rate: float = typer.Option(0.50, help="Maximum event rate"),
 ) -> None:
     """Run PWM-Hawkes diagnostic on small sample, print summary."""
     from ._common import setup_logging
@@ -101,9 +91,7 @@ def diag(
             limit_id=limit_id,
             calculator_kwargs=dict(
                 decay_rate=0.8, hawkes_window_months=4.0,
-                min_event_rate=min_event_rate,
-                max_event_rate=max_event_rate, min_relative_amplitude=0.05,
-                min_median_severity=1.0, monthly_significance_quantile=0.95,
+                monthly_significance_quantile=0.95,
             ),
         )
 

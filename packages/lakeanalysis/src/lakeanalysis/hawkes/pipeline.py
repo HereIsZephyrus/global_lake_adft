@@ -22,13 +22,6 @@ from .model import evaluate_intensity_decomposition
 from .types import HawkesEventSeries, TYPE_DRY, TYPE_WET
 
 
-class HawkesQCFailError(Exception):
-    """QC check failed before Hawkes fitting."""
-    def __init__(self, message: str, qc: dict) -> None:
-        super().__init__(message)
-        self.qc = qc
-
-
 @dataclass(frozen=True)
 class HawkesCoreResult:
     """Complete output of one lake through the Hawkes pipeline."""
@@ -40,83 +33,6 @@ class HawkesCoreResult:
 def quantile_string(value: float) -> str:
     """Return deterministic decimal string for quantile keys."""
     return str(Decimal(str(value)))
-
-
-def compute_qc_metrics(
-    series_df: pd.DataFrame,
-    event_series: HawkesEventSeries,
-    events_table: pd.DataFrame,
-    min_event_rate: float,
-    max_event_rate: float,
-    min_relative_amplitude: float,
-    min_median_severity: float,
-) -> tuple[dict, bool]:
-    """Compute and evaluate quality-control metrics for Hawkes entry.
-
-    Uses ``severity`` column when available (PWM events), otherwise falls back
-    to ``value - threshold`` (EOT extremes).
-    """
-    n_obs = len(series_df)
-    n_events = len(event_series.times)
-    event_rate = float(n_events / n_obs) if n_obs > 0 else float("nan")
-
-    values = (
-        pd.to_numeric(series_df["water_area"], errors="coerce")
-        .dropna()
-        .to_numpy(dtype=float)
-    )
-    if values.size > 0:
-        p95 = float(np.quantile(values, 0.95))
-        p05 = float(np.quantile(values, 0.05))
-        median = float(np.median(values))
-        relative_amplitude = float((p95 - p05) / max(abs(median), 1.0))
-    else:
-        relative_amplitude = float("nan")
-
-    if events_table.empty:
-        median_severity = float("nan")
-    elif "severity" in events_table.columns:
-        severity_vals = pd.to_numeric(
-            events_table["severity"], errors="coerce"
-        ).to_numpy(dtype=float)
-        median_severity = (
-            float(np.median(severity_vals)) if severity_vals.size > 0 else float("nan")
-        )
-    else:
-        excess = np.abs(
-            pd.to_numeric(events_table["value"], errors="coerce").to_numpy(
-                dtype=float
-            )
-            - pd.to_numeric(events_table["threshold"], errors="coerce").to_numpy(
-                dtype=float
-            )
-        )
-        median_severity = (
-            float(np.median(excess)) if excess.size > 0 else float("nan")
-        )
-
-    qc: dict = {
-        "qc_event_rate": event_rate,
-        "qc_relative_amplitude": relative_amplitude,
-        "qc_median_severity": median_severity,
-        "qc_pass_event_rate": bool(
-            np.isfinite(event_rate)
-            and min_event_rate <= event_rate <= max_event_rate
-        ),
-        "qc_pass_relative_amplitude": bool(
-            np.isfinite(relative_amplitude)
-            and relative_amplitude >= min_relative_amplitude
-        ),
-        "qc_pass_median_severity": bool(
-            np.isfinite(median_severity) and median_severity >= min_median_severity
-        ),
-    }
-    qc_pass = bool(
-        qc["qc_pass_event_rate"]
-        and qc["qc_pass_relative_amplitude"]
-        and qc["qc_pass_median_severity"]
-    )
-    return qc, qc_pass
 
 
 def build_hawkes_result_row(summary: dict) -> dict:
@@ -269,21 +185,6 @@ def build_error_summary(
     }
 
 
-def build_qc_fail_summary(
-    hylak_id: int,
-    qc: dict,
-    message: str,
-    threshold_quantile: float = 0.0,
-) -> dict:
-    """Build a summary dict for QC-fail runs, including QC metric values."""
-    summary = build_error_summary(hylak_id, message, threshold_quantile)
-    summary["qc_pass"] = False
-    summary["qc_event_rate"] = qc.get("qc_event_rate")
-    summary["qc_relative_amplitude"] = qc.get("qc_relative_amplitude")
-    summary["qc_median_severity"] = qc.get("qc_median_severity")
-    return summary
-
-
 def make_hawkes_run_status_row(
     *,
     hylak_id: int,
@@ -311,10 +212,6 @@ def run_hawkes_pipeline(
     hylak_id: int,
     threshold_quantile: float = 0.0,
     hawkes_window_months: float = 4.0,
-    min_event_rate: float = 0.01,
-    max_event_rate: float = 0.30,
-    min_relative_amplitude: float = 0.05,
-    min_median_severity: float = 1.0,
     monthly_significance_quantile: float = 0.95,
 ) -> HawkesCoreResult:
     """Orchestrate the full Hawkes pipeline for one lake.
@@ -327,26 +224,8 @@ def run_hawkes_pipeline(
         5. Intensity decomposition for monthly transition scores
         6. Assemble summary, LRT rows, and monthly rows
 
-    Raises:
-        HawkesQCFailError: When QC checks fail before fitting.
     """
-    qc, qc_pass = compute_qc_metrics(
-        series_df=series_df,
-        event_series=event_series,
-        events_table=events_table,
-        min_event_rate=min_event_rate,
-        max_event_rate=max_event_rate,
-        min_relative_amplitude=min_relative_amplitude,
-        min_median_severity=min_median_severity,
-    )
-    if not qc_pass:
-        msg = (
-            "QC failed before Hawkes fit: "
-            f"rate={qc['qc_event_rate']:.4f}, "
-            f"rel_amp={qc['qc_relative_amplitude']:.6f}, "
-            f"median_severity={qc['qc_median_severity']:.6f}"
-        )
-        raise HawkesQCFailError(msg, qc)
+    del series_df, events_table
 
     full_fit = fit_full_model(
         event_series,
@@ -445,9 +324,9 @@ def run_hawkes_pipeline(
         "lrt_p_D_to_W": float(lrt_d_to_w.p_value),
         "lrt_p_W_to_D": float(lrt_w_to_d.p_value),
         "qc_pass": True,
-        "qc_event_rate": qc["qc_event_rate"],
-        "qc_relative_amplitude": qc["qc_relative_amplitude"],
-        "qc_median_severity": qc["qc_median_severity"],
+        "qc_event_rate": None,
+        "qc_relative_amplitude": None,
+        "qc_median_severity": None,
         "error_message": None,
     }
 

@@ -8,7 +8,6 @@ import pandas as pd
 from lakeanalysis.hawkes.pipeline import (
     build_hawkes_result_row,
     build_hawkes_transition_monthly_rows,
-    compute_qc_metrics,
     quantile_string,
 )
 from lakeanalysis.hawkes.types import (
@@ -64,39 +63,6 @@ class TestQuantileString:
         a = quantile_string(0.5)
         b = quantile_string(0.5)
         assert a == b
-
-
-class TestComputeQCMetrics:
-    def test_qc_pass(self):
-        series_df = _make_series()
-        event_series, events_table = _make_event_series(series_df)
-        qc, passed = compute_qc_metrics(
-            series_df=series_df,
-            event_series=event_series,
-            events_table=events_table,
-            min_event_rate=0.001,
-            max_event_rate=0.5,
-            min_relative_amplitude=0.01,
-            min_median_severity=1.0,
-        )
-        assert passed
-        assert "qc_event_rate" in qc
-        assert "qc_median_severity" in qc
-        assert qc["qc_median_severity"] > 0
-
-    def test_qc_fail_low_severity(self):
-        series_df = _make_series()
-        event_series, events_table = _make_event_series(series_df)
-        qc, passed = compute_qc_metrics(
-            series_df=series_df,
-            event_series=event_series,
-            events_table=events_table,
-            min_event_rate=0.001,
-            max_event_rate=0.5,
-            min_relative_amplitude=0.01,
-            min_median_severity=1e9,
-        )
-        assert not passed
 
 
 class TestBuildHawkesResultRow:

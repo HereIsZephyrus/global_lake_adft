@@ -127,9 +127,6 @@ class TestPWMHawkesUsesSTLPath:
 
         calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
-            min_event_rate=0.005,
-            max_event_rate=0.50,
-            min_median_severity=0.1,
             method="stl",
         )
 
@@ -149,9 +146,6 @@ class TestPWMHawkesUsesSTLPath:
 
         calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
-            min_event_rate=0.005,
-            max_event_rate=0.50,
-            min_median_severity=0.1,
             method="stl",
             phi_method="log1p",
         )
@@ -167,9 +161,6 @@ class TestPWMHawkesUsesSTLPath:
 
         calculator = PWMHawkesCalculator(
             pwm_config=PWMExtremeConfig(n_pwm=3, min_observations_per_month=5),
-            min_event_rate=0.005,
-            max_event_rate=0.50,
-            min_median_severity=0.1,
             method="stl",
             evt_route="B",
         )
@@ -240,9 +231,6 @@ class TestEOTHawkesDefaults:
         ds = _make_single_dataset(series_df, hylak_id=1)
         calc = EOTHawkesCalculator(
             threshold_quantile=0.90,
-            min_event_rate=0.005,
-            max_event_rate=0.50,
-            min_median_severity=0.1,
         )
 
         rows_by_table, _, _ = calc.run_dataset(ds)

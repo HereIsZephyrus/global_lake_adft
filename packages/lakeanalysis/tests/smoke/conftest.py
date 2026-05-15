@@ -254,7 +254,7 @@ def pwm_hawkes_id_range(backend, source_config):
 
         run_status = run_status_rows[0]
         result_row = result_rows[0]
-        if run_status.get("status") == "done" and bool(result_row.get("qc_pass", False)):
+        if run_status.get("status") == "done":
             return hylak_id, hylak_id + 1
 
     pytest.skip(f"No lakes satisfy PWM-Hawkes smoke requirements on {backend} backend")

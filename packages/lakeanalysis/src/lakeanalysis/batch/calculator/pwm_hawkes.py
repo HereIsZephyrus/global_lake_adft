@@ -17,16 +17,13 @@ import pandas as pd
 
 from lakeanalysis.hawkes import (
     HawkesCoreResult,
-    HawkesQCFailError,
     build_error_summary,
-    build_qc_fail_summary,
     build_events_from_pwm,
     run_hawkes_pipeline,
 )
 from lakeanalysis.pwm.events import (
     compute_decay_index,
     extract_hawkes_events_from_segments,
-    extract_segments,
 )
 from lakeanalysis.pwm.evt import compute_pwm_evt_strengths
 from lakeanalysis.pwm.phi import map_strength_df_to_phi
@@ -52,10 +49,6 @@ class PWMHawkesCalculator(HawkesCalculator):
         pwm_config: PWMExtremeConfig | None = None,
         decay_rate: float = 0.8,
         hawkes_window_months: float = 4.0,
-        min_event_rate: float = 0.01,
-        max_event_rate: float = 0.30,
-        min_relative_amplitude: float = 0.05,
-        min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
         method: str = "stl",
         evt_route: Literal["A", "B"] = "A",
@@ -63,10 +56,6 @@ class PWMHawkesCalculator(HawkesCalculator):
     ) -> None:
         super().__init__(
             hawkes_window_months=hawkes_window_months,
-            min_event_rate=min_event_rate,
-            max_event_rate=max_event_rate,
-            min_relative_amplitude=min_relative_amplitude,
-            min_median_severity=min_median_severity,
             monthly_significance_quantile=monthly_significance_quantile,
         )
         self._table_prefix = "pwm_hawkes"
@@ -138,10 +127,6 @@ class PWMHawkesCalculator(HawkesCalculator):
                 hylak_id=hylak_id,
                 threshold_quantile=0.0,
                 hawkes_window_months=self._hawkes_window_months,
-                min_event_rate=self._min_event_rate,
-                max_event_rate=self._max_event_rate,
-                min_relative_amplitude=self._min_relative_amplitude,
-                min_median_severity=self._min_median_severity,
                 monthly_significance_quantile=self._monthly_significance_quantile,
             )
             return self._make_result(
@@ -151,14 +136,6 @@ class PWMHawkesCalculator(HawkesCalculator):
                     "pwm_hawkes_segments": segments_rows,
                     "pwm_hawkes_route_summary": route_summary_rows,
                 },
-            )
-        except HawkesQCFailError as e:
-            summary = build_qc_fail_summary(hylak_id, e.qc, str(e))
-            return self._make_result(
-                HawkesCoreResult(
-                    summary=summary, lrt_rows=[], transition_monthly_rows=[]
-                ),
-                extra_rows_by_table=self._empty_extra_rows(),
             )
         except Exception as exc:
             log.debug("PWM-Hawkes failed for hylak_id=%d: %s", task.hylak_id, exc)

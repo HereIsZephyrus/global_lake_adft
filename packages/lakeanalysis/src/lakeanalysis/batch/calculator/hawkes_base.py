@@ -36,17 +36,9 @@ class HawkesCalculator(Calculator):
         self,
         *,
         hawkes_window_months: float = 4.0,
-        min_event_rate: float = 0.01,
-        max_event_rate: float = 0.30,
-        min_relative_amplitude: float = 0.05,
-        min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
     ) -> None:
         self._hawkes_window_months = hawkes_window_months
-        self._min_event_rate = min_event_rate
-        self._max_event_rate = max_event_rate
-        self._min_relative_amplitude = min_relative_amplitude
-        self._min_median_severity = min_median_severity
         self._monthly_significance_quantile = monthly_significance_quantile
 
     def result_to_rows(self, result: HawkesResult) -> dict[str, list[dict]]:

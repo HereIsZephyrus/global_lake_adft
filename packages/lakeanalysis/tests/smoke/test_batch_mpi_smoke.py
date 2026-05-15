@@ -334,6 +334,6 @@ def test_mpi_pwm_hawkes_smoke(
             (segments_df["hylak_id"] >= id_start) & (segments_df["hylak_id"] < id_end)
         ]
         assert not lake_results.empty, "No PWM-Hawkes results for smoke lake"
-        assert bool(lake_results["qc_pass"].iloc[0]), "Smoke lake should pass PWM-Hawkes QC"
+        assert lake_results["error_message"].isna().all(), "Smoke lake should complete without Hawkes error"
         assert not lake_segments.empty, "Expected bidirectional bridge segments to be materialized"
         assert set(lake_segments["segment_type"]).issubset({"transition", "unilateral"})

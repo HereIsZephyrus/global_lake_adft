@@ -18,9 +18,7 @@ from lakeanalysis.eot import (
 )
 from lakeanalysis.hawkes import (
     HawkesCoreResult,
-    HawkesQCFailError,
     build_error_summary,
-    build_qc_fail_summary,
     build_events_from_eot,
     run_hawkes_pipeline,
 )
@@ -45,19 +43,11 @@ class EOTHawkesCalculator(HawkesCalculator):
         *,
         threshold_quantile: float = 0.90,
         hawkes_window_months: float = 4.0,
-        min_event_rate: float = 0.01,
-        max_event_rate: float = 0.30,
-        min_relative_amplitude: float = 0.05,
-        min_median_severity: float = 1.0,
         monthly_significance_quantile: float = 0.95,
         decluster_run_length: int | None = 1,
     ) -> None:
         super().__init__(
             hawkes_window_months=hawkes_window_months,
-            min_event_rate=min_event_rate,
-            max_event_rate=max_event_rate,
-            min_relative_amplitude=min_relative_amplitude,
-            min_median_severity=min_median_severity,
             monthly_significance_quantile=monthly_significance_quantile,
         )
         self._table_prefix = "eot_hawkes"
@@ -98,22 +88,9 @@ class EOTHawkesCalculator(HawkesCalculator):
                 hylak_id=hylak_id,
                 threshold_quantile=self._threshold_quantile,
                 hawkes_window_months=self._hawkes_window_months,
-                min_event_rate=self._min_event_rate,
-                max_event_rate=self._max_event_rate,
-                min_relative_amplitude=self._min_relative_amplitude,
-                min_median_severity=self._min_median_severity,
                 monthly_significance_quantile=self._monthly_significance_quantile,
             )
             return self._make_result(core, return_level_rows=return_level_rows)
-        except HawkesQCFailError as e:
-            summary = build_qc_fail_summary(
-                hylak_id, e.qc, str(e), self._threshold_quantile
-            )
-            return self._make_result(
-                HawkesCoreResult(
-                    summary=summary, lrt_rows=[], transition_monthly_rows=[]
-                )
-            )
         except Exception as exc:
             log.debug("EOT-Hawkes failed for hylak_id=%d: %s", task.hylak_id, exc)
             error_summary = build_error_summary(
