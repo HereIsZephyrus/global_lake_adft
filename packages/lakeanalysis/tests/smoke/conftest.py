@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
-
 import pytest
 
 from lakesource.config import Backend, SourceConfig

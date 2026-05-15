@@ -257,6 +257,11 @@ def plot_anomaly_upset(
     counts = counts[counts >= min_size]
     fig = plt.figure(figsize=(10, 6))
 
+    # Workaround: upsetplot 0.9.0 uses fillna(..., inplace=True) which is a
+    # no-op under pandas >= 3.0 Copy-on-Write, leaving NaN in edgecolor arrays
+    # and crashing matplotlib.  Monkeypatch UpSet.plot_matrix to use the
+    # equivalent non-inplace fillna assignments.
+    # pylint: disable=protected-access
     _original_plot_matrix = upsetplot.UpSet.plot_matrix
 
     def _patched_plot_matrix(self, ax):
@@ -339,6 +344,7 @@ def plot_anomaly_upset(
         upsetplot.plot(counts, fig=fig, show_counts=show_counts, sort_by="cardinality")
     finally:
         upsetplot.UpSet.plot_matrix = _original_plot_matrix
+    # pylint: enable=protected-access
     fig.suptitle(title, fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     return fig
