@@ -12,7 +12,7 @@ from scipy.optimize import minimize
 
 from lakeanalysis.extreme.evt import fit_gpd_exceedances
 from .basis import BaseBasis, HarmonicBasis
-from .series import MIN_OBSERVATIONS, MonthlyTimeSeries, TailDirection
+from .series import MonthlyTimeSeries
 
 log = logging.getLogger(__name__)
 

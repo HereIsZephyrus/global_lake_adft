@@ -15,7 +15,7 @@ from .batch import (
     QualityBatchWriter,
     QualityCalculator,
     QualityRunConfig,
-    build_quality_context,
+    build_quality_context,  # pylint: disable=unused-import
 )
 
 log = logging.getLogger(__name__)

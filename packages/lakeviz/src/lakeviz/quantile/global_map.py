@@ -113,3 +113,34 @@ plot_transition_event_density_map = make_density_map(
     sub_dir="quantile/transitions",
     filename="event_density.png",
 )
+
+
+def plot_quantile_global_maps(
+    config: GlobalGridConfig,
+    *,
+    refresh: bool = False,
+    min_lakes: int = 1,
+) -> list[Path]:
+    """Generate the standard batch of quantile global maps."""
+    outputs = [
+        plot_extremes_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_extremes_event_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_transition_density_map(config, refresh=refresh, min_lakes=min_lakes),
+        plot_transition_event_density_map(config, refresh=refresh, min_lakes=min_lakes),
+    ]
+
+    outputs.extend(
+        plot_extremes_by_type_map(config, event_type, refresh=refresh, min_lakes=min_lakes)
+        for event_type in ("high", "low")
+    )
+    outputs.extend(
+        plot_transition_by_type_map(
+            config,
+            transition_type,
+            refresh=refresh,
+            min_lakes=min_lakes,
+        )
+        for transition_type in ("low_to_high", "high_to_low")
+    )
+
+    return [path for path in outputs if path != Path()]

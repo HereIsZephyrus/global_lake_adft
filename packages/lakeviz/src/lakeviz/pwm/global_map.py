@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
-
 from ..config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from ..grid import agg_to_grid_matrix
 from ..grid_map_factory import make_density_map, make_grid_map

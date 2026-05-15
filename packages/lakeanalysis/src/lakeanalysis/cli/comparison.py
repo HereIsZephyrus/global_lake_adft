@@ -21,7 +21,6 @@ def run(
     """Run algorithm comparison (Quantile vs PWM) on sampled lakes."""
     setup_logging("comparison")
     import pandas as pd
-    from pathlib import Path
     from lakeanalysis.batch import Engine, IdSetFilter, build_provider_batch_reader, build_provider_batch_writer
     from lakeanalysis.batch.calculator.factory import CalculatorFactory
     from lakesource.config import SourceConfig
@@ -61,7 +60,6 @@ def area(
     from lakeanalysis.quality.comparison import enrich_comparison_df, summarize_comparison
     from lakeanalysis.quality.metrics import AgreementConfig
     import matplotlib.pyplot as plt
-    import numpy as np
 
     parquet_dir = Path(data_dir)
     out = Path(output_dir)
@@ -122,7 +120,7 @@ def sample_lakes(
     if output_dir is None:
         output_dir = str(SourceConfig().data_dir.parent / "comparison" / "benchmarks" / "algorithms" / "full" / "sample")
     from pathlib import Path
-    from lakesource.postgres import series_db
+    from lakesource.postgres import series_db  # pylint: disable=no-name-in-module
     import pandas as pd
     import numpy as np
 

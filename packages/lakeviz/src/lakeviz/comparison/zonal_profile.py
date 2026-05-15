@@ -10,9 +10,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
 from ..config import DEFAULT_VIZ_CONFIG, GlobalGridConfig
 from ..grid import zonal_mean
 from ..style.base import AxisStyle, apply_axis_style

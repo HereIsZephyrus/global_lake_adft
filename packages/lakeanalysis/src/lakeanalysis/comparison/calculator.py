@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from lakesource.comparison.schema import (
     RUN_STATUS_DONE,
@@ -34,7 +33,7 @@ from lakesource.quantile.store import (
 from lakeanalysis.pwm.service import run_single_lake_service as run_pwm_service
 from lakeanalysis.quantile.service import run_single_lake_service as run_quantile_service
 
-from ..batch import Calculator, LakeDataset, LakeTask
+from ..batch import Calculator, LakeTask
 
 log = logging.getLogger(__name__)
 

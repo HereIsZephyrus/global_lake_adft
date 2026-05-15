@@ -20,7 +20,12 @@ def compute(
 ) -> None:
     """Compute structural shift labels via batch engine."""
     setup_logging("shift-labels")
-    from lakeanalysis.batch import Engine, RangeFilter, build_provider_batch_reader, build_provider_batch_writer
+    from lakeanalysis.batch import (  # pylint: disable=no-name-in-module
+        Engine,
+        RangeFilter,
+        build_provider_batch_reader,
+        build_provider_batch_writer,
+    )
     from lakeanalysis.quality.shift_labels_calculator import ShiftLabelsCalculator
     from lakeanalysis.quality.shift_labels_runner import upsert_shift_labels_from_parquet, sync_shift_to_anomalies
     from lakesource.config import SourceConfig
@@ -67,7 +72,7 @@ def sample(
     from lakeanalysis.quality.filters.shift import ShiftConfig, ShiftFilter
     from lakeanalysis.quality.filters import LakeContext
     from lakesource.config import SourceConfig
-    from lakesource.postgres import fetch_lake_area_chunk, series_db
+    from lakesource.postgres import fetch_lake_area_chunk, series_db  # pylint: disable=no-name-in-module
     import pandas as pd
 
     if output_dir is None:
@@ -112,7 +117,11 @@ def inspect(
     from lakeanalysis.quality.filters.shift import ShiftConfig, ShiftFilter
     from lakeanalysis.quality.filters import LakeContext
     from lakesource.config import SourceConfig
-    from lakesource.postgres import fetch_lake_area_by_ids, fetch_frozen_year_months_by_ids, series_db
+    from lakesource.postgres import (  # pylint: disable=no-name-in-module
+        fetch_lake_area_by_ids,
+        fetch_frozen_year_months_by_ids,
+        series_db,
+    )
     import matplotlib.pyplot as plt
 
     if output_dir is None:
