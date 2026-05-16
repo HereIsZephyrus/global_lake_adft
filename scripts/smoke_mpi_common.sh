@@ -24,7 +24,7 @@ NP="${NP:-4}"
 MPI_LAUNCHER="${MPI_LAUNCHER:-mpiexec}"
 CHUNK_SIZE="${CHUNK_SIZE:-3}"
 ID_START="${ID_START:-0}"
-ID_END="${ID_END:-2000}"
+ID_END="${ID_END:-}"
 SMOKE_MPI_TIMESTAMP="${SMOKE_MPI_TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
 SMOKE_MPI_LOG_FILE="${SMOKE_MPI_LOG_FILE:-}"
 
@@ -37,8 +37,10 @@ smoke_range_args() {
   printf '%s\n' \
     --filter "$SMOKE_MPI_FILTER" \
     --chunk-size "$CHUNK_SIZE" \
-    --id-start "$ID_START" \
-    --id-end "$ID_END"
+    --id-start "$ID_START"
+  if [[ -n "$ID_END" ]]; then
+    printf '%s\n' --id-end "$ID_END"
+  fi
 }
 
 run_mpi() {
