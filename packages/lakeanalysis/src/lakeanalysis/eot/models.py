@@ -172,6 +172,7 @@ class PreparedExtremes:
     """Container for pre-fitted threshold and declustered exceedances."""
 
     series: MonthlyTimeSeries
+    full_series: MonthlyTimeSeries
     representative_threshold: float
     extremes: pd.DataFrame
     basis_model: BaseBasis

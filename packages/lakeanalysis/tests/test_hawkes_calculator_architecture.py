@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from lakeanalysis.batch.lake_dataset import LakeDataset
 from lakesource.pwm.schema import PWMExtremeConfig
@@ -235,3 +236,17 @@ class TestEOTHawkesDefaults:
 
         rows_by_table, _, _ = calc.run_dataset(ds)
         assert "eot_return_levels" in rows_by_table
+
+    def test_eot_hawkes_no_exceedance_is_non_error_result(self) -> None:
+        from lakeanalysis.eot import NoDeclustering
+        from lakeanalysis.hawkes import build_events_from_eot
+        from lakeanalysis.eot import EOTEstimator
+
+        series_df = _make_synthetic_series(seed=47)
+        estimator = EOTEstimator(declustering_strategy=NoDeclustering())
+        with pytest.raises(ValueError, match="No exceedances"):
+            estimator.fit(
+                series_df,
+                tail="high",
+                threshold=float(series_df["water_area"].max()) + 1.0,
+            )

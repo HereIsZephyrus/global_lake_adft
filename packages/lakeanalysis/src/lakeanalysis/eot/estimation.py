@@ -240,6 +240,10 @@ class NHPPFitter:
             full_series=full_series,
             frozen_year_months=frozen_year_months,
         )
+class NoExceedanceError(ValueError):
+    """Raised when thresholding/declustering yields no usable extremes."""
+
+
 @dataclass
 class EOTEstimator:
     """High-level estimator orchestrating thresholding, declustering and NHPP fit."""
@@ -351,14 +355,10 @@ class EOTEstimator:
         tail: TailDirection,
         frozen_year_months: set[int] | None = None,
     ) -> tuple[MonthlyTimeSeries, MonthlyTimeSeries]:
-        """Coerce, defrozen, validate and tail-transform into (series, full_series)."""
+        """Resolve the modelling series and auxiliary frozen-aware reference series."""
         raw = self._coerce_series(data)
-        series = (
-            raw.defrozen(frozen_year_months)
-            .validate_min_observations(self.min_observations)
-            .for_tail(tail)
-        )
-        full = raw.for_tail(tail)
+        full = raw.validate_min_observations(self.min_observations).for_tail(tail)
+        series = full
         return series, full
 
     def _resolve_series_context_shared(
@@ -368,8 +368,9 @@ class EOTEstimator:
         tail: TailDirection,
     ) -> tuple[MonthlyTimeSeries, MonthlyTimeSeries]:
         """Resolve (series, full_series) from pre-computed shared artefacts."""
-        series = defrozen_series.validate_min_observations(self.min_observations).for_tail(tail)
+        del defrozen_series
         full = raw_series.for_tail(tail)
+        series = full.validate_min_observations(self.min_observations)
         return series, full
 
     def _build_threshold_context(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -474,6 +475,7 @@ class EOTEstimator:
         extremes = self.declustering_strategy.decluster(series, u_obs)
         return PreparedExtremes(
             series=series,
+            full_series=full_series,
             representative_threshold=rep_threshold,
             extremes=extremes,
             basis_model=basis_model,
@@ -491,7 +493,7 @@ class EOTEstimator:
     ) -> FitResult:
         """Fit NHPP from already prepared threshold/declustering artifacts."""
         if prepared.extremes.empty:
-            raise ValueError("No exceedances remain after thresholding and declustering")
+            raise NoExceedanceError("No exceedances remain after thresholding and declustering")
         if self.fitter is None:
             raise ValueError("fitter must be available before fitting")
         location_model = self._build_location_model(prepared.basis_model)
@@ -510,7 +512,7 @@ class EOTEstimator:
             u_grid=prepared.u_grid,
             threshold_model=prepared.threshold_model,
             threshold_params=prepared.threshold_params,
-            full_series=self._coerce_series(source_data).for_tail(tail),
+            full_series=prepared.full_series,
             frozen_year_months=tuple(sorted(frozen_year_months or set())),
         )
 
@@ -546,8 +548,7 @@ class EOTEstimator:
     ) -> tuple[FitResult, FitResult]:
         """Fit high and low tails with shared preprocessing artifacts."""
         raw_series = self._coerce_series(data)
-        shared = raw_series.defrozen(frozen_year_months)
-        shared = shared.validate_min_observations(self.min_observations)
+        shared = raw_series.validate_min_observations(self.min_observations)
 
         fit_high = self._fit_tail_from_shared(
             raw_series, shared, tail="high",
@@ -585,6 +586,7 @@ class EOTEstimator:
         extremes = self.declustering_strategy.decluster(series, u_obs)
         prepared = PreparedExtremes(
             series=series,
+            full_series=full_series,
             representative_threshold=rep_threshold,
             extremes=extremes,
             basis_model=basis_model,

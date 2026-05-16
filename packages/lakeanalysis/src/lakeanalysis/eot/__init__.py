@@ -8,7 +8,7 @@ from .basis import (
     HarmonicBasis,
 )
 from .diagnostics import ModelChecker, ReturnLevelEstimator
-from .estimation import EOTEstimator, NHPPFitter
+from .estimation import EOTEstimator, NHPPFitter, NoExceedanceError
 from .likelihood import NHPPLogLikelihood
 from .models import FitResult, LocationModel
 from .plot_adapter import (
@@ -50,6 +50,7 @@ __all__ = [
     "FitResult",
     "NHPPLogLikelihood",
     "NHPPFitter",
+    "NoExceedanceError",
     "EOTEstimator",
     "ReturnLevelEstimator",
     "ModelChecker",

@@ -14,6 +14,7 @@ import logging
 from lakeanalysis.eot import (
     EOTEstimator,
     NoDeclustering,
+    NoExceedanceError,
     ReturnLevelEstimator,
     RunsDeclustering,
 )
@@ -114,6 +115,38 @@ class EOTHawkesCalculator(HawkesCalculator):
                     result_rows.append(core.summary)
                     lrt_rows.extend(core.lrt_rows)
                     transition_rows.extend(core.transition_monthly_rows)
+                except NoExceedanceError:
+                    result_rows.append(
+                        {
+                            "hylak_id": hylak_id,
+                            "threshold_quantile": float(threshold_quantile),
+                            "converged": False,
+                            "message": "No exceedances remain after thresholding and declustering",
+                            "n_events": 0,
+                            "n_dry_events": 0,
+                            "n_wet_events": 0,
+                            "log_likelihood": None,
+                            "objective_value": None,
+                            "mu_D": None,
+                            "mu_W": None,
+                            "alpha_DD": None,
+                            "alpha_DW": None,
+                            "alpha_WD": None,
+                            "alpha_WW": None,
+                            "beta_DD": None,
+                            "beta_DW": None,
+                            "beta_WD": None,
+                            "beta_WW": None,
+                            "spectral_radius": None,
+                            "lrt_p_D_to_W": None,
+                            "lrt_p_W_to_D": None,
+                            "qc_pass": True,
+                            "qc_event_rate": None,
+                            "qc_relative_amplitude": None,
+                            "qc_median_severity": None,
+                            "error_message": None,
+                        }
+                    )
                 except Exception as exc:
                     log.debug(
                         "EOT-Hawkes failed for hylak_id=%d q=%.4f: %s",
@@ -132,7 +165,10 @@ class EOTHawkesCalculator(HawkesCalculator):
 
             first_summary = result_rows[0] if result_rows else build_error_summary(hylak_id, "No threshold_quantiles configured")
             aggregate_summary = dict(first_summary)
-            aggregate_summary["error_message"] = None if not errors else "; ".join(errors)[:500]
+            if result_rows and all(row.get("error_message") is None for row in result_rows):
+                aggregate_summary["error_message"] = None
+            else:
+                aggregate_summary["error_message"] = None if not errors else "; ".join(errors)[:500]
             return self._make_result(
                 HawkesCoreResult(
                     summary=aggregate_summary,
