@@ -33,7 +33,7 @@ class DuckDBClient:
         self._table_config = table_config
         self._registered_views: set[str] = set()
         self.con = duckdb.connect(database=":memory:")
-        self.con.execute("SET threads=1")
+        self.con.execute("SET threads=1; SET enable_progress_bar = false")
 
     def query(self, sql: str, parameters: dict[str, Any] | None = None) -> list[dict]:
         result = self.con.execute(sql, parameters=parameters).fetchdf()

@@ -204,6 +204,7 @@ def _persist_rows_to_parquet_output(output_dir: Path, rows_by_table: dict[str, l
     import duckdb
 
     con = duckdb.connect()
+    con.execute("SET enable_progress_bar = false")
     output_dir.mkdir(parents=True, exist_ok=True)
     for table_name, rows in rows_by_table.items():
         if not rows:
