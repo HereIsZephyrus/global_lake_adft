@@ -17,6 +17,7 @@ def get_workspace_version() -> str:
     for command in (
         ["git", "describe", "--tags", "--exact-match"],
         ["git", "describe", "--tags", "--abbrev=0"],
+        ["git", "rev-parse", "--short", "HEAD"],
     ):
         try:
             result = subprocess.run(

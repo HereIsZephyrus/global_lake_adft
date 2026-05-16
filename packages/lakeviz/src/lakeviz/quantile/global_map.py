@@ -88,8 +88,8 @@ def plot_transition_by_type_map(
     min_lakes: int = 1,
 ) -> Path:
     canonical_type = {
-        "low_to_high": "dry_to_wet",
-        "high_to_low": "wet_to_dry",
+        "dry_to_wet": "low_to_high",
+        "wet_to_dry": "high_to_low",
     }.get(transition_type, transition_type)
     labels = {
         "low_to_high": "旱转涝",
@@ -97,7 +97,7 @@ def plot_transition_by_type_map(
         "dry_to_wet": "旱转涝",
         "wet_to_dry": "涝转旱",
     }
-    cmap = "sequential_cool" if canonical_type == "dry_to_wet" else "sequential_warm"
+    cmap = "sequential_cool" if transition_type == "dry_to_wet" else "sequential_warm"
     label = labels.get(transition_type, transition_type)
 
     def _filter_by_type(agg):
