@@ -16,6 +16,7 @@ def run(
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
+    threshold_quantiles: list[float] = typer.Option([0.95, 0.99], "--threshold-quantile", help="PWM threshold quantiles"),
     min_valid_per_month: int | None = typer.Option(None, help="Min valid obs per month"),
     min_valid_observations: int | None = typer.Option(None, help="Min total valid obs"),
     method: str = typer.Option("stl", help="Decomposition method: stl | legacy"),
@@ -32,6 +33,7 @@ def run(
         id_start=id_start,
         id_end=id_end,
         calculator_kwargs=dict(
+            threshold_quantiles=threshold_quantiles,
             min_valid_per_month=min_valid_per_month,
             min_valid_observations=min_valid_observations,
             method=method,
@@ -46,6 +48,7 @@ def hawkes(
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
+    threshold_quantiles: list[float] = typer.Option([0.95, 0.99], "--threshold-quantile", help="PWM threshold quantiles"),
     decay_rate: float = typer.Option(0.8, help="Exponential decay rate λ for S_k strength"),
     hawkes_window_months: float = typer.Option(4.0, help="Hawkes kernel window in months"),
     monthly_significance_quantile: float = typer.Option(0.95, help="Monthly significance quantile"),
@@ -62,6 +65,7 @@ def hawkes(
         id_start=id_start,
         id_end=id_end,
         calculator_kwargs=dict(
+            threshold_quantiles=threshold_quantiles,
             decay_rate=decay_rate,
             hawkes_window_months=hawkes_window_months,
             monthly_significance_quantile=monthly_significance_quantile,
@@ -90,6 +94,7 @@ def diag(
             filter_name=filter_name,
             limit_id=limit_id,
             calculator_kwargs=dict(
+                threshold_quantiles=[0.95, 0.99],
                 decay_rate=0.8, hawkes_window_months=4.0,
                 monthly_significance_quantile=0.95,
             ),

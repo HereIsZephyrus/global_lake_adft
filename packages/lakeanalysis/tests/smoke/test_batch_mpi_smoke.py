@@ -335,5 +335,6 @@ def test_mpi_pwm_hawkes_smoke(
         ]
         assert not lake_results.empty, "No PWM-Hawkes results for smoke lake"
         assert lake_results["error_message"].isna().all(), "Smoke lake should complete without Hawkes error"
+        assert {float(q) for q in lake_results["threshold_quantile"].dropna().unique()} == {0.95, 0.99}
         assert not lake_segments.empty, "Expected bidirectional bridge segments to be materialized"
         assert set(lake_segments["segment_type"]).issubset({"transition", "unilateral"})

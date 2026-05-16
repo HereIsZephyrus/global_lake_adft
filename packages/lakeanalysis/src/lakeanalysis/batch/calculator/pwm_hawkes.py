@@ -9,6 +9,7 @@ decay strength S_k and transition/unilateral segment extraction.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Literal
 
@@ -19,6 +20,7 @@ from lakeanalysis.hawkes import (
     HawkesCoreResult,
     build_error_summary,
     build_events_from_pwm,
+    build_hawkes_result_row,
     run_hawkes_pipeline,
 )
 from lakeanalysis.pwm.events import (
@@ -38,6 +40,19 @@ from .. import LakeTask
 from .hawkes_base import HawkesCalculator, HawkesResult
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MultiPWMHawkesResult:
+    hylak_id: int
+    summaries: list[dict]
+    lrt_rows: list[dict]
+    transition_rows: list[dict]
+    return_level_rows: list[dict]
+    segments_rows: list[dict]
+    route_summary_rows: list[dict]
+
+
 class PWMHawkesCalculator(HawkesCalculator):
     """Batch calculator: PWM extreme events + decay index → Hawkes fitting."""
 
@@ -47,6 +62,7 @@ class PWMHawkesCalculator(HawkesCalculator):
         self,
         *,
         pwm_config: PWMExtremeConfig | None = None,
+        threshold_quantiles: list[float] | None = None,
         decay_rate: float = 0.8,
         hawkes_window_months: float = 4.0,
         monthly_significance_quantile: float = 0.95,
@@ -61,81 +77,105 @@ class PWMHawkesCalculator(HawkesCalculator):
         self._table_prefix = "pwm_hawkes"
         self._return_levels_table = "pwm_extreme_return_levels"
         self._pwm_config = pwm_config or PWMExtremeConfig()
-        self._service_config = PWMExtremeServiceConfig(
-            pwm_config=self._pwm_config,
-            method=method,
-        )
+        self._threshold_quantiles = threshold_quantiles or [0.95, 0.99]
+        self._method = method
         self._decay_rate = decay_rate
         self._evt_route = evt_route
         self._phi_method = phi_method
 
-    def compute(self, task: LakeTask) -> HawkesResult:
+    def compute(self, task: LakeTask) -> MultiPWMHawkesResult | HawkesResult:
         hylak_id = task.hylak_id
         series_df = task.series_df
         frozen = set(task.frozen_year_months) if task.frozen_year_months else set()
 
         try:
-            pwm_result = run_single_lake_service(
-                series_df,
+            summaries: list[dict] = []
+            lrt_rows: list[dict] = []
+            transition_rows: list[dict] = []
+            return_level_rows: list[dict] = []
+            segments_rows: list[dict] = []
+            route_summary_rows: list[dict] = []
+
+            for threshold_quantile in self._threshold_quantiles:
+                tail_prob = 1.0 - float(threshold_quantile)
+                service_config = PWMExtremeServiceConfig(
+                    pwm_config=PWMExtremeConfig(
+                        n_pwm=self._pwm_config.n_pwm,
+                        p_low=tail_prob,
+                        p_high=tail_prob,
+                        integration_upper=self._pwm_config.integration_upper,
+                        l2_regularization=self._pwm_config.l2_regularization,
+                        min_observations_per_month=self._pwm_config.min_observations_per_month,
+                    ),
+                    method=self._method,
+                )
+                pwm_result = run_single_lake_service(
+                    series_df,
+                    hylak_id=hylak_id,
+                    config=service_config,
+                    frozen_year_months=frozen or None,
+                )
+                strengths_df, summary_df = compute_pwm_evt_strengths(
+                    pwm_result.labels_df,
+                    evt_route=self._evt_route,
+                )
+                phi_df = map_strength_df_to_phi(
+                    strengths_df,
+                    method=self._phi_method,
+                )
+
+                decay_df = compute_decay_index(
+                    pwm_result.labels_df,
+                    decay_rate=self._decay_rate,
+                    phi_df=phi_df,
+                )
+                segments_df = _extract_segments_bidirectional(
+                    pwm_result.labels_df,
+                    decay_df,
+                    decay_rate=self._decay_rate,
+                    bridge_sk_threshold=self._BRIDGE_SK_THRESHOLD,
+                )
+                segments_rows.extend(_build_segments_rows(hylak_id, threshold_quantile, segments_df))
+                return_level_rows.extend(return_levels_to_rows(hylak_id, summary_df, threshold_quantile=threshold_quantile))
+                route_summary_rows.extend(_build_route_summary_rows(
+                    hylak_id=hylak_id,
+                    threshold_quantile=threshold_quantile,
+                    route=self._evt_route,
+                    phi_method=self._phi_method,
+                    strengths_df=strengths_df,
+                    segments_df=segments_df,
+                    summary_df=summary_df,
+                ))
+
+                events_df = extract_hawkes_events_from_segments(
+                    pwm_result.labels_df, decay_df, segments_df
+                )
+
+                event_series, events_table = build_events_from_pwm(
+                    events_df, series_df
+                )
+
+                core = run_hawkes_pipeline(
+                    event_series,
+                    events_table,
+                    series_df,
+                    hylak_id=hylak_id,
+                    threshold_quantile=threshold_quantile,
+                    hawkes_window_months=self._hawkes_window_months,
+                    monthly_significance_quantile=self._monthly_significance_quantile,
+                )
+                summaries.append(core.summary)
+                lrt_rows.extend(core.lrt_rows)
+                transition_rows.extend(core.transition_monthly_rows)
+
+            return MultiPWMHawkesResult(
                 hylak_id=hylak_id,
-                config=self._service_config,
-                frozen_year_months=frozen or None,
-            )
-            strengths_df, summary_df = compute_pwm_evt_strengths(
-                pwm_result.labels_df,
-                evt_route=self._evt_route,
-            )
-            phi_df = map_strength_df_to_phi(
-                strengths_df,
-                method=self._phi_method,
-            )
-
-            decay_df = compute_decay_index(
-                pwm_result.labels_df,
-                decay_rate=self._decay_rate,
-                phi_df=phi_df,
-            )
-            segments_df = _extract_segments_bidirectional(
-                pwm_result.labels_df,
-                decay_df,
-                decay_rate=self._decay_rate,
-                bridge_sk_threshold=self._BRIDGE_SK_THRESHOLD,
-            )
-            segments_rows = _build_segments_rows(hylak_id, segments_df)
-            return_level_rows = return_levels_to_rows(hylak_id, summary_df)
-            route_summary_rows = _build_route_summary_rows(
-                hylak_id=hylak_id,
-                route=self._evt_route,
-                phi_method=self._phi_method,
-                strengths_df=strengths_df,
-                segments_df=segments_df,
-                summary_df=summary_df,
-            )
-
-            events_df = extract_hawkes_events_from_segments(
-                pwm_result.labels_df, decay_df, segments_df
-            )
-
-            event_series, events_table = build_events_from_pwm(
-                events_df, series_df
-            )
-
-            core = run_hawkes_pipeline(
-                event_series,
-                events_table,
-                series_df,
-                hylak_id=hylak_id,
-                threshold_quantile=0.0,
-                hawkes_window_months=self._hawkes_window_months,
-                monthly_significance_quantile=self._monthly_significance_quantile,
-            )
-            return self._make_result(
-                core,
+                summaries=summaries,
+                lrt_rows=lrt_rows,
+                transition_rows=transition_rows,
                 return_level_rows=return_level_rows,
-                extra_rows_by_table={
-                    "pwm_hawkes_segments": segments_rows,
-                    "pwm_hawkes_route_summary": route_summary_rows,
-                },
+                segments_rows=segments_rows,
+                route_summary_rows=route_summary_rows,
             )
         except Exception as exc:
             log.debug("PWM-Hawkes failed for hylak_id=%d: %s", task.hylak_id, exc)
@@ -147,6 +187,27 @@ class PWMHawkesCalculator(HawkesCalculator):
                 extra_rows_by_table=self._empty_extra_rows(),
             )
 
+    def result_to_rows(self, result: MultiPWMHawkesResult | HawkesResult) -> dict[str, list[dict]]:
+        if isinstance(result, MultiPWMHawkesResult):
+            return {
+                "pwm_hawkes_results": [build_hawkes_result_row(summary) for summary in result.summaries],
+                "pwm_hawkes_lrt": result.lrt_rows,
+                "pwm_hawkes_transition_monthly": result.transition_rows,
+                "pwm_hawkes_run_status": [
+                    {
+                        "hylak_id": result.hylak_id,
+                        "chunk_start": 0,
+                        "chunk_end": 0,
+                        "status": "done",
+                        "error_message": None,
+                    }
+                ],
+                "pwm_extreme_return_levels": result.return_level_rows,
+                "pwm_hawkes_segments": result.segments_rows,
+                "pwm_hawkes_route_summary": result.route_summary_rows,
+            }
+        return super().result_to_rows(result)
+
     def _empty_extra_rows(self) -> dict[str, list[dict]]:
         return {
             "pwm_hawkes_segments": [],
@@ -154,7 +215,7 @@ class PWMHawkesCalculator(HawkesCalculator):
         }
 
 
-def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]:
+def _build_segments_rows(hylak_id: int, threshold_quantile: float, segments_df: pd.DataFrame) -> list[dict]:
     rows: list[dict] = []
     if segments_df.empty:
         return rows
@@ -162,6 +223,7 @@ def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]
         rows.append(
             {
                 "hylak_id": hylak_id,
+                "threshold_quantile": threshold_quantile,
                 "segment_id": int(seg["segment_id"]),
                 "start_year": int(seg["start_year"]),
                 "start_month": int(seg["start_month"]),
@@ -193,6 +255,7 @@ def _build_segments_rows(hylak_id: int, segments_df: pd.DataFrame) -> list[dict]
 def _build_route_summary_rows(
     *,
     hylak_id: int,
+    threshold_quantile: float,
     route: str,
     phi_method: str,
     strengths_df: pd.DataFrame,
@@ -205,6 +268,7 @@ def _build_route_summary_rows(
     return [
         {
             "hylak_id": hylak_id,
+            "threshold_quantile": threshold_quantile,
             "evt_route": route,
             "phi_method": phi_method,
             "n_extreme_high": int(len(high_df)),

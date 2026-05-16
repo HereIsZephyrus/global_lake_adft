@@ -109,9 +109,9 @@ def result_to_label_rows(
     result: PWMExtremeResult,
 ) -> list[dict[str, Any]]:
     """Convert PWMExtremeResult.labels_df to DB row dicts for the labels table."""
-    columns = [
+    threshold_quantile = result.threshold_quantile
+    rows = result.labels_df.loc[:, [
         "hylak_id",
-        "threshold_quantile",
         "year",
         "month",
         "water_area",
@@ -119,8 +119,10 @@ def result_to_label_rows(
         "threshold_low",
         "threshold_high",
         "extreme_label",
-    ]
-    return result.labels_df.loc[:, columns].to_dict("records")
+    ]].to_dict("records")
+    for row in rows:
+        row["threshold_quantile"] = threshold_quantile
+    return rows
 
 
 def result_to_extreme_rows(
@@ -129,9 +131,9 @@ def result_to_extreme_rows(
     """Convert PWMExtremeResult.extremes_df to DB row dicts for the extremes table."""
     if result.extremes_df.empty:
         return []
-    columns = [
+    threshold_quantile = result.threshold_quantile
+    rows = result.extremes_df.loc[:, [
         "hylak_id",
-        "threshold_quantile",
         "year",
         "month",
         "event_type",
@@ -140,8 +142,10 @@ def result_to_extreme_rows(
         "threshold",
         "severity",
         "extreme_label",
-    ]
-    return result.extremes_df.loc[:, columns].to_dict("records")
+    ]].to_dict("records")
+    for row in rows:
+        row["threshold_quantile"] = threshold_quantile
+    return rows
 
 
 def result_to_transition_rows(
@@ -150,9 +154,9 @@ def result_to_transition_rows(
     """Convert PWMExtremeResult.transitions_df to DB row dicts for the transitions table."""
     if result.transitions_df.empty:
         return []
-    columns = [
+    threshold_quantile = result.threshold_quantile
+    rows = result.transitions_df.loc[:, [
         "hylak_id",
-        "threshold_quantile",
         "from_year",
         "from_month",
         "to_year",
@@ -162,8 +166,10 @@ def result_to_transition_rows(
         "to_water_area",
         "from_label",
         "to_label",
-    ]
-    return result.transitions_df.loc[:, columns].to_dict("records")
+    ]].to_dict("records")
+    for row in rows:
+        row["threshold_quantile"] = threshold_quantile
+    return rows
 
 
 def return_levels_to_rows(

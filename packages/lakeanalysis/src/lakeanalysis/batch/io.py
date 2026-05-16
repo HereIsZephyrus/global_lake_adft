@@ -14,6 +14,34 @@ from lakesource.provider.factory import create_provider
 from .task_spec import get_batch_task_spec
 
 
+_PARQUET_DEDUPE_KEYS: dict[str, tuple[str, ...]] = {
+    "quantile_labels": ("hylak_id", "year", "month"),
+    "quantile_extremes": ("hylak_id", "year", "month", "event_type"),
+    "quantile_abrupt_transitions": ("hylak_id", "from_year", "from_month", "to_year", "to_month"),
+    "quantile_run_status": ("hylak_id",),
+    "pwm_extreme_thresholds": ("hylak_id", "threshold_quantile", "month"),
+    "pwm_extreme_labels": ("hylak_id", "threshold_quantile", "year", "month"),
+    "pwm_extreme_extremes": ("hylak_id", "threshold_quantile", "year", "month"),
+    "pwm_extreme_abrupt_transitions": ("hylak_id", "threshold_quantile", "from_year", "from_month", "to_year", "to_month"),
+    "pwm_extreme_return_levels": ("hylak_id", "threshold_quantile", "tail", "return_period", "evt_route"),
+    "pwm_extreme_run_status": ("hylak_id",),
+    "pwm_hawkes_results": ("hylak_id", "threshold_quantile"),
+    "pwm_hawkes_lrt": ("hylak_id", "threshold_quantile", "test_name"),
+    "pwm_hawkes_transition_monthly": ("hylak_id", "threshold_quantile", "year", "month", "direction"),
+    "pwm_hawkes_run_status": ("hylak_id",),
+    "pwm_hawkes_segments": ("hylak_id", "threshold_quantile", "segment_id"),
+    "pwm_hawkes_route_summary": ("hylak_id", "threshold_quantile"),
+    "eot_results": ("hylak_id", "tail", "threshold_quantile"),
+    "eot_extremes": ("hylak_id", "tail", "threshold_quantile", "cluster_id"),
+    "eot_return_levels": ("hylak_id", "tail", "threshold_quantile", "return_period_years"),
+    "eot_run_status": ("hylak_id",),
+    "eot_hawkes_results": ("hylak_id", "threshold_quantile"),
+    "eot_hawkes_lrt": ("hylak_id", "threshold_quantile", "test_name"),
+    "eot_hawkes_transition_monthly": ("hylak_id", "threshold_quantile", "year", "month", "direction"),
+    "eot_hawkes_run_status": ("hylak_id",),
+}
+
+
 class BatchReader(ABC):
     """Batch Reader."""
 
@@ -213,11 +241,15 @@ def _persist_rows_to_parquet_output(output_dir: Path, rows_by_table: dict[str, l
             existing_df = pd.DataFrame()
         if existing_df.empty:
             merged = new_df
-        elif "hylak_id" in new_df.columns:
-            combined = pd.concat([existing_df, new_df], ignore_index=True)
-            merged = combined.drop_duplicates(subset=["hylak_id"], keep="last").reset_index(drop=True)
         else:
-            merged = pd.concat([existing_df, new_df], ignore_index=True)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            dedupe_keys = _PARQUET_DEDUPE_KEYS.get(table_name)
+            if dedupe_keys is not None and all(key in combined.columns for key in dedupe_keys):
+                merged = combined.drop_duplicates(subset=list(dedupe_keys), keep="last").reset_index(drop=True)
+            elif "hylak_id" in combined.columns:
+                merged = combined.drop_duplicates(subset=["hylak_id"], keep="last").reset_index(drop=True)
+            else:
+                merged = combined.reset_index(drop=True)
         merged.to_parquet(table_path, index=False)
 
 

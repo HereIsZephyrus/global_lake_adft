@@ -87,7 +87,7 @@ def eot_batch(
     limit_id: LimitIdOpt = None,
     id_start: IdStartOpt = 0,
     id_end: IdEndOpt = None,
-    threshold_quantile: float = typer.Option(0.90, help="EOT threshold quantile"),
+    threshold_quantiles: list[float] = typer.Option([0.95, 0.99], "--threshold-quantile", help="EOT threshold quantiles"),
     hawkes_window_months: float = typer.Option(4.0, help="Kernel window in months"),
     monthly_significance_quantile: float = typer.Option(0.95, help="Monthly significance quantile"),
     decluster_run_length: int | None = typer.Option(1, help="Declustering run length (None=NoDeclustering)"),
@@ -104,7 +104,7 @@ def eot_batch(
         id_start=id_start,
         id_end=id_end,
         calculator_kwargs=dict(
-            threshold_quantile=threshold_quantile,
+            threshold_quantiles=threshold_quantiles,
             hawkes_window_months=hawkes_window_months,
             monthly_significance_quantile=monthly_significance_quantile,
             decluster_run_length=decluster_run_length,
