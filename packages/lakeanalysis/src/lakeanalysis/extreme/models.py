@@ -38,6 +38,7 @@ class PWMDiagnostics:
             [
                 {
                     "hylak_id": mr.hylak_id,
+                    "threshold_quantile": mr.threshold_quantile,
                     "month": mr.month,
                     "mean_area": mr.mean_area,
                     "epsilon": mr.epsilon,

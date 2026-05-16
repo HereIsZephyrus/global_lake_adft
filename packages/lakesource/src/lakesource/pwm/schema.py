@@ -30,6 +30,7 @@ class PWMExtremeMonthResult:
 
     hylak_id: int | None
     month: int
+    threshold_quantile: float
     mean_area: float
     epsilon: float
     lambda_opt: np.ndarray
@@ -74,6 +75,13 @@ class PWMExtremeResult:
     @property
     def thresholds_df(self) -> pd.DataFrame:
         return self.diagnostics.thresholds_df
+
+    @property
+    def threshold_quantile(self) -> float | None:
+        month_results = self.month_results
+        if not month_results:
+            return None
+        return float(month_results[0].threshold_quantile)
 
 
 @dataclass(frozen=True)

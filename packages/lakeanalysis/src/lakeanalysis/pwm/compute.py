@@ -198,6 +198,7 @@ def compute_one_month_thresholds(
     return PWMExtremeMonthResult(
         hylak_id=hylak_id,
         month=month,
+        threshold_quantile=1.0 - float(config.p_high),
         mean_area=mean_area,
         epsilon=epsilon,
         lambda_opt=lam_opt,
@@ -283,6 +284,7 @@ def compute_pooled_pwm_thresholds(
         mr = PWMExtremeMonthResult(
             hylak_id=hylak_id,
             month=month,
+            threshold_quantile=1.0 - float(config.p_high),
             mean_area=0.0,
             epsilon=epsilon,
             lambda_opt=lam_opt,
@@ -296,6 +298,7 @@ def compute_pooled_pwm_thresholds(
         thresholds[month] = (threshold_low, threshold_high)
 
     labeled_df = assign_pwm_extreme_labels(index_df, thresholds)
+    labeled_df["threshold_quantile"] = 1.0 - float(config.p_high)
     if hylak_id is not None:
         labeled_df.insert(0, "hylak_id", hylak_id)
     else:
@@ -331,7 +334,7 @@ def _build_pwm_extremes(labeled_df: pd.DataFrame) -> pd.DataFrame:
             extreme_df = extreme_df.assign(severity=extreme_df["severity"])
         extreme_df = extreme_df.reindex(
             columns=[
-                "hylak_id", "year", "month", "event_type", "water_area",
+                "hylak_id", "threshold_quantile", "year", "month", "event_type", "water_area",
                 "index_value", "threshold", "severity", "extreme_label",
             ]
         )

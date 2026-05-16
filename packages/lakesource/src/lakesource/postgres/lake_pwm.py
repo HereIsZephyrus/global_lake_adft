@@ -20,6 +20,7 @@ def _ensure_pwm_extreme_thresholds_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
+    threshold_quantile  NUMERIC(5,4) NOT NULL,
     month               INTEGER      NOT NULL,
     mean_area           DOUBLE PRECISION,
     epsilon             DOUBLE PRECISION,
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     converged           BOOLEAN,
     objective_value     DOUBLE PRECISION,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, month)
+    PRIMARY KEY (hylak_id, threshold_quantile, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")))
 
@@ -47,6 +48,7 @@ def _ensure_pwm_extreme_labels_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
+    threshold_quantile  NUMERIC(5,4) NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
     water_area          DOUBLE PRECISION,
@@ -55,7 +57,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     threshold_high      DOUBLE PRECISION,
     extreme_label       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, year, month)
+    PRIMARY KEY (hylak_id, threshold_quantile, year, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_labels")))
 
@@ -64,6 +66,7 @@ def _ensure_pwm_extreme_extremes_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
+    threshold_quantile  NUMERIC(5,4) NOT NULL,
     year                INTEGER      NOT NULL,
     month               INTEGER      NOT NULL,
     event_type          TEXT,
@@ -73,7 +76,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     severity            DOUBLE PRECISION,
     extreme_label       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, year, month)
+    PRIMARY KEY (hylak_id, threshold_quantile, year, month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_extremes")))
 
@@ -82,6 +85,7 @@ def _ensure_pwm_extreme_return_levels_table_sql(tc: TableConfig) -> sql.Composed
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
+    threshold_quantile  NUMERIC(5,4) NOT NULL,
     tail                TEXT         NOT NULL,
     return_period       INTEGER      NOT NULL,
     return_level        DOUBLE PRECISION,
@@ -95,7 +99,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     evt_route           TEXT         NOT NULL,
     strength_unit       TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, tail, return_period, evt_route)
+    PRIMARY KEY (hylak_id, threshold_quantile, tail, return_period, evt_route)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_return_levels")))
 
@@ -104,6 +108,7 @@ def _ensure_pwm_extreme_abrupt_transitions_table_sql(tc: TableConfig) -> sql.Com
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id            INTEGER      NOT NULL,
+    threshold_quantile  NUMERIC(5,4) NOT NULL,
     from_year           INTEGER      NOT NULL,
     from_month          INTEGER      NOT NULL,
     to_year             INTEGER      NOT NULL,
@@ -114,7 +119,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     from_label          TEXT,
     to_label            TEXT,
     computed_at         TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, from_year, from_month, to_year, to_month)
+    PRIMARY KEY (hylak_id, threshold_quantile, from_year, from_month, to_year, to_month)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_extreme_abrupt_transitions")))
 
@@ -123,6 +128,7 @@ def _ensure_pwm_hawkes_segments_table_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 CREATE TABLE IF NOT EXISTS {table} (
     hylak_id             INTEGER      NOT NULL,
+    threshold_quantile   NUMERIC(5,4) NOT NULL,
     segment_id           INTEGER      NOT NULL,
     start_year           INTEGER      NOT NULL,
     start_month          INTEGER      NOT NULL,
@@ -139,7 +145,7 @@ CREATE TABLE IF NOT EXISTS {table} (
     first_extreme_type   TEXT,
     last_extreme_type    TEXT,
     computed_at          TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (hylak_id, segment_id)
+    PRIMARY KEY (hylak_id, threshold_quantile, segment_id)
 );
 """).format(table=sql.Identifier(tc.series_table("pwm_hawkes_segments")))
 
@@ -161,13 +167,13 @@ CREATE TABLE IF NOT EXISTS {table} (
 def _upsert_pwm_extreme_thresholds_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, month,
+    hylak_id, threshold_quantile, month,
     mean_area, epsilon,
     lambda_0, lambda_1, lambda_2, lambda_3, lambda_4,
     b_0, b_1, b_2, b_3, b_4,
     threshold_high, threshold_low, converged, objective_value, computed_at
 ) VALUES (
-    %(hylak_id)s, %(month)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(month)s,
     %(mean_area)s, %(epsilon)s,
     %(lambda_0)s, %(lambda_1)s, %(lambda_2)s, %(lambda_3)s, %(lambda_4)s,
     %(b_0)s, %(b_1)s, %(b_2)s, %(b_3)s, %(b_4)s,
@@ -194,7 +200,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_thresholds")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "month")
+            sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "month")
         ),
     )
 
@@ -223,11 +229,11 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_labels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, year, month,
+    hylak_id, threshold_quantile, year, month,
     water_area, index_value,
     threshold_low, threshold_high, extreme_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(year)s, %(month)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(year)s, %(month)s,
     %(water_area)s, %(index_value)s,
     %(threshold_low)s, %(threshold_high)s, %(extreme_label)s, now()
 )
@@ -241,7 +247,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_labels")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "year", "month")
+            sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "year", "month")
         ),
     )
 
@@ -249,11 +255,11 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_extremes_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, year, month,
+    hylak_id, threshold_quantile, year, month,
     event_type, water_area, index_value,
     threshold, severity, extreme_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(year)s, %(month)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(year)s, %(month)s,
     %(event_type)s, %(water_area)s, %(index_value)s,
     %(threshold)s, %(severity)s, %(extreme_label)s, now()
 )
@@ -268,7 +274,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_extreme_extremes")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "year", "month")
+            sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "year", "month")
         ),
     )
 
@@ -276,13 +282,13 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_return_levels_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, tail, return_period,
+    hylak_id, threshold_quantile, tail, return_period,
     return_level, shape, scale, threshold,
     n_total, n_exceedances,
     converged, error_message,
     evt_route, strength_unit, computed_at
 ) VALUES (
-    %(hylak_id)s, %(tail)s, %(return_period)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(tail)s, %(return_period)s,
     %(return_level)s, %(shape)s, %(scale)s, %(threshold)s,
     %(n_total)s, %(n_exceedances)s,
     %(converged)s, %(error_message)s,
@@ -303,7 +309,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
         table=sql.Identifier(tc.series_table("pwm_extreme_return_levels")),
         conflict_cols=sql.SQL(", ").join(
             sql.Identifier(c)
-            for c in ("hylak_id", "tail", "return_period", "evt_route")
+            for c in ("hylak_id", "threshold_quantile", "tail", "return_period", "evt_route")
         ),
     )
 
@@ -311,11 +317,11 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_extreme_abrupt_transitions_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, from_year, from_month, to_year, to_month,
+    hylak_id, threshold_quantile, from_year, from_month, to_year, to_month,
     transition_type,
     from_water_area, to_water_area, from_label, to_label, computed_at
 ) VALUES (
-    %(hylak_id)s, %(from_year)s, %(from_month)s, %(to_year)s, %(to_month)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(from_year)s, %(from_month)s, %(to_year)s, %(to_month)s,
     %(transition_type)s,
     %(from_water_area)s, %(to_water_area)s, %(from_label)s, %(to_label)s, now()
 )
@@ -332,6 +338,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
             sql.Identifier(c)
             for c in (
                 "hylak_id",
+                "threshold_quantile",
                 "from_year",
                 "from_month",
                 "to_year",
@@ -344,7 +351,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 def _upsert_pwm_hawkes_segments_sql(tc: TableConfig) -> sql.Composed:
     return sql.SQL("""
 INSERT INTO {table} (
-    hylak_id, segment_id,
+    hylak_id, threshold_quantile, segment_id,
     start_year, start_month, end_year, end_month,
     duration_months, segment_type,
     has_high, has_low,
@@ -353,7 +360,7 @@ INSERT INTO {table} (
     first_extreme_type, last_extreme_type,
     computed_at
 ) VALUES (
-    %(hylak_id)s, %(segment_id)s,
+    %(hylak_id)s, %(threshold_quantile)s, %(segment_id)s,
     %(start_year)s, %(start_month)s, %(end_year)s, %(end_month)s,
     %(duration_months)s, %(segment_type)s,
     %(has_high)s, %(has_low)s,
@@ -381,7 +388,7 @@ ON CONFLICT ({conflict_cols}) DO UPDATE SET
 """).format(
         table=sql.Identifier(tc.series_table("pwm_hawkes_segments")),
         conflict_cols=sql.SQL(", ").join(
-            sql.Identifier(c) for c in ("hylak_id", "segment_id")
+            sql.Identifier(c) for c in ("hylak_id", "threshold_quantile", "segment_id")
         ),
     )
 

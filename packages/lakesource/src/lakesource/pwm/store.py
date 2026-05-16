@@ -90,6 +90,7 @@ def result_to_threshold_rows(
         rows.append(
             {
                 "hylak_id": mr.hylak_id,
+                "threshold_quantile": mr.threshold_quantile,
                 "month": mr.month,
                 "mean_area": mr.mean_area,
                 "epsilon": mr.epsilon,
@@ -110,6 +111,7 @@ def result_to_label_rows(
     """Convert PWMExtremeResult.labels_df to DB row dicts for the labels table."""
     columns = [
         "hylak_id",
+        "threshold_quantile",
         "year",
         "month",
         "water_area",
@@ -129,6 +131,7 @@ def result_to_extreme_rows(
         return []
     columns = [
         "hylak_id",
+        "threshold_quantile",
         "year",
         "month",
         "event_type",
@@ -149,6 +152,7 @@ def result_to_transition_rows(
         return []
     columns = [
         "hylak_id",
+        "threshold_quantile",
         "from_year",
         "from_month",
         "to_year",
@@ -165,6 +169,8 @@ def result_to_transition_rows(
 def return_levels_to_rows(
     hylak_id: int,
     summary_df,
+    *,
+    threshold_quantile: float | None = None,
 ) -> list[dict[str, Any]]:
     """Convert EVT summary rows to DB rows for pwm_extreme_return_levels."""
     if summary_df is None or summary_df.empty:
@@ -174,6 +180,7 @@ def return_levels_to_rows(
         rows.append(
             {
                 "hylak_id": int(hylak_id),
+                "threshold_quantile": threshold_quantile,
                 "tail": str(row["tail"]),
                 "return_period": int(row["return_period"]),
                 "return_level": _maybe_float(row["return_level"]),
